@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   ArrowLeft, Save, FileText, FileCode2,
   RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers
 } from 'lucide-react'
+import JsBarcode from 'jsbarcode'
 import LabelPreview from '../components/LabelPreview'
 import { generateBarcodeValue } from '../lib/barcode'
 import type { Product } from '../types'
@@ -50,6 +51,21 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     })
   }, [initialProduct?.barcodeImagePath])
 
+  const barcodeValidity = useMemo(() => {
+    const value = (product.barcodeValue ?? '').trim()
+    if (!value) return null
+    try {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      JsBarcode(svg, value, {
+        format: 'CODE128',
+        displayValue: false,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }, [product.barcodeValue])
+
   function update(field: keyof Product, value: string): void {
     setProduct((prev) => ({ ...prev, [field]: value }))
     if (saveStatus === 'saved') setSaveStatus('idle')
@@ -66,6 +82,11 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
       setSaveStatus('error')
       return null
     }
+    if (!product.barcodeValue?.trim()) {
+      setSaveError('Barcode value is required.')
+      setSaveStatus('error')
+      return null
+    }
     setSaveStatus('saving')
     setSaveError('')
     let result
@@ -73,13 +94,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
       result = await window.api.product.create({
         name: product.name!,
         price: product.price!,
-        barcodeValue: product.barcodeValue!,
+        barcodeValue: product.barcodeValue.trim(),
         barcodeType: 'CODE128',
         barcodeImagePath: product.barcodeImagePath ?? null,
         templateId: 'avery5821',
       })
     } else {
-      result = await window.api.product.update(product as Product)
+      result = await window.api.product.update({
+        ...(product as Product),
+        barcodeValue: product.barcodeValue.trim(),
+      })
     }
     if (result.ok) {
       setProduct(result.data)
@@ -267,11 +291,29 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
                 )}
               </div>
 
-              <div style={{
-                background: '#f8fafc', borderRadius: 8, padding: '8px 12px',
-                fontFamily: 'monospace', fontSize: 13, color: '#475569', letterSpacing: '0.05em'
-              }}>
-                {product.barcodeValue ?? '—'}
+              <div>
+                <label className="label-text">Barcode Number</label>
+                <input
+                  className="input"
+                  placeholder="Type barcode value"
+                  value={product.barcodeValue ?? ''}
+                  onChange={(e) => update('barcodeValue', e.target.value)}
+                  maxLength={80}
+                  style={{ fontFamily: 'monospace', letterSpacing: '0.04em' }}
+                />
+                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                  You can type your own barcode or regenerate one automatically.
+                </p>
+                {barcodeValidity === false && (
+                  <p style={{ fontSize: 11, color: '#dc2626', marginTop: 5 }}>
+                    This value cannot be rendered as Code 128.
+                  </p>
+                )}
+                {barcodeValidity === true && (
+                  <p style={{ fontSize: 11, color: '#16a34a', marginTop: 5 }}>
+                    Valid Code 128 value.
+                  </p>
+                )}
               </div>
 
               {barcodeOverrideDataUri ? (
@@ -281,14 +323,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
                     alt="Uploaded barcode"
                     style={{ height: 36, objectFit: 'contain', background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, padding: 4 }}
                   />
-                  <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>Custom barcode image</span>
+                  <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
+                    Custom uploaded image (overrides typed/generated barcode)
+                  </span>
                   <button onClick={handleRemoveBarcodeImage} className="btn-ghost btn-sm" style={{ color: '#f87171' }}>
                     <X size={12} /> Remove
                   </button>
                 </div>
               ) : (
                 <button onClick={handleUploadBarcode} className="btn-outline btn-sm" style={{ alignSelf: 'flex-start' }}>
-                  <Upload size={12} /> Upload barcode image
+                  <Upload size={12} /> Upload image
                 </button>
               )}
             </div>

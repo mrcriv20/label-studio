@@ -18,7 +18,7 @@
 
 import { PDFDocument, rgb, StandardFonts, degrees, PDFPage } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import bwipjs from 'bwip-js'
@@ -91,9 +91,61 @@ function readFontBytes(...paths: string[]): Buffer | null {
 const home = homedir()
 const USER_FONTS = join(home, 'Library', 'Fonts')
 const SYS_FONTS  = '/Library/Fonts'
+const APPLE_SYS_FONTS = '/System/Library/Fonts'
 
-const LORA_BYTES  = readFontBytes(join(USER_FONTS, 'Lora-Bold.ttf'),       join(SYS_FONTS, 'Lora-Bold.ttf'))
-const GENTY_BYTES = readFontBytes(join(USER_FONTS, 'GentyDemo-Regular.ttf'), join(SYS_FONTS, 'GentyDemo-Regular.ttf'))
+function scoreFontFile(fileName: string): number {
+  const n = fileName.toLowerCase()
+  let score = 0
+  if (n.includes('bold')) score += 100
+  if (n.includes('variable')) score += 70
+  if (n.includes('regular')) score += 40
+  if (n.includes('italic')) score -= 20
+  return score
+}
+
+function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer | null {
+  const dirs = [USER_FONTS, SYS_FONTS, APPLE_SYS_FONTS]
+
+  // Fast path for known filenames.
+  const exactPaths: string[] = []
+  for (const dir of dirs) {
+    for (const fileName of exactCandidates) exactPaths.push(join(dir, fileName))
+  }
+  const exact = readFontBytes(...exactPaths)
+  if (exact) return exact
+
+  // Fallback: scan for matching family files and pick best candidate.
+  const familyNeedle = family.toLowerCase()
+  const discovered: string[] = []
+  for (const dir of dirs) {
+    if (!existsSync(dir)) continue
+    try {
+      for (const fileName of readdirSync(dir)) {
+        const lower = fileName.toLowerCase()
+        if (!lower.includes(familyNeedle)) continue
+        if (!/\.(ttf|otf)$/.test(lower)) continue
+        discovered.push(join(dir, fileName))
+      }
+    } catch {
+      // Skip unreadable font directories.
+    }
+  }
+
+  discovered.sort((a, b) => scoreFontFile(b) - scoreFontFile(a))
+  return readFontBytes(...discovered)
+}
+
+const LORA_BYTES = findFamilyFontBytes('lora', [
+  'Lora-Bold.ttf',
+  'Lora-SemiBold.ttf',
+  'Lora-VariableFont_wght.ttf',
+  'Lora-Regular.ttf',
+])
+
+const GENTY_BYTES = findFamilyFontBytes('genty', [
+  'GentyDemo-Regular.ttf',
+  'Genty Demo Regular.ttf',
+])
 
 async function embedFonts(pdfDoc: PDFDocument): Promise<{ name: EmbeddedFont; price: EmbeddedFont }> {
   const fallback = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
@@ -308,13 +360,21 @@ export async function exportSingleLabelSVG(product: Product): Promise<string> {
     if (png) barcodeUri = `data:image/png;base64,${png.toString('base64')}`
   } catch { /* leave empty */ }
 
-  const nameSize  = product.name.length > 18 ? 20 : product.name.length > 12 ? 24 : 28
-  const nameLines = splitLines(product.name, 20)
-  const nameY0    = h - 90
-  const priceSize = product.price.length > 10 ? 26 : 32
+  const nameSize  = product.name.length > 28 ? 15 : product.name.length > 20 ? 17 : product.name.length > 14 ? 19 : 22
+  const nameMaxChars = nameSize >= 19 ? 13 : nameSize >= 17 ? 15 : 18
+  const nameLines = splitLines(product.name, nameMaxChars, 2)
+  const nameLineH = nameSize * 1.16
+  const nameY0 = nameLines.length > 1 ? 145 : 152
+  const priceSize = product.price.length > 10 ? 24 : 28
+
+  const nameLastBaseline = nameY0 + (nameLines.length - 1) * nameLineH
+  const nameBottomY = nameLastBaseline + nameSize * 0.26
+  const barcodeTopY = h - F.barcode.y - F.barcode.h
+  const priceCenterY = (nameBottomY + barcodeTopY) / 2
+  const priceBaselineY = priceCenterY + priceSize * 0.34
 
   const nameEls = nameLines.map((line, i) =>
-    `<text x="${w/2}" y="${nameY0 + i * nameSize * 1.25}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="#1a2332">${xml(line)}</text>`
+    `<text x="${w/2}" y="${nameY0 + i * nameLineH}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="#1a2332">${xml(line)}</text>`
   ).join('\n  ')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -323,7 +383,7 @@ export async function exportSingleLabelSVG(product: Product): Promise<string> {
   ${templateUri ? `<image x="0" y="0" width="${w}" height="${h}" xlink:href="${templateUri}" preserveAspectRatio="none"/>` : `<rect x="0" y="0" width="${w}" height="${h}" fill="#f7f5ee"/>`}
   <rect x="${w*0.035}" y="${h*0.42}" width="${w*0.93}" height="${h*0.555}" fill="white"/>
   ${nameEls}
-  <text x="${w/2}" y="${h-118}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${priceSize}" fill="#1a2332">${xml(product.price)}</text>
+  <text x="${w/2}" y="${priceBaselineY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${priceSize}" fill="#1a2332">${xml(product.price)}</text>
   ${barcodeUri ? `<image x="${F.barcode.x}" y="${h-F.barcode.y-F.barcode.h}" width="${F.barcode.w}" height="${F.barcode.h}" xlink:href="${barcodeUri}"/>` : ''}
 </svg>`
 }
@@ -348,8 +408,8 @@ function wrapText(
   return lines.length ? lines : [text]
 }
 
-function splitLines(text: string, maxChars: number): string[] {
-  const words = text.split(' ')
+function splitLines(text: string, maxChars: number, maxLines = Number.POSITIVE_INFINITY): string[] {
+  const words = text.trim().split(/\s+/)
   const lines: string[] = []
   let cur = ''
   for (const w of words) {
@@ -358,7 +418,14 @@ function splitLines(text: string, maxChars: number): string[] {
     else { if (cur) lines.push(cur); cur = w }
   }
   if (cur) lines.push(cur)
-  return lines.length ? lines : [text]
+  if (!lines.length) return [text]
+  if (lines.length <= maxLines) return lines
+
+  const clipped = lines.slice(0, maxLines)
+  const lastIdx = clipped.length - 1
+  const tail = clipped[lastIdx]
+  clipped[lastIdx] = `${tail.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`
+  return clipped
 }
 
 function xml(s: string): string {

@@ -5,6 +5,9 @@ import { initDatabase } from './database'
 import { initFileManager } from './fileManager'
 import { registerIpcHandlers } from './ipc'
 
+// Avoid noisy Chromium GPU mailbox/overlay errors seen on some macOS setups.
+app.disableHardwareAcceleration()
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,

@@ -1,6 +1,7 @@
-import { ipcMain, dialog, shell } from 'electron'
+import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
-import { writeFileSync } from 'fs'
+import { writeFileSync, unlinkSync, existsSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { nanoid } from 'nanoid'
 import type { Product } from './types'
 import {
@@ -180,6 +181,19 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle('print:sheet', async (_e, products: Product[], startSlot: number) => {
+    const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.html`)
+    try {
+      const html = await buildSheetPrintHtml(products, startSlot)
+      writeFileSync(tempPath, html, 'utf8')
+      const printed = await printHtmlWithDialog(tempPath)
+      scheduleTempPdfCleanup(tempPath)
+      return ok(printed)
+    } catch (e) {
+      return fail(String(e))
+    }
+  })
+
   // ── Print ─────────────────────────────────────────────────────────────────
 
   ipcMain.handle('print:getTemplatePNG', () => {
@@ -194,6 +208,156 @@ export function generateBarcode(): string {
   // 12-digit random barcode for internal use
   const num = Math.floor(Math.random() * 900000000000) + 100000000000
   return String(num)
+}
+
+async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const printWin = new BrowserWindow({
+      width: 900,
+      height: 700,
+      show: true,
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: false },
+    })
+
+    let settled = false
+    const finish = (result: boolean): void => {
+      if (settled) return
+      settled = true
+      if (!printWin.isDestroyed()) printWin.close()
+      resolve(result)
+    }
+
+    printWin.webContents.once('did-finish-load', () => {
+      // Give the document a brief moment to finish SVG/image decode.
+      setTimeout(() => {
+        if (settled || printWin.isDestroyed()) return
+        printWin.webContents.print(
+          { silent: false, printBackground: true },
+          (success) => finish(success)
+        )
+      }, 150)
+    })
+
+    printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
+      if (!settled) {
+        settled = true
+        if (!printWin.isDestroyed()) printWin.destroy()
+        reject(new Error(`Failed to load printable document: ${desc}`))
+      }
+    })
+
+    printWin.loadURL(pathToFileURL(htmlPath).toString()).catch((err) => {
+      if (!settled) {
+        settled = true
+        if (!printWin.isDestroyed()) printWin.destroy()
+        reject(err)
+      }
+    })
+  })
+}
+
+async function buildSheetPrintHtml(products: Product[], startSlot: number): Promise<string> {
+  const slotHtml: string[] = []
+
+  for (let slot = 1; slot <= 8; slot++) {
+    const pIdx = slot - startSlot
+    if (pIdx < 0 || pIdx >= products.length) continue
+    const product = products[pIdx]
+    if (!product) continue
+
+    const col = (slot - 1) % 2
+    const row = Math.floor((slot - 1) / 2)
+    const leftIn = 0.25 + col * 4
+    const topIn = 0.5 + row * 2.5
+
+    const svg = await exportSingleLabelSVG(product)
+    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+
+    slotHtml.push(`
+      <div class="slot" style="left:${leftIn}in; top:${topIn}in;">
+        <div class="label-rotated">
+          <img src="${svgDataUri}" alt="${escapeHtml(product.name)}" />
+        </div>
+      </div>
+    `)
+  }
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Label Sheet Print</title>
+    <style>
+      @page { size: Letter portrait; margin: 0; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 8.5in;
+        height: 11in;
+        background: white;
+      }
+      * {
+        box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .sheet {
+        position: relative;
+        width: 8.5in;
+        height: 11in;
+        overflow: hidden;
+        background: white;
+      }
+      .slot {
+        position: absolute;
+        width: 4in;
+        height: 2.5in;
+        overflow: hidden;
+      }
+      .label-rotated {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 2.5in;
+        height: 4in;
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center;
+      }
+      .label-rotated img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      ${slotHtml.join('\n')}
+    </div>
+  </body>
+</html>`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function scheduleTempPdfCleanup(filePath: string): void {
+  // Keep file around briefly so OS print spooler can reliably consume it.
+  setTimeout(() => {
+    try {
+      if (existsSync(filePath)) unlinkSync(filePath)
+    } catch {
+      // best-effort cleanup
+    }
+  }, 60_000)
 }
 
 function sanitizeFilename(name: string): string {

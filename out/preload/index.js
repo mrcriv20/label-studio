@@ -28,6 +28,10 @@ const api = {
     singlePDF: (product) => electron.ipcRenderer.invoke("export:singlePDF", product),
     singleSVG: (product) => electron.ipcRenderer.invoke("export:singleSVG", product),
     sheetPDF: (products, startSlot) => electron.ipcRenderer.invoke("export:sheetPDF", products, startSlot)
+  },
+  // Print
+  print: {
+    sheet: (products, startSlot) => electron.ipcRenderer.invoke("print:sheet", products, startSlot)
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);

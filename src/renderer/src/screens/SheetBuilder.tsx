@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, FileText, Info } from 'lucide-react'
+import { ArrowLeft, FileText, Info, Printer } from 'lucide-react'
 import LabelPreview from '../components/LabelPreview'
 import type { Product } from '../types'
 
@@ -20,6 +20,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
   const [fillProduct, setFillProduct] = useState<Product | null>(null)
   const [fillCount, setFillCount] = useState(8)
   const [exporting, setExporting] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [activeSlot, setActiveSlot] = useState<number | null>(null)
   const [mode, setMode] = useState<'fill' | 'manual'>('fill')
 
@@ -66,6 +67,17 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
     setExporting(false)
   }
 
+  async function handlePrintDirect(): Promise<void> {
+    const toPrint = resolveSlots()
+    if (toPrint.length === 0) { alert('No products assigned to slots.'); return }
+    setPrinting(true)
+    const result = await window.api.print.sheet(toPrint, startSlot)
+    if (!result.ok) {
+      alert(`Print failed: ${result.error}`)
+    }
+    setPrinting(false)
+  }
+
   function buildDisplaySlots(): (Product | null)[] {
     if (mode === 'fill' && fillProduct) {
       return Array.from({ length: 8 }, (_, i) => {
@@ -99,7 +111,10 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
         <span style={{ fontSize: 11, background: '#f1f5f9', color: '#64748b', borderRadius: 20, padding: '2px 10px', marginLeft: 4 }}>
           Avery 5821 — 8 labels per sheet
         </span>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button onClick={handlePrintDirect} disabled={printing} className="btn-green btn-sm">
+            <Printer size={13} /> {printing ? 'Opening…' : 'Print'}
+          </button>
           <button onClick={handleExport} disabled={exporting} className="btn-primary btn-sm">
             <FileText size={13} /> {exporting ? 'Exporting…' : 'Export PDF'}
           </button>
@@ -257,6 +272,10 @@ function SheetSlotPreview({
   isActive: boolean
   onClick: () => void
 }): JSX.Element {
+  // Slot is 4"x2.5" (aspect 1.6). Scale portrait label so that after -90deg
+  // rotation it fills the slot width and keeps full content visible.
+  const SLOT_ASPECT = 4 / 2.5
+
   return (
     <div
       onClick={onClick}
@@ -271,8 +290,27 @@ function SheetSlotPreview({
       title={product ? product.name : `Slot ${index + 1} — empty`}
     >
       {product ? (
-        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', transform: 'rotate(-90deg) scale(0.62)', transformOrigin: 'center' }}>
-          <LabelPreview product={product} templateDataUri={templateDataUri} scale={1} />
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              height: `${SLOT_ASPECT * 100}%`,
+              aspectRatio: '181 / 289',
+              transform: 'rotate(-90deg)',
+              transformOrigin: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <LabelPreview product={product} templateDataUri={templateDataUri} scale={1} />
+          </div>
         </div>
       ) : (
         <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 500 }}>{index + 1}</span>

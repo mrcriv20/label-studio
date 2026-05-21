@@ -51,6 +51,9 @@ declare global {
         singleSVG(product: Product): Promise<IpcResult<string | null>>
         sheetPDF(products: Product[], startSlot: number): Promise<IpcResult<string | null>>
       }
+      print: {
+        sheet(products: Product[], startSlot: number): Promise<IpcResult<boolean>>
+      }
     }
   }
 }
