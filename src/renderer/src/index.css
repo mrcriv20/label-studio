@@ -10,6 +10,13 @@
   src: local('Genty Demo'), local('GentyDemo');
 }
 
+@font-face {
+  font-family: 'Avenir Next Condensed Asset';
+  font-weight: 400;
+  font-style: normal;
+  src: url('../../../assets/AvenirNextCondensed-Regular.otf') format('opentype');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

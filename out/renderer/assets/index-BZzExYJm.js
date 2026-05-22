@@ -7053,9 +7053,41 @@ const createLucideIcon = (iconName, iconNode) => {
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const ArrowDown = createLucideIcon("ArrowDown", [
+  ["path", { d: "M12 5v14", key: "s699le" }],
+  ["path", { d: "m19 12-7 7-7-7", key: "1idqje" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const ArrowLeft = createLucideIcon("ArrowLeft", [
   ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
   ["path", { d: "M19 12H5", key: "x3x0zl" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const ArrowUpDown = createLucideIcon("ArrowUpDown", [
+  ["path", { d: "m21 16-4 4-4-4", key: "f6ql7i" }],
+  ["path", { d: "M17 20V4", key: "1ejh1v" }],
+  ["path", { d: "m3 8 4-4 4 4", key: "11wl7u" }],
+  ["path", { d: "M7 4v16", key: "1glfcx" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const ArrowUp = createLucideIcon("ArrowUp", [
+  ["path", { d: "m5 12 7-7 7 7", key: "hav0vg" }],
+  ["path", { d: "M12 19V5", key: "x0mq9r" }]
 ]);
 /**
  * @license lucide-react v0.390.0 - ISC
@@ -7357,6 +7389,8 @@ function Library({ onEdit, onOpenSheet }) {
   const [exporting, setExporting] = reactExports.useState(null);
   const [importing, setImporting] = reactExports.useState(false);
   const [activeCategory, setActiveCategory] = reactExports.useState("__all__");
+  const [sortKey, setSortKey] = reactExports.useState("name");
+  const [sortDirection, setSortDirection] = reactExports.useState("asc");
   const load = reactExports.useCallback(async () => {
     setLoading(true);
     const result = await window.api.product.list();
@@ -7378,24 +7412,37 @@ function Library({ onEdit, onOpenSheet }) {
   const categoryFiltered = filtered.filter(
     (p2) => activeCategory === "__all__" || (p2.category?.trim() || "") === activeCategory
   );
-  function buildGroups(items2) {
-    if (activeCategory !== "__all__" || categories.length === 0) {
-      return [{ label: "", items: items2 }];
+  const sortedProducts = reactExports.useMemo(() => {
+    const items2 = [...categoryFiltered];
+    items2.sort((a, b) => {
+      const direction = sortDirection === "asc" ? 1 : -1;
+      if (sortKey === "price") {
+        return direction * (parsePrice(a.price) - parsePrice(b.price));
+      }
+      if (sortKey === "updatedAt") {
+        return direction * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      }
+      const aValue = (a[sortKey] ?? "").toString();
+      const bValue = (b[sortKey] ?? "").toString();
+      return direction * aValue.localeCompare(bValue, void 0, { numeric: true, sensitivity: "base" });
+    });
+    return items2;
+  }, [categoryFiltered, sortDirection, sortKey]);
+  function parsePrice(value) {
+    const numeric = Number.parseFloat(value.replace(/[^0-9.-]/g, ""));
+    return Number.isNaN(numeric) ? Number.NEGATIVE_INFINITY : numeric;
+  }
+  function toggleSort(nextKey) {
+    if (sortKey === nextKey) {
+      setSortDirection((prev) => prev === "asc" ? "desc" : "asc");
+      return;
     }
-    const map = /* @__PURE__ */ new Map();
-    for (const p2 of items2) {
-      const key = p2.category?.trim() || "";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(p2);
-    }
-    const groups = [];
-    for (const cat of categories) {
-      const rows = map.get(cat);
-      if (rows?.length) groups.push({ label: cat, items: rows });
-    }
-    const uncategorised = map.get("") ?? [];
-    if (uncategorised.length) groups.push({ label: "Uncategorised", items: uncategorised });
-    return groups;
+    setSortKey(nextKey);
+    setSortDirection("asc");
+  }
+  function renderSortIcon(key) {
+    if (sortKey !== key) return /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpDown, { size: 12 });
+    return sortDirection === "asc" ? /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUp, { size: 12 }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowDown, { size: 12 });
   }
   async function handleDelete(id2) {
     if (!confirm("Delete this product? This cannot be undone.")) return;
@@ -7456,7 +7503,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
           " ",
           importing ? "Importing…" : "Import"
         ] }),
-        products.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => onOpenSheet(products.slice(0, 8)), className: "btn-outline btn-sm", children: [
+        products.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => onOpenSheet(sortedProducts.slice(0, 8)), className: "btn-outline btn-sm", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }),
           " Print Sheet"
         ] }),
@@ -7506,7 +7553,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
       ))
     ] }),
     error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#dc2626" }, children: error }),
-    loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13, paddingTop: 60 }, children: "Loading products…" }) : categoryFiltered.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 8 }, children: [
+    loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13, paddingTop: 60 }, children: "Loading products…" }) : sortedProducts.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 8 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 40 }, children: "🏪" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 600, color: "#1a2332", margin: 0 }, children: query || activeCategory !== "__all__" ? "No products match your filter" : "No products yet" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 13, color: "#94a3b8", marginTop: 2 }, children: query || activeCategory !== "__all__" ? "Try clearing the search or selecting a different category." : "Create your first product label to get started." }),
@@ -7524,57 +7571,71 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
       )
     ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "card", style: { flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, minHeight: 0, overflow: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { style: { position: "sticky", top: 0, zIndex: 1 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { style: { borderBottom: "1px solid #f1f5f9", background: "#fafafa" }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Product" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Price" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Barcode" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Modified" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("name"), style: sortButtonStyle, children: [
+          "Product ",
+          renderSortIcon("name")
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("price"), style: sortButtonStyle, children: [
+          "Price ",
+          renderSortIcon("price")
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("barcodeValue"), style: sortButtonStyle, children: [
+          "Barcode ",
+          renderSortIcon("barcodeValue")
+        ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("updatedAt"), style: sortButtonStyle, children: [
+          "Modified ",
+          renderSortIcon("updatedAt")
+        ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Actions" })
       ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: buildGroups(categoryFiltered).map(({ label, items: items2 }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-        label && /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { colSpan: 5, style: { padding: "8px 16px 4px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }, children: [
-          label,
-          " ",
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontWeight: 400, color: "#94a3b8" }, children: [
-            "(",
-            items2.length,
-            ")"
-          ] })
-        ] }) }, `group-${label}`),
-        items2.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "tr",
-          {
-            style: { borderBottom: "1px solid #f8fafc" },
-            onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
-            onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", fontWeight: 600, color: "#1a2332" }, children: p2.name }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 2 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "button",
-                  {
-                    onClick: () => handleDelete(p2.id),
-                    disabled: deleting === p2.id,
-                    className: "btn btn-icon danger",
-                    title: "Delete",
-                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
-                  }
-                )
-              ] }) })
-            ]
-          },
-          p2.id
-        ))
-      ] })) })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: sortedProducts.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "tr",
+        {
+          style: { borderBottom: "1px solid #f8fafc" },
+          onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
+          onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", fontWeight: 600, color: "#1a2332" }, children: p2.name }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 2 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  onClick: () => handleDelete(p2.id),
+                  disabled: deleting === p2.id,
+                  className: "btn btn-icon danger",
+                  title: "Delete",
+                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
+                }
+              )
+            ] }) })
+          ]
+        },
+        p2.id
+      )) })
     ] }) }) })
   ] });
 }
+const sortButtonStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  padding: 0,
+  border: "none",
+  background: "transparent",
+  color: "inherit",
+  font: "inherit",
+  textTransform: "inherit",
+  letterSpacing: "inherit",
+  cursor: "pointer"
+};
 var barcodes = {};
 var CODE39$1 = {};
 var Barcode$1 = {};
@@ -11088,81 +11149,237 @@ if (typeof jQuery !== "undefined") {
 }
 var JsBarcode_1 = JsBarcode;
 const JsBarcode$1 = /* @__PURE__ */ getDefaultExportFromCjs(JsBarcode_1);
-const POSITIONS = {
-  nameTop: 44.5,
-  nameHeight: 16,
-  priceTop: 63,
-  priceHeight: 11,
-  barcodeTop: 77,
-  barcodeHeight: 14,
-  barcodeLeft: 8,
-  barcodeWidth: 84
+const LABEL_WIDTH = 181;
+const LABEL_HEIGHT = 289;
+const INFO_LABEL_WIDTH = 289;
+const INFO_LABEL_HEIGHT = 181;
+const LABEL_ZONES = {
+  topImage: { x: 10, y: 169, w: 161, h: 104 },
+  contentPanel: { x: 10, y: 10, w: 161, h: 145 },
+  name: { x: 20, y: 92, w: 141, h: 42 },
+  price: { x: 26, y: 54, w: 129, h: 24 },
+  barcode: { x: 30, y: 14, w: 121, h: 30 }
 };
+const INFO_LABEL_ZONES = {
+  topImage: { x: 12, y: 84, w: 132, h: 85 },
+  leftName: { x: 16, y: 48, w: 124, h: 26 },
+  leftPrice: { x: 26, y: 18, w: 104, h: 18 },
+  infoPanel: { x: 150, y: 10, w: 126, h: 161 },
+  infoText: { x: 156, y: 36, w: 114, h: 126 },
+  barcode: { x: 184, y: 12, w: 58, h: 28 }
+};
+const VERTICAL_INFO_LABEL_ZONES = {
+  topImage: { x: 10, y: 166, w: 161, h: 108 },
+  contentPanel: { x: 10, y: 10, w: 161, h: 150 },
+  title: { x: 20, y: 95, w: 141, h: 44 },
+  cookingTitle: { x: 20, y: 66, w: 141, h: 16 },
+  cookingBody: { x: 18, y: 28, w: 145, h: 34 }
+};
+const LOGO_ONLY_LABEL_ZONES = {
+  topImage: { x: 18, y: 86, w: 145, h: 120 }
+};
+const BUILT_IN_TEMPLATES = [
+  {
+    id: "avery5821",
+    name: "Base Label",
+    layout: "front",
+    width: LABEL_WIDTH,
+    height: LABEL_HEIGHT,
+    shellColor: "#f5efdc",
+    borderColor: "#efe6c8",
+    panelColor: "#ffffff",
+    topImageColor: "#ffffff",
+    textColor: "#1b2733"
+  },
+  {
+    id: "soft-sage",
+    name: "Soft Sage",
+    layout: "front",
+    width: LABEL_WIDTH,
+    height: LABEL_HEIGHT,
+    shellColor: "#edf1e7",
+    borderColor: "#d9e2d0",
+    panelColor: "#ffffff",
+    topImageColor: "#ffffff",
+    textColor: "#223127"
+  },
+  {
+    id: "info-card",
+    name: "Info Label",
+    layout: "info",
+    width: INFO_LABEL_WIDTH,
+    height: INFO_LABEL_HEIGHT,
+    shellColor: "#f6f2df",
+    borderColor: "#1b2733",
+    panelColor: "#f6f2df",
+    topImageColor: "#ffffff",
+    textColor: "#1b2733",
+    infoPanelColor: "#ffffff"
+  },
+  {
+    id: "vertical-instructions",
+    name: "Vertical Instructions",
+    layout: "vertical-info",
+    width: LABEL_WIDTH,
+    height: LABEL_HEIGHT,
+    shellColor: "#f6f2df",
+    borderColor: "#efe6c8",
+    panelColor: "#ffffff",
+    topImageColor: "#ffffff",
+    textColor: "#1b2733"
+  },
+  {
+    id: "logo-only",
+    name: "Logo Only",
+    layout: "logo-only",
+    width: LABEL_WIDTH,
+    height: LABEL_HEIGHT,
+    shellColor: "#ffffff",
+    borderColor: "#ffffff",
+    panelColor: "#ffffff",
+    topImageColor: "#ffffff",
+    textColor: "#1b2733"
+  }
+];
+function getLabelTemplate(templateId) {
+  return BUILT_IN_TEMPLATES.find((template) => template.id === templateId) ?? BUILT_IN_TEMPLATES[0];
+}
+function toPercentX(value, width = LABEL_WIDTH) {
+  return `${value / width * 100}%`;
+}
+function toPercentWidth(value, width = LABEL_WIDTH) {
+  return `${value / width * 100}%`;
+}
+function toPercentHeight(value, height = LABEL_HEIGHT) {
+  return `${value / height * 100}%`;
+}
+function toPercentTop(y2, zoneHeight = 0, canvasHeight = LABEL_HEIGHT) {
+  return `${(canvasHeight - y2 - zoneHeight) / canvasHeight * 100}%`;
+}
+const DEFAULT_TOP_LOGO_SRC = new URL("" + new URL("default-label-logo-DOqzg7y1.png", import.meta.url).href, import.meta.url).href;
 function LabelPreview({
   product,
-  templateDataUri,
   barcodeOverrideDataUri,
+  logoDataUri,
   scale = 1
 }) {
   const barcodeRef = reactExports.useRef(null);
+  const template = getLabelTemplate(product.templateId);
   reactExports.useEffect(() => {
-    if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri) return;
+    if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri || product.showBarcode === false) return;
     try {
       JsBarcode$1(barcodeRef.current, product.barcodeValue, {
         format: "CODE128",
-        width: 1.8,
-        height: 48,
+        width: template.layout === "info" ? 1.2 : 1.6,
+        height: template.layout === "info" ? 28 : 34,
         displayValue: true,
-        fontSize: 9,
-        margin: 2,
+        fontSize: template.layout === "info" ? 7 : 8,
+        margin: 1,
         background: "transparent",
-        lineColor: "#1a2332"
+        lineColor: template.textColor
       });
     } catch {
     }
-  }, [product.barcodeValue, barcodeOverrideDataUri]);
+  }, [barcodeOverrideDataUri, product.barcodeValue, product.showBarcode, template.layout, template.textColor]);
+  if (template.layout === "info") {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx(
+      InfoLabelPreview,
+      {
+        product,
+        template,
+        barcodeRef,
+        barcodeOverrideDataUri,
+        logoDataUri,
+        scale
+      }
+    );
+  }
+  if (template.layout === "vertical-info") {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx(
+      VerticalInfoLabelPreview,
+      {
+        product,
+        template,
+        logoDataUri,
+        scale
+      }
+    );
+  }
+  if (template.layout === "logo-only") {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx(
+      LogoOnlyLabelPreview,
+      {
+        template,
+        logoDataUri,
+        scale
+      }
+    );
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    FrontLabelPreview,
+    {
+      product,
+      template,
+      barcodeRef,
+      barcodeOverrideDataUri,
+      logoDataUri,
+      scale
+    }
+  );
+}
+function FrontLabelPreview({
+  product,
+  template,
+  barcodeRef,
+  barcodeOverrideDataUri,
+  logoDataUri,
+  scale
+}) {
   const name = product.name || "Product Name";
-  const price = product.price || "$0.00";
-  const nameFontSize = name.length > 22 ? "4.8cqw" : name.length > 14 ? "5.8cqw" : "7cqw";
-  const priceFontSize = price.length > 10 ? "6cqw" : "8cqw";
+  const price = product.price || "$13.99";
+  const nameFontSize = name.length > 30 ? "4.6cqw" : name.length > 18 ? "5.4cqw" : "6.6cqw";
+  const priceFontSize = price.length > 10 ? "6.6cqw" : "8.2cqw";
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
       style: {
         position: "relative",
         width: "100%",
-        aspectRatio: "181 / 289",
+        aspectRatio: `${template.width} / ${template.height}`,
         overflow: "hidden",
-        borderRadius: 12,
-        boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-        background: "#f5f0e8",
+        borderRadius: 18,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
+        background: template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0,
         containerType: "inline-size"
       },
       children: [
-        templateDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "img",
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, border: `1px solid ${template.borderColor}`, borderRadius: 18, pointerEvents: "none" } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          TopImage,
           {
-            src: templateDataUri,
-            alt: "Label template",
-            style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", display: "block" },
-            draggable: false
+            logoDataUri,
+            x: LABEL_ZONES.topImage.x,
+            y: LABEL_ZONES.topImage.y,
+            w: LABEL_ZONES.topImage.w,
+            h: LABEL_ZONES.topImage.h,
+            canvasWidth: template.width,
+            canvasHeight: template.height
           }
-        ) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, background: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94a3b8" }, children: "Template not found" }),
+        ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
             style: {
               position: "absolute",
-              top: "42%",
-              left: "3.5%",
-              right: "3.5%",
-              bottom: "3%",
-              background: "white",
-              borderRadius: "4%",
-              pointerEvents: "none"
+              top: toPercentTop(LABEL_ZONES.contentPanel.y, LABEL_ZONES.contentPanel.h, template.height),
+              left: toPercentX(LABEL_ZONES.contentPanel.x, template.width),
+              width: toPercentWidth(LABEL_ZONES.contentPanel.w, template.width),
+              height: toPercentHeight(LABEL_ZONES.contentPanel.h, template.height),
+              background: template.panelColor,
+              borderRadius: 12
             }
           }
         ),
@@ -11171,14 +11388,14 @@ function LabelPreview({
           {
             style: {
               position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${POSITIONS.nameTop}%`,
-              height: `${POSITIONS.nameHeight}%`,
+              top: toPercentTop(LABEL_ZONES.name.y, LABEL_ZONES.name.h, template.height),
+              left: toPercentX(LABEL_ZONES.name.x, template.width),
+              width: toPercentWidth(LABEL_ZONES.name.w, template.width),
+              height: toPercentHeight(LABEL_ZONES.name.h, template.height),
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               justifyContent: "center",
-              padding: "0 5%",
+              padding: "0 2%",
               pointerEvents: "none"
             },
             children: /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -11188,9 +11405,9 @@ function LabelPreview({
                   fontSize: nameFontSize,
                   fontFamily: '"Lora", Georgia, serif',
                   fontWeight: 700,
-                  color: "#1a2332",
+                  color: template.textColor,
                   textAlign: "center",
-                  lineHeight: 1.2,
+                  lineHeight: 1.05,
                   wordBreak: "break-word",
                   hyphens: "auto"
                 },
@@ -11199,19 +11416,18 @@ function LabelPreview({
             )
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
+        product.showPrice !== false && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
             style: {
               position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${POSITIONS.priceTop}%`,
-              height: `${POSITIONS.priceHeight}%`,
+              top: toPercentTop(LABEL_ZONES.price.y, LABEL_ZONES.price.h, template.height),
+              left: toPercentX(LABEL_ZONES.price.x, template.width),
+              width: toPercentWidth(LABEL_ZONES.price.w, template.width),
+              height: toPercentHeight(LABEL_ZONES.price.h, template.height),
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: "0 5%",
               pointerEvents: "none"
             },
             children: /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -11220,10 +11436,10 @@ function LabelPreview({
                 style: {
                   fontSize: priceFontSize,
                   fontFamily: '"Genty Demo", Georgia, serif',
-                  fontStyle: "normal",
                   fontWeight: 400,
-                  color: "#1a2332",
-                  textAlign: "center"
+                  color: template.textColor,
+                  textAlign: "center",
+                  lineHeight: 1
                 },
                 children: price
               }
@@ -11231,32 +11447,477 @@ function LabelPreview({
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
+          BarcodeBlock,
           {
-            style: {
-              position: "absolute",
-              top: `${POSITIONS.barcodeTop}%`,
-              height: `${POSITIONS.barcodeHeight}%`,
-              left: `${POSITIONS.barcodeLeft}%`,
-              width: `${POSITIONS.barcodeWidth}%`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              pointerEvents: "none"
-            },
-            children: barcodeOverrideDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "img",
-              {
-                src: barcodeOverrideDataUri,
-                alt: "Barcode",
-                style: { maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }
-              }
-            ) : /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { ref: barcodeRef, style: { maxHeight: "100%", maxWidth: "100%" } })
+            visible: product.showBarcode !== false,
+            barcodeRef,
+            barcodeOverrideDataUri,
+            x: LABEL_ZONES.barcode.x,
+            y: LABEL_ZONES.barcode.y,
+            w: LABEL_ZONES.barcode.w,
+            h: LABEL_ZONES.barcode.h,
+            canvasWidth: template.width,
+            canvasHeight: template.height
           }
         )
       ]
     }
   );
+}
+function InfoLabelPreview({
+  product,
+  template,
+  barcodeRef,
+  barcodeOverrideDataUri,
+  logoDataUri,
+  scale
+}) {
+  const name = product.name || "Product Name";
+  const price = product.price || "$8.99";
+  const infoCopySize = "clamp(6px, 2.9cqw, 10.67px)";
+  const infoHeadingSize = "clamp(6px, 3.2cqw, 12px)";
+  const infoNameSize = "clamp(6px, 4.2cqw, 12px)";
+  const infoPriceSize = "clamp(6px, 4.2cqw, 12px)";
+  const infoBodyFontFamily = '"Avenir Next Condensed Asset", "Avenir Next Condensed", "Avenir Next", "Arial Narrow", Arial, sans-serif';
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      style: {
+        position: "relative",
+        width: "100%",
+        aspectRatio: `${template.width} / ${template.height}`,
+        overflow: "hidden",
+        borderRadius: 18,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
+        background: template.shellColor,
+        transform: `scale(${scale})`,
+        transformOrigin: "top center",
+        flexShrink: 0,
+        containerType: "inline-size"
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, border: `2px solid ${template.borderColor}`, borderRadius: 18, pointerEvents: "none" } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          TopImage,
+          {
+            logoDataUri,
+            x: INFO_LABEL_ZONES.topImage.x,
+            y: INFO_LABEL_ZONES.topImage.y,
+            w: INFO_LABEL_ZONES.topImage.w,
+            h: INFO_LABEL_ZONES.topImage.h,
+            canvasWidth: template.width,
+            canvasHeight: template.height
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(INFO_LABEL_ZONES.infoPanel.y, INFO_LABEL_ZONES.infoPanel.h, template.height),
+              left: toPercentX(INFO_LABEL_ZONES.infoPanel.x, template.width),
+              width: toPercentWidth(INFO_LABEL_ZONES.infoPanel.w, template.width),
+              height: toPercentHeight(INFO_LABEL_ZONES.infoPanel.h, template.height),
+              background: template.infoPanelColor ?? "#fff",
+              borderRadius: 12
+            }
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(INFO_LABEL_ZONES.leftName.y, INFO_LABEL_ZONES.leftName.h, template.height),
+              left: toPercentX(INFO_LABEL_ZONES.leftName.x, template.width),
+              width: toPercentWidth(INFO_LABEL_ZONES.leftName.w, template.width),
+              height: toPercentHeight(INFO_LABEL_ZONES.leftName.h, template.height),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              padding: "0 2%",
+              pointerEvents: "none"
+            },
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "span",
+              {
+                style: {
+                  fontSize: infoNameSize,
+                  fontFamily: '"Lora", Georgia, serif',
+                  fontWeight: 700,
+                  color: template.textColor,
+                  lineHeight: 1.05
+                },
+                children: name
+              }
+            )
+          }
+        ),
+        product.showPrice !== false && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(INFO_LABEL_ZONES.leftPrice.y, INFO_LABEL_ZONES.leftPrice.h, template.height),
+              left: toPercentX(INFO_LABEL_ZONES.leftPrice.x, template.width),
+              width: toPercentWidth(INFO_LABEL_ZONES.leftPrice.w, template.width),
+              height: toPercentHeight(INFO_LABEL_ZONES.leftPrice.h, template.height),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none"
+            },
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "span",
+              {
+                style: {
+                  fontSize: infoPriceSize,
+                  fontFamily: '"Genty Demo", Georgia, serif',
+                  fontWeight: 400,
+                  color: template.textColor,
+                  lineHeight: 1
+                },
+                children: price
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(INFO_LABEL_ZONES.infoText.y, INFO_LABEL_ZONES.infoText.h, template.height),
+              left: toPercentX(INFO_LABEL_ZONES.infoText.x, template.width),
+              width: toPercentWidth(INFO_LABEL_ZONES.infoText.w, template.width),
+              height: toPercentHeight(INFO_LABEL_ZONES.infoText.h, template.height),
+              color: template.textColor,
+              fontFamily: '"Helvetica Neue", Arial, sans-serif',
+              pointerEvents: "none",
+              overflow: "hidden"
+            },
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                InfoSection,
+                {
+                  title: "Nutrition Facts:",
+                  body: joinInfo(product.servingInfo, product.nutritionInfo),
+                  bodySize: infoCopySize,
+                  titleSize: infoHeadingSize,
+                  bodyFontFamily: infoBodyFontFamily
+                }
+              ),
+              product.showCookingInstructions !== false && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                InfoSection,
+                {
+                  title: "Cooking Instructions",
+                  body: product.cookingInstructions || "Add cooking instructions",
+                  bodySize: infoCopySize,
+                  titleSize: infoHeadingSize,
+                  bodyFontFamily: infoBodyFontFamily
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                InfoSection,
+                {
+                  title: "Ingredients:",
+                  body: product.ingredients || "Add ingredients",
+                  bodySize: infoCopySize,
+                  titleSize: infoHeadingSize,
+                  bodyFontFamily: infoBodyFontFamily
+                }
+              ),
+              !!product.allergenStatement && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: "1.8cqw 0 0", fontSize: infoCopySize, lineHeight: 1.25, fontStyle: "italic", color: "#3f3f46", fontFamily: infoBodyFontFamily }, children: product.allergenStatement })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          BarcodeBlock,
+          {
+            visible: product.showBarcode !== false,
+            barcodeRef,
+            barcodeOverrideDataUri,
+            x: INFO_LABEL_ZONES.barcode.x,
+            y: INFO_LABEL_ZONES.barcode.y,
+            w: INFO_LABEL_ZONES.barcode.w,
+            h: INFO_LABEL_ZONES.barcode.h,
+            canvasWidth: template.width,
+            canvasHeight: template.height
+          }
+        )
+      ]
+    }
+  );
+}
+function VerticalInfoLabelPreview({
+  product,
+  template,
+  logoDataUri,
+  scale
+}) {
+  const name = product.name || "Product Title";
+  const titleSize = name.length > 26 ? "4.8cqw" : name.length > 16 ? "5.8cqw" : "6.8cqw";
+  const showCookingInstructions = product.showCookingInstructions !== false;
+  const cookingCopy = product.cookingInstructions || "Add cooking instructions";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      style: {
+        position: "relative",
+        width: "100%",
+        aspectRatio: `${template.width} / ${template.height}`,
+        overflow: "hidden",
+        borderRadius: 18,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
+        background: template.shellColor,
+        transform: `scale(${scale})`,
+        transformOrigin: "top center",
+        flexShrink: 0,
+        containerType: "inline-size"
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, border: `1px solid ${template.borderColor}`, borderRadius: 18, pointerEvents: "none" } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          TopImage,
+          {
+            logoDataUri,
+            x: VERTICAL_INFO_LABEL_ZONES.topImage.x,
+            y: VERTICAL_INFO_LABEL_ZONES.topImage.y,
+            w: VERTICAL_INFO_LABEL_ZONES.topImage.w,
+            h: VERTICAL_INFO_LABEL_ZONES.topImage.h,
+            canvasWidth: template.width,
+            canvasHeight: template.height
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.contentPanel.y, VERTICAL_INFO_LABEL_ZONES.contentPanel.h, template.height),
+              left: toPercentX(VERTICAL_INFO_LABEL_ZONES.contentPanel.x, template.width),
+              width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.contentPanel.w, template.width),
+              height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.contentPanel.h, template.height),
+              background: template.panelColor,
+              borderRadius: 12
+            }
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.title.y, VERTICAL_INFO_LABEL_ZONES.title.h, template.height),
+              left: toPercentX(VERTICAL_INFO_LABEL_ZONES.title.x, template.width),
+              width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.title.w, template.width),
+              height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.title.h, template.height),
+              display: "flex",
+              alignItems: showCookingInstructions ? "flex-start" : "center",
+              justifyContent: "center",
+              padding: "0 2%",
+              pointerEvents: "none"
+            },
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "span",
+              {
+                style: {
+                  fontSize: titleSize,
+                  fontFamily: '"Lora", Georgia, serif',
+                  fontWeight: 700,
+                  color: template.textColor,
+                  textAlign: "center",
+                  lineHeight: 1.02,
+                  wordBreak: "break-word",
+                  hyphens: "auto"
+                },
+                children: name
+              }
+            )
+          }
+        ),
+        showCookingInstructions && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              style: {
+                position: "absolute",
+                top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.cookingTitle.y, VERTICAL_INFO_LABEL_ZONES.cookingTitle.h, template.height),
+                left: toPercentX(VERTICAL_INFO_LABEL_ZONES.cookingTitle.x, template.width),
+                width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.cookingTitle.w, template.width),
+                height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.cookingTitle.h, template.height),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none"
+              },
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  style: {
+                    fontSize: "3.6cqw",
+                    fontFamily: '"Helvetica Neue", Arial, sans-serif',
+                    fontWeight: 700,
+                    color: template.textColor,
+                    textAlign: "center",
+                    lineHeight: 1.1
+                  },
+                  children: "Cooking Instructions"
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              style: {
+                position: "absolute",
+                top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.cookingBody.y, VERTICAL_INFO_LABEL_ZONES.cookingBody.h, template.height),
+                left: toPercentX(VERTICAL_INFO_LABEL_ZONES.cookingBody.x, template.width),
+                width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.cookingBody.w, template.width),
+                height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.cookingBody.h, template.height),
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "center",
+                pointerEvents: "none",
+                overflow: "hidden"
+              },
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  style: {
+                    fontSize: "2.8cqw",
+                    fontFamily: '"Avenir Next Condensed Asset", "Avenir Next Condensed", "Avenir Next", "Arial Narrow", Arial, sans-serif',
+                    fontWeight: 400,
+                    color: template.textColor,
+                    textAlign: "center",
+                    lineHeight: 1.16,
+                    whiteSpace: "pre-wrap"
+                  },
+                  children: cookingCopy
+                }
+              )
+            }
+          )
+        ] })
+      ]
+    }
+  );
+}
+function LogoOnlyLabelPreview({
+  template,
+  logoDataUri,
+  scale
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      style: {
+        position: "relative",
+        width: "100%",
+        aspectRatio: `${template.width} / ${template.height}`,
+        overflow: "hidden",
+        borderRadius: 18,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
+        background: template.shellColor,
+        transform: `scale(${scale})`,
+        transformOrigin: "top center",
+        flexShrink: 0,
+        containerType: "inline-size"
+      },
+      children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TopImage,
+        {
+          logoDataUri,
+          x: LOGO_ONLY_LABEL_ZONES.topImage.x,
+          y: LOGO_ONLY_LABEL_ZONES.topImage.y,
+          w: LOGO_ONLY_LABEL_ZONES.topImage.w,
+          h: LOGO_ONLY_LABEL_ZONES.topImage.h,
+          canvasWidth: template.width,
+          canvasHeight: template.height
+        }
+      )
+    }
+  );
+}
+function TopImage({
+  logoDataUri,
+  x: x2,
+  y: y2,
+  w: w2,
+  h,
+  canvasWidth,
+  canvasHeight
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      style: {
+        position: "absolute",
+        top: toPercentTop(y2, h, canvasHeight),
+        left: toPercentX(x2, canvasWidth),
+        width: toPercentWidth(w2, canvasWidth),
+        height: toPercentHeight(h, canvasHeight),
+        overflow: "hidden",
+        background: "transparent"
+      },
+      children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "img",
+        {
+          src: logoDataUri || DEFAULT_TOP_LOGO_SRC,
+          alt: "Top label image",
+          style: { width: "auto", height: "100%", margin: "0 auto", display: "block" },
+          draggable: false
+        }
+      )
+    }
+  );
+}
+function BarcodeBlock({
+  visible,
+  barcodeRef,
+  barcodeOverrideDataUri,
+  x: x2,
+  y: y2,
+  w: w2,
+  h,
+  canvasWidth,
+  canvasHeight
+}) {
+  if (!visible) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      style: {
+        position: "absolute",
+        top: toPercentTop(y2, h, canvasHeight),
+        left: toPercentX(x2, canvasWidth),
+        width: toPercentWidth(w2, canvasWidth),
+        height: toPercentHeight(h, canvasHeight),
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none"
+      },
+      children: barcodeOverrideDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: barcodeOverrideDataUri, alt: "Barcode", style: { width: "100%", height: "100%", objectFit: "contain" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { ref: barcodeRef, style: { width: "100%", height: "100%" } })
+    }
+  );
+}
+function InfoSection({
+  title,
+  body,
+  bodySize,
+  titleSize = "clamp(6px, 3.2cqw, 12px)",
+  bodyFontFamily
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: "2cqw" }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: 0, fontSize: titleSize, fontWeight: 700, lineHeight: 1.2 }, children: title }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: "0.4cqw 0 0", fontSize: bodySize, lineHeight: 1.25, whiteSpace: "pre-wrap", fontFamily: bodyFontFamily }, children: body })
+  ] });
+}
+function joinInfo(servingInfo, nutritionInfo) {
+  return [servingInfo, nutritionInfo].filter(Boolean).join(" | ") || "Add serving and nutrition info";
 }
 function generateBarcodeValue() {
   const num = Math.floor(Math.random() * 9e11) + 1e11;
@@ -11266,33 +11927,55 @@ const EMPTY_PRODUCT = () => ({
   name: "",
   price: "",
   category: "",
+  servingInfo: "",
+  nutritionInfo: "",
+  cookingInstructions: "",
+  ingredients: "",
+  allergenStatement: "",
   barcodeValue: generateBarcodeValue(),
   barcodeType: "CODE128",
   barcodeImagePath: null,
-  templateId: "avery5821"
+  logoImagePath: null,
+  templateId: "avery5821",
+  showPrice: true,
+  showBarcode: true,
+  showCookingInstructions: true
 });
 function Editor({ initialProduct, onBack, onOpenSheet }) {
   const isNew = !initialProduct;
   const [product, setProduct] = reactExports.useState(
     initialProduct ?? EMPTY_PRODUCT()
   );
-  const [templateDataUri, setTemplateDataUri] = reactExports.useState("");
   const [barcodeOverrideDataUri, setBarcodeOverrideDataUri] = reactExports.useState("");
+  const [logoDataUri, setLogoDataUri] = reactExports.useState("");
+  const [templates, setTemplates] = reactExports.useState([]);
   const [saveStatus, setSaveStatus] = reactExports.useState("idle");
   const [saveError, setSaveError] = reactExports.useState("");
   const [exporting, setExporting] = reactExports.useState(false);
   const [regenConfirm, setRegenConfirm] = reactExports.useState(false);
   reactExports.useEffect(() => {
-    window.api.file.getTemplatePNG().then((r2) => {
-      if (r2.ok && r2.data) setTemplateDataUri(r2.data);
+    window.api.file.listTemplates().then((r2) => {
+      if (r2.ok) setTemplates(r2.data);
     });
   }, []);
   reactExports.useEffect(() => {
-    if (!initialProduct?.barcodeImagePath) return;
-    window.api.file.readImageAsBase64(initialProduct.barcodeImagePath).then((r2) => {
+    if (!product.barcodeImagePath) {
+      setBarcodeOverrideDataUri("");
+      return;
+    }
+    window.api.file.readImageAsBase64(product.barcodeImagePath).then((r2) => {
       if (r2.ok && r2.data) setBarcodeOverrideDataUri(r2.data);
     });
-  }, [initialProduct?.barcodeImagePath]);
+  }, [product.barcodeImagePath]);
+  reactExports.useEffect(() => {
+    if (!product.logoImagePath) {
+      setLogoDataUri("");
+      return;
+    }
+    window.api.file.readImageAsBase64(product.logoImagePath).then((r2) => {
+      if (r2.ok && r2.data) setLogoDataUri(r2.data);
+    });
+  }, [product.logoImagePath]);
   const barcodeValidity = reactExports.useMemo(() => {
     const value = (product.barcodeValue ?? "").trim();
     if (!value) return null;
@@ -11307,22 +11990,35 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       return false;
     }
   }, [product.barcodeValue]);
+  const activeTemplate = reactExports.useMemo(
+    () => getLabelTemplate(product.templateId),
+    [product.templateId]
+  );
+  const usesPrice = activeTemplate.layout === "front" || activeTemplate.layout === "info";
+  const usesBarcode = activeTemplate.layout === "front" || activeTemplate.layout === "info";
+  const usesCookingInstructions = activeTemplate.layout === "info" || activeTemplate.layout === "vertical-info";
+  const requiresName = activeTemplate.layout !== "logo-only";
+  const templateNote = activeTemplate.layout === "front" ? "Classic vertical label with name, optional price, and optional barcode." : activeTemplate.layout === "info" ? "Landscape info label with nutrition, ingredients, and optional cooking instructions." : activeTemplate.layout === "vertical-info" ? "Vertical label with a title and cooking instructions below the logo." : "Minimal white label that renders only the logo.";
   function update(field, value) {
     setProduct((prev) => ({ ...prev, [field]: value }));
     if (saveStatus === "saved") setSaveStatus("idle");
   }
+  function updateFlag(field, value) {
+    setProduct((prev) => ({ ...prev, [field]: value }));
+    if (saveStatus === "saved") setSaveStatus("idle");
+  }
   async function handleSave() {
-    if (!product.name?.trim()) {
+    if (requiresName && !product.name?.trim()) {
       setSaveError("Product name is required.");
       setSaveStatus("error");
       return null;
     }
-    if (!product.price?.trim()) {
+    if (usesPrice && product.showPrice !== false && !product.price?.trim()) {
       setSaveError("Price is required.");
       setSaveStatus("error");
       return null;
     }
-    if (!product.barcodeValue?.trim()) {
+    if (usesBarcode && product.showBarcode !== false && !product.barcodeValue?.trim() && !product.barcodeImagePath) {
       setSaveError("Barcode value is required.");
       setSaveStatus("error");
       return null;
@@ -11333,17 +12029,26 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     if (isNew || !product.id) {
       result = await window.api.product.create({
         name: product.name,
-        price: product.price,
+        price: product.price ?? "",
+        showPrice: product.showPrice ?? true,
         category: product.category ?? "",
-        barcodeValue: product.barcodeValue.trim(),
+        servingInfo: product.servingInfo ?? "",
+        nutritionInfo: product.nutritionInfo ?? "",
+        cookingInstructions: product.cookingInstructions ?? "",
+        ingredients: product.ingredients ?? "",
+        allergenStatement: product.allergenStatement ?? "",
+        barcodeValue: (product.barcodeValue ?? "").trim(),
+        showBarcode: product.showBarcode ?? true,
         barcodeType: "CODE128",
         barcodeImagePath: product.barcodeImagePath ?? null,
-        templateId: "avery5821"
+        logoImagePath: product.logoImagePath ?? null,
+        templateId: product.templateId ?? "avery5821",
+        showCookingInstructions: product.showCookingInstructions ?? true
       });
     } else {
       result = await window.api.product.update({
         ...product,
-        barcodeValue: product.barcodeValue.trim()
+        barcodeValue: (product.barcodeValue ?? "").trim()
       });
     }
     if (result.ok) {
@@ -11393,9 +12098,27 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     if (b64Result.ok && b64Result.data) setBarcodeOverrideDataUri(b64Result.data);
     setSaveStatus("idle");
   }
+  async function handleUploadLogo() {
+    const pickedResult = await window.api.file.pickLogoImage();
+    if (!pickedResult.ok || !pickedResult.data) return;
+    const sourcePath = pickedResult.data;
+    const productId = product.id ?? `tmp-${Date.now()}`;
+    const saveResult = await window.api.file.saveLogoImage(sourcePath, productId);
+    if (!saveResult.ok) {
+      alert(`Failed to save top image: ${saveResult.error}`);
+      return;
+    }
+    setProduct((prev) => ({ ...prev, logoImagePath: saveResult.data }));
+    setSaveStatus("idle");
+  }
   function handleRemoveBarcodeImage() {
     setProduct((prev) => ({ ...prev, barcodeImagePath: null }));
     setBarcodeOverrideDataUri("");
+    setSaveStatus("idle");
+  }
+  function handleRemoveLogo() {
+    setProduct((prev) => ({ ...prev, logoImagePath: null }));
+    setLogoDataUri("");
     setSaveStatus("idle");
   }
   function handleRegen() {
@@ -11472,8 +12195,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
           LabelPreview,
           {
             product,
-            templateDataUri,
-            barcodeOverrideDataUri
+            barcodeOverrideDataUri,
+            logoDataUri
           }
         ) }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { fontSize: 11, color: "#94a3b8", textAlign: "center", lineHeight: 1.5, margin: 0 }, children: [
@@ -11484,7 +12207,10 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, overflowY: "auto", background: "white", padding: "28px 24px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 20 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Product Name *" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "label-text", children: [
+            "Product Name ",
+            requiresName ? "*" : "(optional)"
+          ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "input",
             {
@@ -11497,8 +12223,24 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
             }
           )
         ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 12 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", style: { marginBottom: 0 }, children: "Template" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "select",
+            {
+              className: "input",
+              value: product.templateId ?? "avery5821",
+              onChange: (e) => update("templateId", e.target.value),
+              children: templates.map((template) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: template.id, children: template.name }, template.id))
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: templateNote })
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Price *" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "label-text", children: [
+            "Price ",
+            usesPrice && product.showPrice !== false ? "*" : "(optional)"
+          ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "input",
             {
@@ -11523,6 +12265,141 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               maxLength: 60
             }
           )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 14 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", style: { marginBottom: 0 }, children: "Details Panel" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Serving Info" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                className: "input",
+                rows: 2,
+                placeholder: "e.g. Serving Size: 1 oz | Calories 25",
+                value: product.servingInfo ?? "",
+                onChange: (e) => update("servingInfo", e.target.value),
+                style: { resize: "vertical", minHeight: 56 }
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Nutrition Info" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                className: "input",
+                rows: 3,
+                placeholder: "e.g. Total Fat 0g | Total Carbohydrates 3g | Sodium 150mg | Protein 1g",
+                value: product.nutritionInfo ?? "",
+                onChange: (e) => update("nutritionInfo", e.target.value),
+                style: { resize: "vertical", minHeight: 72 }
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Cooking Instructions" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                className: "input",
+                rows: 2,
+                placeholder: "e.g. Fry at 365° for 5 minutes",
+                value: product.cookingInstructions ?? "",
+                onChange: (e) => update("cookingInstructions", e.target.value),
+                style: { resize: "vertical", minHeight: 56 }
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Ingredients" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                className: "input",
+                rows: 3,
+                placeholder: "e.g. water, chickpea flour, salt",
+                value: product.ingredients ?? "",
+                onChange: (e) => update("ingredients", e.target.value),
+                style: { resize: "vertical", minHeight: 72 }
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Allergen / Handling Note" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "textarea",
+              {
+                className: "input",
+                rows: 3,
+                placeholder: "e.g. Manufactured on equipment that also handles eggs, wheat...",
+                value: product.allergenStatement ?? "",
+                onChange: (e) => update("allergenStatement", e.target.value),
+                style: { resize: "vertical", minHeight: 72 }
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 12 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", style: { marginBottom: 0 }, children: "Display Options" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#334155", cursor: "pointer" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                type: "checkbox",
+                checked: product.showPrice !== false,
+                onChange: (e) => updateFlag("showPrice", e.target.checked),
+                disabled: !usesPrice
+              }
+            ),
+            "Show price on label"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#334155", cursor: "pointer" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                type: "checkbox",
+                checked: product.showBarcode !== false,
+                onChange: (e) => updateFlag("showBarcode", e.target.checked),
+                disabled: !usesBarcode
+              }
+            ),
+            "Show barcode on label"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#334155", cursor: "pointer" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                type: "checkbox",
+                checked: product.showCookingInstructions !== false,
+                onChange: (e) => updateFlag("showCookingInstructions", e.target.checked),
+                disabled: !usesCookingInstructions
+              }
+            ),
+            "Show cooking instructions"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: "Disabled options are ignored by the selected template." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 12 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", style: { marginBottom: 0 }, children: "Top Image" }) }),
+          logoDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "img",
+              {
+                src: logoDataUri,
+                alt: "Uploaded top image",
+                style: { width: 88, height: 44, objectFit: "contain", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: 4 }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, color: "#64748b", flex: 1 }, children: "Fills the image area at the top of the label." }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleRemoveLogo, className: "btn-ghost btn-sm", style: { color: "#f87171" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 12 }),
+              " Remove"
+            ] })
+          ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleUploadLogo, className: "btn-outline btn-sm", style: { alignSelf: "flex-start" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 12 }),
+            " Upload image"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: "If you leave this empty, the default Grazia's logo is used. Uploading an image overrides it for this product only." })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 12 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
@@ -11550,8 +12427,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               }
             ),
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "You can type your own barcode or regenerate one automatically." }),
-            barcodeValidity === false && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#dc2626", marginTop: 5 }, children: "This value cannot be rendered as Code 128." }),
-            barcodeValidity === true && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#16a34a", marginTop: 5 }, children: "Valid Code 128 value." })
+            usesBarcode && product.showBarcode !== false && barcodeValidity === false && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#dc2626", marginTop: 5 }, children: "This value cannot be rendered as Code 128." }),
+            usesBarcode && product.showBarcode !== false && barcodeValidity === true && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#16a34a", marginTop: 5 }, children: "Valid Code 128 value." })
           ] }),
           barcodeOverrideDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -11855,6 +12732,8 @@ function SheetSlotPreview({
   onClick
 }) {
   const SLOT_ASPECT = 4 / 2.5;
+  const template = product ? getLabelTemplate(product.templateId) : null;
+  const isInfoLayout = template?.layout === "info";
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     "div",
     {
@@ -11887,9 +12766,10 @@ function SheetSlotPreview({
             "div",
             {
               style: {
-                height: `${SLOT_ASPECT * 100}%`,
-                aspectRatio: "181 / 289",
-                transform: "rotate(-90deg)",
+                width: isInfoLayout ? "100%" : "auto",
+                height: isInfoLayout ? "auto" : `${SLOT_ASPECT * 100}%`,
+                aspectRatio: isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : "181 / 289",
+                transform: isInfoLayout ? "none" : "rotate(-90deg)",
                 transformOrigin: "center",
                 flexShrink: 0
               },
@@ -12022,8 +12902,8 @@ function Settings() {
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 10, fontSize: 13, color: "#475569" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Info, { size: 15, style: { marginTop: 1, color: "#3b82f6", flexShrink: 0 } }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 500, margin: 0 }, children: "Avery 5821 Layout" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 2 }, children: '8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows. Labels printed landscape (4" × 2.5" per slot). Margins: 0.25" left/right, 0.5" top/bottom.' })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 500, margin: 0 }, children: "Avery 5821 Layout and Alternatives" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 2 }, children: '8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows. Labels printed landscape (4" × 2.5" per slot). Margins: 0.25" left/right, 0.5" top/bottom. Product templates are now built from modular header, brand, and content zones and can be selected per label.' })
             ] })
           ] })
         ] })

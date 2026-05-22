@@ -6,10 +6,19 @@ export interface Product {
   name: string
   price: string
   category: string
+  servingInfo: string
+  nutritionInfo: string
+  cookingInstructions: string
+  ingredients: string
+  allergenStatement: string
   barcodeValue: string
   barcodeType: 'CODE128'
   barcodeImagePath: string | null
+  logoImagePath: string | null
   templateId: string
+  showPrice: boolean
+  showBarcode: boolean
+  showCookingInstructions: boolean
   createdAt: string
   updatedAt: string
 }
@@ -20,6 +29,11 @@ export interface AppSettings {
   exportFolder: string
   templateId: string
   pricePrefix: string
+}
+
+export interface LabelTemplate {
+  id: string
+  name: string
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -44,8 +58,13 @@ declare global {
       file: {
         pickBarcodeImage(): Promise<IpcResult<string | null>>
         saveBarcodeImage(sourcePath: string, productId: string): Promise<IpcResult<string>>
+        pickLogoImage(): Promise<IpcResult<string | null>>
+        saveLogoImage(sourcePath: string, productId: string): Promise<IpcResult<string>>
         readImageAsBase64(filePath: string): Promise<IpcResult<string>>
-        getTemplatePNG(): Promise<IpcResult<string>>
+        getTemplatePNG(templateId?: string | null): Promise<IpcResult<string>>
+        listTemplates(): Promise<IpcResult<LabelTemplate[]>>
+        pickTemplateImage(): Promise<IpcResult<string | null>>
+        saveTemplateImage(sourcePath: string): Promise<IpcResult<LabelTemplate>>
         pickExportFolder(): Promise<IpcResult<string | null>>
       }
       export: {

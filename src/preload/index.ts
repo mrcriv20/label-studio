@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Product, AppSettings } from '../main/types'
+import type { Product, AppSettings, LabelTemplate } from '../main/types'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -35,10 +35,22 @@ const api = {
       sourcePath: string,
       productId: string
     ): Promise<IpcResult<string>> => ipcRenderer.invoke('file:saveBarcodeImage', sourcePath, productId),
+    pickLogoImage: (): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('file:pickLogoImage'),
+    saveLogoImage: (
+      sourcePath: string,
+      productId: string
+    ): Promise<IpcResult<string>> => ipcRenderer.invoke('file:saveLogoImage', sourcePath, productId),
     readImageAsBase64: (filePath: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke('file:readImageAsBase64', filePath),
-    getTemplatePNG: (): Promise<IpcResult<string>> =>
-      ipcRenderer.invoke('file:getTemplatePNG'),
+    getTemplatePNG: (templateId?: string | null): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke('file:getTemplatePNG', templateId),
+    listTemplates: (): Promise<IpcResult<LabelTemplate[]>> =>
+      ipcRenderer.invoke('file:listTemplates'),
+    pickTemplateImage: (): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('file:pickTemplateImage'),
+    saveTemplateImage: (sourcePath: string): Promise<IpcResult<LabelTemplate>> =>
+      ipcRenderer.invoke('file:saveTemplateImage', sourcePath),
     pickExportFolder: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('file:pickExportFolder'),
   },

@@ -37,6 +37,10 @@ export function initDatabase(): void {
     }
   }
   loadSettings()
+  const normalised = _db.products.map((product) => normalizeProduct(product))
+  const changed = JSON.stringify(normalised) !== JSON.stringify(_db.products)
+  _db = { products: normalised }
+  if (changed) saveDB()
 }
 
 function saveDB(): void {
@@ -81,16 +85,16 @@ export function getProduct(id: string): Product | null {
 }
 
 export function createProduct(p: Product): void {
-  _db.products.push(p)
+  _db.products.push(normalizeProduct(p))
   saveDB()
 }
 
 export function updateProduct(updated: Product): void {
   const idx = _db.products.findIndex((p) => p.id === updated.id)
   if (idx !== -1) {
-    _db.products[idx] = updated
+    _db.products[idx] = normalizeProduct(updated)
   } else {
-    _db.products.push(updated)
+    _db.products.push(normalizeProduct(updated))
   }
   saveDB()
 }
@@ -109,4 +113,29 @@ export function getSettings(): AppSettings {
 export function setSetting(key: string, value: string): void {
   _settings = { ..._settings!, [key]: value } as AppSettings
   saveSettings()
+}
+
+function normalizeProduct(product: Product): Product {
+  const now = new Date().toISOString()
+  return {
+    id: product.id,
+    name: product.name ?? '',
+    price: product.price ?? '',
+    category: product.category ?? '',
+    servingInfo: product.servingInfo ?? '',
+    nutritionInfo: product.nutritionInfo ?? '',
+    cookingInstructions: product.cookingInstructions ?? '',
+    ingredients: product.ingredients ?? '',
+    allergenStatement: product.allergenStatement ?? '',
+    barcodeValue: product.barcodeValue ?? '',
+    barcodeType: 'CODE128',
+    barcodeImagePath: product.barcodeImagePath ?? null,
+    logoImagePath: product.logoImagePath ?? null,
+    templateId: product.templateId || _settings?.templateId || 'avery5821',
+    showPrice: product.showPrice ?? true,
+    showBarcode: product.showBarcode ?? true,
+    showCookingInstructions: product.showCookingInstructions ?? true,
+    createdAt: product.createdAt ?? now,
+    updatedAt: product.updatedAt ?? now,
+  }
 }

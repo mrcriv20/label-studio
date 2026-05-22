@@ -134,10 +134,11 @@ export default function Settings(): JSX.Element {
               <div style={{ display: 'flex', gap: 10, fontSize: 13, color: '#475569' }}>
                 <Info size={15} style={{ marginTop: 1, color: '#3b82f6', flexShrink: 0 }} />
                 <div>
-                  <p style={{ fontWeight: 500, margin: 0 }}>Avery 5821 Layout</p>
+                  <p style={{ fontWeight: 500, margin: 0 }}>Avery 5821 Layout and Alternatives</p>
                   <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                     8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows.
                     Labels printed landscape (4" × 2.5" per slot). Margins: 0.25" left/right, 0.5" top/bottom.
+                    Product templates are now built from modular header, brand, and content zones and can be selected per label.
                   </p>
                 </div>
               </div>

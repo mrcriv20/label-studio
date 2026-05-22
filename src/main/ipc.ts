@@ -14,8 +14,16 @@ import {
   getSettings,
   setSetting,
 } from './database'
-import { saveBarcodeImage, readImageAsBase64, readTemplatePNGBase64 } from './fileManager'
+import {
+  saveBarcodeImage,
+  saveLogoImage,
+  saveTemplateImage,
+  readImageAsBase64,
+  readTemplatePNGBase64,
+  listTemplates,
+} from './fileManager'
 import { exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import { getLabelTemplate } from '../shared/labelTemplates'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -147,10 +155,19 @@ export function registerIpcHandlers(): void {
           name,
           price: normalPrice,
           category,
+          servingInfo: '',
+          nutritionInfo: '',
+          cookingInstructions: '',
+          ingredients: '',
+          allergenStatement: '',
           barcodeValue: barcode,
           barcodeType: 'CODE128',
           barcodeImagePath: null,
+          logoImagePath: null,
           templateId: settings.templateId,
+          showPrice: true,
+          showBarcode: true,
+          showCookingInstructions: true,
           createdAt: now,
           updatedAt: now,
         }
@@ -195,13 +212,54 @@ export function registerIpcHandlers(): void {
     } catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle('file:pickLogoImage', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Logo Image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      return ok(result.filePaths[0])
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('file:saveLogoImage', (_e, sourcePath: string, productId: string) => {
+    try {
+      const dest = saveLogoImage(sourcePath, productId)
+      return ok(dest)
+    } catch (e) { return fail(String(e)) }
+  })
+
   ipcMain.handle('file:readImageAsBase64', (_e, filePath: string) => {
     try { return ok(readImageAsBase64(filePath)) }
     catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle('file:getTemplatePNG', () => {
-    try { return ok(readTemplatePNGBase64()) }
+  ipcMain.handle('file:getTemplatePNG', (_e, templateId?: string | null) => {
+    try { return ok(readTemplatePNGBase64(templateId || undefined)) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('file:listTemplates', () => {
+    try { return ok(listTemplates()) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('file:pickTemplateImage', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Template Image',
+        filters: [{ name: 'PNG Images', extensions: ['png'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      return ok(result.filePaths[0])
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('file:saveTemplateImage', (_e, sourcePath: string) => {
+    try { return ok(saveTemplateImage(sourcePath)) }
     catch (e) { return fail(String(e)) }
   })
 
@@ -340,6 +398,7 @@ async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
 
 async function buildSheetPrintHtml(products: Product[], startSlot: number): Promise<string> {
   const slotHtml: string[] = []
+  const pageBackground = '#f6f2df'
 
   for (let slot = 1; slot <= 8; slot++) {
     const pIdx = slot - startSlot
@@ -354,10 +413,12 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
 
     const svg = await exportSingleLabelSVG(product)
     const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    const template = getLabelTemplate(product.templateId)
+    const labelClass = template.layout === 'info' ? 'label-horizontal' : 'label-rotated'
 
     slotHtml.push(`
       <div class="slot" style="left:${leftIn}in; top:${topIn}in;">
-        <div class="label-rotated">
+        <div class="${labelClass}">
           <img src="${svgDataUri}" alt="${escapeHtml(product.name)}" />
         </div>
       </div>
@@ -376,7 +437,7 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         padding: 0;
         width: 8.5in;
         height: 11in;
-        background: white;
+        background: ${pageBackground};
       }
       * {
         box-sizing: border-box;
@@ -388,7 +449,7 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         width: 8.5in;
         height: 11in;
         overflow: hidden;
-        background: white;
+        background: ${pageBackground};
       }
       .slot {
         position: absolute;
@@ -405,7 +466,22 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         transform: translate(-50%, -50%) rotate(90deg);
         transform-origin: center;
       }
+      .label-horizontal {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 4in;
+        height: 2.5in;
+        transform: translate(-50%, -50%);
+        transform-origin: center;
+      }
       .label-rotated img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        display: block;
+      }
+      .label-horizontal img {
         width: 100%;
         height: 100%;
         object-fit: fill;

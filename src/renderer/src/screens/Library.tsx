@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Edit2, Copy, Trash2, FileText, Layers, RefreshCw, Upload, Tag } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Search, Plus, Edit2, Copy, Trash2, FileText, Layers, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Product } from '../types'
 
 interface Props {
@@ -8,6 +8,8 @@ interface Props {
 }
 
 export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
+  type SortKey = 'name' | 'price' | 'barcodeValue' | 'updatedAt'
+
   const [products, setProducts] = useState<Product[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -15,8 +17,9 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-
   const [activeCategory, setActiveCategory] = useState<string>('__all__')
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -44,28 +47,43 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
     (p) => activeCategory === '__all__' || (p.category?.trim() || '') === activeCategory
   )
 
-  // Group by category for display (only when showing all)
-  type Group = { label: string; items: Product[] }
-  function buildGroups(items: Product[]): Group[] {
-    if (activeCategory !== '__all__' || categories.length === 0) {
-      return [{ label: '', items }]
+  const sortedProducts = useMemo(() => {
+    const items = [...categoryFiltered]
+    items.sort((a, b) => {
+      const direction = sortDirection === 'asc' ? 1 : -1
+
+      if (sortKey === 'price') {
+        return direction * (parsePrice(a.price) - parsePrice(b.price))
+      }
+
+      if (sortKey === 'updatedAt') {
+        return direction * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
+      }
+
+      const aValue = (a[sortKey] ?? '').toString()
+      const bValue = (b[sortKey] ?? '').toString()
+      return direction * aValue.localeCompare(bValue, undefined, { numeric: true, sensitivity: 'base' })
+    })
+    return items
+  }, [categoryFiltered, sortDirection, sortKey])
+
+  function parsePrice(value: string): number {
+    const numeric = Number.parseFloat(value.replace(/[^0-9.-]/g, ''))
+    return Number.isNaN(numeric) ? Number.NEGATIVE_INFINITY : numeric
+  }
+
+  function toggleSort(nextKey: SortKey): void {
+    if (sortKey === nextKey) {
+      setSortDirection((prev) => prev === 'asc' ? 'desc' : 'asc')
+      return
     }
-    const map = new Map<string, Product[]>()
-    for (const p of items) {
-      const key = p.category?.trim() || ''
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(p)
-    }
-    const groups: Group[] = []
-    // Named categories first, sorted
-    for (const cat of categories) {
-      const rows = map.get(cat)
-      if (rows?.length) groups.push({ label: cat, items: rows })
-    }
-    // Uncategorised last
-    const uncategorised = map.get('') ?? []
-    if (uncategorised.length) groups.push({ label: 'Uncategorised', items: uncategorised })
-    return groups
+    setSortKey(nextKey)
+    setSortDirection('asc')
+  }
+
+  function renderSortIcon(key: SortKey): JSX.Element {
+    if (sortKey !== key) return <ArrowUpDown size={12} />
+    return sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
   }
 
   async function handleDelete(id: string): Promise<void> {
@@ -126,7 +144,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
             <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
           </button>
           {products.length > 0 && (
-            <button onClick={() => onOpenSheet(products.slice(0, 8))} className="btn-outline btn-sm">
+            <button onClick={() => onOpenSheet(sortedProducts.slice(0, 8))} className="btn-outline btn-sm">
               <Layers size={13} /> Print Sheet
             </button>
           )}
@@ -192,7 +210,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, paddingTop: 60 }}>
           Loading products…
         </div>
-      ) : categoryFiltered.length === 0 ? (
+      ) : sortedProducts.length === 0 ? (
         <div className="card" style={{ padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 8 }}>
           <div style={{ fontSize: 40 }}>🏪</div>
           <p style={{ fontWeight: 600, color: '#1a2332', margin: 0 }}>
@@ -217,53 +235,58 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                 <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fafafa' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Product</th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Price</th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Barcode</th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Modified</th>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <button type="button" onClick={() => toggleSort('name')} style={sortButtonStyle}>
+                      Product {renderSortIcon('name')}
+                    </button>
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <button type="button" onClick={() => toggleSort('price')} style={sortButtonStyle}>
+                      Price {renderSortIcon('price')}
+                    </button>
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <button type="button" onClick={() => toggleSort('barcodeValue')} style={sortButtonStyle}>
+                      Barcode {renderSortIcon('barcodeValue')}
+                    </button>
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <button type="button" onClick={() => toggleSort('updatedAt')} style={sortButtonStyle}>
+                      Modified {renderSortIcon('updatedAt')}
+                    </button>
+                  </th>
                   <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {buildGroups(categoryFiltered).map(({ label, items }) => (
-                  <>
-                    {label && (
-                      <tr key={`group-${label}`}>
-                        <td colSpan={5} style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                          {label} <span style={{ fontWeight: 400, color: '#94a3b8' }}>({items.length})</span>
-                        </td>
-                      </tr>
-                    )}
-                    {items.map((p) => (
-                      <tr
-                        key={p.id}
-                        style={{ borderBottom: '1px solid #f8fafc' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td style={{ padding: '11px 16px', fontWeight: 600, color: '#1a2332' }}>{p.name}</td>
-                        <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
-                        <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
-                        <td style={{ padding: '11px 16px', color: '#94a3b8', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>
-                        <td style={{ padding: '11px 16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                            <button onClick={() => onEdit(p)} className="btn btn-icon" title="Edit"><Edit2 size={13} /></button>
-                            <button onClick={() => handleDuplicate(p.id)} className="btn btn-icon" title="Duplicate"><Copy size={13} /></button>
-                            <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id} className="btn btn-icon" title="Export PDF"><FileText size={13} /></button>
-                            <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Layers size={13} /></button>
-                            <button
-                              onClick={() => handleDelete(p.id)}
-                              disabled={deleting === p.id}
-                              className="btn btn-icon danger"
-                              title="Delete"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </>
+                {sortedProducts.map((p) => (
+                  <tr
+                    key={p.id}
+                    style={{ borderBottom: '1px solid #f8fafc' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td style={{ padding: '11px 16px', fontWeight: 600, color: '#1a2332' }}>{p.name}</td>
+                    <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
+                    <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
+                    <td style={{ padding: '11px 16px', color: '#94a3b8', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>
+                    <td style={{ padding: '11px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                        <button onClick={() => onEdit(p)} className="btn btn-icon" title="Edit"><Edit2 size={13} /></button>
+                        <button onClick={() => handleDuplicate(p.id)} className="btn btn-icon" title="Duplicate"><Copy size={13} /></button>
+                        <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id} className="btn btn-icon" title="Export PDF"><FileText size={13} /></button>
+                        <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Layers size={13} /></button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          disabled={deleting === p.id}
+                          className="btn btn-icon danger"
+                          title="Delete"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -272,4 +295,18 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
       )}
     </div>
   )
+}
+
+const sortButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: 0,
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  font: 'inherit',
+  textTransform: 'inherit',
+  letterSpacing: 'inherit',
+  cursor: 'pointer',
 }

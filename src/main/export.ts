@@ -1,112 +1,58 @@
-/**
- * Export engine — single-label PDF, 8-up sheet PDF (Avery 5821), SVG.
- *
- * Label template: portrait 181 × 289 pt.
- * Sheet slots: landscape 288 × 180 pt (4" × 2.5"), 2 cols × 4 rows.
- *
- * Rotation approach for sheet: each portrait label is rendered into its own
- * mini-PDF, embedded as a PDFEmbeddedPage, then placed with drawPage() using
- * rotate(90°) CCW. This maps the portrait's visual top (branding) to the
- * LEFT of each landscape slot, and the white content area to the RIGHT —
- * matching the Avery 5821 reference layout.
- *
- * drawPage rotation math (CCW 90° around bottom-left pivot):
- *   After rotation, a w×h rect at (x, y) occupies x:[x−h, x], y:[y, y+w].
- *   To fill slot (slotX, slotY)→(slotX+288, slotY+180):
- *     x = slotX + 288,  y = slotY,  width = 180,  height = 288
- */
-
 import { PDFDocument, rgb, StandardFonts, degrees, PDFPage } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs'
-import { join } from 'path'
+import { join, extname } from 'path'
 import { homedir } from 'os'
 import bwipjs from 'bwip-js'
 import type { Product } from './types'
-import { getTemplatePNGPath } from './fileManager'
-
-// ── Geometry ──────────────────────────────────────────────────────────────────
-
-const LW = 181   // label portrait width  pt
-const LH = 289   // label portrait height pt
+import { getAvenirNextCondensedFontPath, getDefaultTopLogoPath, readImageAsBase64 } from './fileManager'
+import {
+  getLabelTemplate,
+  LOGO_ONLY_LABEL_ZONES,
+  INFO_LABEL_ZONES,
+  LABEL_ZONES,
+  VERTICAL_INFO_LABEL_ZONES,
+  svgYFromBottom,
+} from '../shared/labelTemplates'
 
 const AVERY = {
-  pageW: 612, pageH: 792,        // US Letter portrait
-  slotW: 288, slotH: 180,        // 4" × 2.5" landscape slots
-  marginLeft: 18, marginTop: 36, // 0.25" / 0.5"
+  pageW: 612, pageH: 792,
+  slotW: 288, slotH: 180,
+  marginLeft: 18, marginTop: 36,
   cols: 2, rows: 4,
 }
 
-/**
- * Field positions — portrait label, PDF y=0 at bottom-left (289pt tall).
- *
- * White content box: y ≈ 6 → 167 from bottom (lower 58% of label).
- * After 90° CCW rotation this becomes the RIGHT portion of the landscape slot.
- *
- * IMPORTANT — after CCW rotation axes swap:
- *   portrait x-axis  →  landscape y-axis  (controls slot height position)
- *   portrait y-axis  →  landscape x-axis  (controls slot width,  measured from right)
- *
- * So barcode.w (portrait width)  becomes landscape HEIGHT — keep it ≤ ~80pt.
- *    barcode.h (portrait height) becomes landscape WIDTH  — fine at 50–60pt.
- *
- * For text, cap-height ≈ 0.72 × fontSize.  Top of first line:
- *   nameY0 + 0.72*size must stay below y=167 (white box top).
- *   With size=22 → 0.72*22=15.8; so nameY0 must be ≤ 151.
- *
- *   y=151  ← name first-line baseline (cap tops at ~167, just inside white box)
- *   y=78   ← price baseline
- *   y=10   ← barcode bottom
- */
-/**
- * After CCW rotation: portrait y-axis → landscape x-axis (measured from right).
- * Landscape x = slotW − sx·(portrait y).  Content area: landscape x = 121–288 (167 pt).
- *
- * Target landscape distribution (left=near branding, right=far right):
- *   Name    landscape x ≈ 130–180  →  portrait y ≈ 108–158
- *   Price   landscape x ≈ 194–220  →  portrait y ≈  68– 94
- *   Barcode landscape x ≈ 228–278  →  portrait y ≈  10– 60
- *
- * mask.topFrac = 0.42 keeps the white rectangle exactly at the white-box boundary
- * (portrait y ≈ 167) so the decorative arcs above are never covered.
- */
-const F = {
-  name:    { yBase: 128, lineH: 28, maxW: 155 },
-  price:   { yBase: 75,             maxW: 155 },
-  barcode: { x: 57, y: 10, w: 68, h: 50 },
-  mask:    { topFrac: 0.42, leftFrac: 0.03, rightFrac: 0.03, bottomFrac: 0.02 },
-}
-
-// ── Font helpers ──────────────────────────────────────────────────────────────
-
 type EmbeddedFont = Awaited<ReturnType<PDFDocument['embedFont']>>
+type EmbeddedImage =
+  | Awaited<ReturnType<PDFDocument['embedPng']>>
+  | Awaited<ReturnType<PDFDocument['embedJpg']>>
 
 function readFontBytes(...paths: string[]): Buffer | null {
   for (const p of paths) {
-    if (existsSync(p)) { try { return readFileSync(p) } catch { /* next */ } }
+    if (existsSync(p)) {
+      try { return readFileSync(p) } catch { /* next */ }
+    }
   }
   return null
 }
 
 const home = homedir()
 const USER_FONTS = join(home, 'Library', 'Fonts')
-const SYS_FONTS  = '/Library/Fonts'
+const SYS_FONTS = '/Library/Fonts'
 const APPLE_SYS_FONTS = '/System/Library/Fonts'
 
 function scoreFontFile(fileName: string): number {
-  const n = fileName.toLowerCase()
+  const lower = fileName.toLowerCase()
   let score = 0
-  if (n.includes('bold')) score += 100
-  if (n.includes('variable')) score += 70
-  if (n.includes('regular')) score += 40
-  if (n.includes('italic')) score -= 20
+  if (lower.includes('bold')) score += 100
+  if (lower.includes('variable')) score += 70
+  if (lower.includes('regular')) score += 40
+  if (lower.includes('italic')) score -= 20
   return score
 }
 
 function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer | null {
   const dirs = [USER_FONTS, SYS_FONTS, APPLE_SYS_FONTS]
-
-  // Fast path for known filenames.
   const exactPaths: string[] = []
   for (const dir of dirs) {
     for (const fileName of exactCandidates) exactPaths.push(join(dir, fileName))
@@ -114,9 +60,8 @@ function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer 
   const exact = readFontBytes(...exactPaths)
   if (exact) return exact
 
-  // Fallback: scan for matching family files and pick best candidate.
-  const familyNeedle = family.toLowerCase()
   const discovered: string[] = []
+  const familyNeedle = family.toLowerCase()
   for (const dir of dirs) {
     if (!existsSync(dir)) continue
     try {
@@ -127,7 +72,7 @@ function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer 
         discovered.push(join(dir, fileName))
       }
     } catch {
-      // Skip unreadable font directories.
+      // ignore
     }
   }
 
@@ -147,199 +92,542 @@ const GENTY_BYTES = findFamilyFontBytes('genty', [
   'Genty Demo Regular.ttf',
 ])
 
-async function embedFonts(pdfDoc: PDFDocument): Promise<{ name: EmbeddedFont; price: EmbeddedFont }> {
-  const fallback = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const nameFnt  = LORA_BYTES  ? await pdfDoc.embedFont(LORA_BYTES)  : fallback
-  const priceFnt = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : fallback
-  return { name: nameFnt, price: priceFnt }
+const ARIAL_REGULAR_BYTES = readFontBytes(
+  '/System/Library/Fonts/Supplemental/Arial.ttf',
+  '/Library/Fonts/Arial.ttf',
+  join(USER_FONTS, 'Arial.ttf')
+)
+
+const ARIAL_BOLD_BYTES = readFontBytes(
+  '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+  '/Library/Fonts/Arial Bold.ttf',
+  join(USER_FONTS, 'Arial Bold.ttf')
+)
+
+const ARIAL_ITALIC_BYTES = readFontBytes(
+  '/System/Library/Fonts/Supplemental/Arial Italic.ttf',
+  '/Library/Fonts/Arial Italic.ttf',
+  join(USER_FONTS, 'Arial Italic.ttf')
+)
+
+async function embedFonts(pdfDoc: PDFDocument): Promise<{
+  name: EmbeddedFont
+  price: EmbeddedFont
+  body: EmbeddedFont
+  bodyBold: EmbeddedFont
+  bodyItalic: EmbeddedFont
+  ingredients: EmbeddedFont
+}> {
+  const body = ARIAL_REGULAR_BYTES
+    ? await pdfDoc.embedFont(ARIAL_REGULAR_BYTES)
+    : await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const bodyBold = ARIAL_BOLD_BYTES
+    ? await pdfDoc.embedFont(ARIAL_BOLD_BYTES)
+    : await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const bodyItalic = ARIAL_ITALIC_BYTES
+    ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES)
+    : await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+  const ingredientsBytes = readFontBytes(getAvenirNextCondensedFontPath())
+  const ingredients = ingredientsBytes
+    ? await pdfDoc.embedFont(ingredientsBytes)
+    : body
+  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : body
+  const price = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body
+  return { name, price, body, bodyBold, bodyItalic, ingredients }
 }
 
-// ── Template & barcode ────────────────────────────────────────────────────────
-
-function loadTemplateBytesOnce(): Uint8Array | null {
-  const p = getTemplatePNGPath()
-  if (!existsSync(p)) return null
-  try { return new Uint8Array(readFileSync(p)) } catch { return null }
-}
-
-async function renderBarcodePNG(value: string): Promise<Buffer> {
+async function renderBarcodePNG(value: string, colorHex: string): Promise<Buffer> {
   return bwipjs.toBuffer({
-    bcid: 'code128', text: value, scale: 3, height: 12,
-    includetext: true, textxalign: 'center',
-    backgroundcolor: 'ffffff', barcolor: '1a2332', textcolor: '1a2332',
+    bcid: 'code128',
+    text: value,
+    scale: 3,
+    height: 10,
+    includetext: true,
+    textxalign: 'center',
+    backgroundcolor: 'ffffff',
+    barcolor: colorHex.replace('#', ''),
+    textcolor: colorHex.replace('#', ''),
   })
 }
 
 async function getBarcodePNG(product: Product): Promise<Buffer | null> {
   try {
-    if (product.barcodeImagePath && existsSync(product.barcodeImagePath))
+    if (product.barcodeImagePath && existsSync(product.barcodeImagePath)) {
       return readFileSync(product.barcodeImagePath)
-    return await renderBarcodePNG(product.barcodeValue)
-  } catch { return null }
+    }
+    return await renderBarcodePNG(product.barcodeValue, getLabelTemplate(product.templateId).textColor)
+  } catch {
+    return null
+  }
 }
 
-// ── Core portrait label drawing ───────────────────────────────────────────────
+function getTopImageBytes(product: Product): Buffer | null {
+  try {
+    const sourcePath = product.logoImagePath && existsSync(product.logoImagePath)
+      ? product.logoImagePath
+      : getDefaultTopLogoPath()
+    return existsSync(sourcePath) ? readFileSync(sourcePath) : null
+  } catch {
+    return null
+  }
+}
 
-/**
- * Draw one label in portrait space at (ox, oy).
- * All positions are in portrait coordinates (PDF: y=0 at bottom-left).
- */
+async function embedImageAsset(
+  doc: PDFDocument,
+  imageBytes: Uint8Array,
+  filePath?: string | null,
+): Promise<EmbeddedImage | null> {
+  const ext = extname(filePath ?? '').toLowerCase()
+  try {
+    if (ext === '.jpg' || ext === '.jpeg') return await doc.embedJpg(imageBytes)
+    return await doc.embedPng(imageBytes)
+  } catch {
+    return null
+  }
+}
+
+function drawHeightFittedImage(
+  page: PDFPage,
+  image: EmbeddedImage,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const scale = height / image.height
+  const drawWidth = image.width * scale
+  const drawHeight = image.height * scale
+  page.drawImage(image, {
+    x: x + (width - drawWidth) / 2,
+    y: y + (height - drawHeight) / 2,
+    width: drawWidth,
+    height: drawHeight,
+  })
+}
+
+function drawRoundRect(page: PDFPage, x: number, y: number, w: number, h: number, color: ReturnType<typeof rgb>, radius = 10): void {
+  page.drawRectangle({ x, y, width: w, height: h, color, borderWidth: 0, borderRadius: radius })
+}
+
+function drawCenteredText(
+  page: PDFPage,
+  text: string,
+  centerX: number,
+  y: number,
+  size: number,
+  font: EmbeddedFont,
+  color: ReturnType<typeof rgb>,
+): void {
+  const width = font.widthOfTextAtSize(text, size)
+  page.drawText(text, {
+    x: centerX - width / 2,
+    y,
+    size,
+    font,
+    color,
+  })
+}
+
+function wrapText(
+  text: string,
+  font: { widthOfTextAtSize(value: string, size: number): number },
+  size: number,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const trial = current ? `${current} ${word}` : word
+    if (font.widthOfTextAtSize(trial, size) <= maxWidth) current = trial
+    else {
+      if (current) lines.push(current)
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines.length ? lines : [text]
+}
+
+function splitLines(text: string, maxChars: number, maxLines: number): string[] {
+  const words = text.trim().split(/\s+/)
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const trial = `${current} ${word}`.trim()
+    if (trial.length <= maxChars) current = trial
+    else {
+      if (current) lines.push(current)
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines.slice(0, maxLines)
+}
+
 async function drawLabel(
   page: PDFPage,
   product: Product,
-  ox: number,
-  oy: number,
-  templateImg: Awaited<ReturnType<PDFDocument['embedPng']>> | null,
-  barcodeImg:  Awaited<ReturnType<PDFDocument['embedPng']>> | null,
-  fonts: { name: EmbeddedFont; price: EmbeddedFont },
+  topImage: EmbeddedImage | null,
+  barcodeImage: EmbeddedImage | null,
+  fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
 ): Promise<void> {
-  // Background template
-  if (templateImg) {
-    page.drawImage(templateImg, { x: ox, y: oy, width: LW, height: LH })
-  } else {
-    page.drawRectangle({ x: ox, y: oy, width: LW, height: LH, color: rgb(0.97, 0.96, 0.93) })
+  const template = getLabelTemplate(product.templateId)
+  const shell = hexToRgb(template.shellColor)
+  const border = hexToRgb(template.borderColor)
+  const panel = hexToRgb(template.panelColor)
+  const text = hexToRgb(template.textColor)
+  const borderWidth = template.layout === 'info' || template.layout === 'logo-only' ? 0 : 1
+
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: template.width,
+    height: template.height,
+    color: shell,
+    borderColor: border,
+    borderWidth,
+    borderRadius: 12,
+  })
+
+  if (template.layout === 'info') {
+    drawInfoLabel(page, product, topImage, barcodeImage, fonts, template.textColor)
+    return
   }
 
-  // Cover the border stroke baked into the template PNG
-  const BG = rgb(0.965, 0.949, 0.875)
-  const B  = 4
-  page.drawRectangle({ x: ox,           y: oy,            width: LW, height: B,  color: BG, borderWidth: 0 })
-  page.drawRectangle({ x: ox,           y: oy + LH - B,   width: LW, height: B,  color: BG, borderWidth: 0 })
-  page.drawRectangle({ x: ox,           y: oy,            width: B,  height: LH, color: BG, borderWidth: 0 })
-  page.drawRectangle({ x: ox + LW - B,  y: oy,            width: B,  height: LH, color: BG, borderWidth: 0 })
+  if (template.layout === 'vertical-info') {
+    drawVerticalInfoLabel(page, product, topImage, fonts, panel, text)
+    return
+  }
 
-  // White mask over baked-in sample content in the template PNG
-  page.drawRectangle({
-    x:      ox + LW * F.mask.leftFrac,
-    y:      oy + LH * F.mask.bottomFrac,
-    width:  LW * (1 - F.mask.leftFrac  - F.mask.rightFrac),
-    height: LH * (1 - F.mask.topFrac   - F.mask.bottomFrac),
-    color: rgb(1, 1, 1),
-    borderWidth: 0,
+  if (template.layout === 'logo-only') {
+    if (topImage) {
+      drawHeightFittedImage(
+        page,
+        topImage,
+        LOGO_ONLY_LABEL_ZONES.topImage.x,
+        LOGO_ONLY_LABEL_ZONES.topImage.y,
+        LOGO_ONLY_LABEL_ZONES.topImage.w,
+        LOGO_ONLY_LABEL_ZONES.topImage.h
+      )
+    }
+    return
+  }
+
+  if (topImage) {
+    drawHeightFittedImage(
+      page,
+      topImage,
+      LABEL_ZONES.topImage.x,
+      LABEL_ZONES.topImage.y,
+      LABEL_ZONES.topImage.w,
+      LABEL_ZONES.topImage.h
+    )
+  }
+
+  drawRoundRect(page, LABEL_ZONES.contentPanel.x, LABEL_ZONES.contentPanel.y, LABEL_ZONES.contentPanel.w, LABEL_ZONES.contentPanel.h, panel, 10)
+
+  const name = product.name || 'Product Name'
+  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
+  const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w)
+  const lineHeight = nameSize * 1.08
+  const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize
+
+  nameLines.slice(0, 3).forEach((line, index) => {
+    drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * lineHeight, nameSize, fonts.name, text)
   })
 
-  // Product name — Lora Bold, centered, word-wrapped
-  // Cap-height of first line must stay below y=167 (white box top).
-  // With yBase=128 + lineH/2=14 → nameY0=142; cap tops at 142+0.72*22≈158 < 167 ✓
-  const nameSize  = product.name.length > 18 ? 16 : product.name.length > 12 ? 19 : 22
-  const nameLines = wrapText(product.name, fonts.name, nameSize, F.name.maxW)
-  const blockH    = (nameLines.length - 1) * F.name.lineH
-  const nameY0    = oy + F.name.yBase + blockH / 2
+  if (product.showPrice) {
+    const price = product.price || '$13.99'
+    const priceSize = price.length > 10 ? 22 : 28
+    drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, priceSize, fonts.price, text)
+  }
 
-  nameLines.forEach((line, i) => {
-    const lw = fonts.name.widthOfTextAtSize(line, nameSize)
-    page.drawText(line, {
-      x: ox + LW / 2 - lw / 2,
-      y: nameY0 - i * F.name.lineH,
-      size: nameSize, font: fonts.name,
-      color: rgb(0.1, 0.14, 0.19),
-    })
-  })
-
-  // Price — Genty Demo, centered
-  const priceSize = product.price.length > 10 ? 20 : 26
-  const priceW    = fonts.price.widthOfTextAtSize(product.price, priceSize)
-  page.drawText(product.price, {
-    x: ox + LW / 2 - priceW / 2,
-    y: oy + F.price.yBase,
-    size: priceSize, font: fonts.price,
-    color: rgb(0.1, 0.14, 0.19),
-  })
-
-  // Barcode
-  if (barcodeImg) {
-    page.drawImage(barcodeImg, {
-      x: ox + F.barcode.x, y: oy + F.barcode.y,
-      width: F.barcode.w,  height: F.barcode.h,
+  if (product.showBarcode && barcodeImage) {
+    page.drawImage(barcodeImage, {
+      x: LABEL_ZONES.barcode.x,
+      y: LABEL_ZONES.barcode.y,
+      width: LABEL_ZONES.barcode.w,
+      height: LABEL_ZONES.barcode.h,
     })
   }
 }
 
-// ── Build a standalone portrait-label PDF bytes ───────────────────────────────
-
-async function buildLabelPDF(
+function drawInfoLabel(
+  page: PDFPage,
   product: Product,
-  templateBytes: Uint8Array | null,
-  barcodePNG: Buffer | null,
-): Promise<Uint8Array> {
+  topImage: EmbeddedImage | null,
+  barcodeImage: EmbeddedImage | null,
+  fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
+  textColor: string,
+): void {
+  const text = hexToRgb(textColor)
+
+  if (topImage) {
+    drawHeightFittedImage(
+      page,
+      topImage,
+      INFO_LABEL_ZONES.topImage.x,
+      INFO_LABEL_ZONES.topImage.y,
+      INFO_LABEL_ZONES.topImage.w,
+      INFO_LABEL_ZONES.topImage.h
+    )
+  }
+
+  drawRoundRect(
+    page,
+    INFO_LABEL_ZONES.infoPanel.x,
+    INFO_LABEL_ZONES.infoPanel.y,
+    INFO_LABEL_ZONES.infoPanel.w,
+    INFO_LABEL_ZONES.infoPanel.h,
+    hexToRgb('#ffffff'),
+    10
+  )
+
+  const name = product.name || 'Product Name'
+  const nameSize = 12
+  const nameLines = wrapText(name, fonts.name, nameSize, INFO_LABEL_ZONES.leftName.w)
+  const startY = INFO_LABEL_ZONES.leftName.y + INFO_LABEL_ZONES.leftName.h - nameSize
+  const lineHeight = nameSize * 1.08
+  nameLines.slice(0, 2).forEach((line, index) => {
+    drawCenteredText(
+      page,
+      line,
+      INFO_LABEL_ZONES.leftName.x + INFO_LABEL_ZONES.leftName.w / 2,
+      startY - index * lineHeight,
+      nameSize,
+      fonts.name,
+      text
+    )
+  })
+
+  if (product.showPrice) {
+    const price = product.price || '$8.99'
+    drawCenteredText(
+      page,
+      price,
+      INFO_LABEL_ZONES.leftPrice.x + INFO_LABEL_ZONES.leftPrice.w / 2,
+      INFO_LABEL_ZONES.leftPrice.y,
+      12,
+      fonts.price,
+      text
+    )
+  }
+
+  drawInfoText(page, product, fonts, text)
+
+  if (product.showBarcode && barcodeImage) {
+    page.drawImage(barcodeImage, {
+      x: INFO_LABEL_ZONES.barcode.x,
+      y: INFO_LABEL_ZONES.barcode.y,
+      width: INFO_LABEL_ZONES.barcode.w,
+      height: INFO_LABEL_ZONES.barcode.h,
+    })
+  }
+}
+
+function drawVerticalInfoLabel(
+  page: PDFPage,
+  product: Product,
+  topImage: EmbeddedImage | null,
+  fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
+  panel: ReturnType<typeof rgb>,
+  text: ReturnType<typeof rgb>,
+): void {
+  if (topImage) {
+    drawHeightFittedImage(
+      page,
+      topImage,
+      VERTICAL_INFO_LABEL_ZONES.topImage.x,
+      VERTICAL_INFO_LABEL_ZONES.topImage.y,
+      VERTICAL_INFO_LABEL_ZONES.topImage.w,
+      VERTICAL_INFO_LABEL_ZONES.topImage.h
+    )
+  }
+
+  drawRoundRect(
+    page,
+    VERTICAL_INFO_LABEL_ZONES.contentPanel.x,
+    VERTICAL_INFO_LABEL_ZONES.contentPanel.y,
+    VERTICAL_INFO_LABEL_ZONES.contentPanel.w,
+    VERTICAL_INFO_LABEL_ZONES.contentPanel.h,
+    panel,
+    10
+  )
+
+  const name = product.name || 'Product Title'
+  const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24
+  const nameLines = wrapText(name, fonts.name, nameSize, VERTICAL_INFO_LABEL_ZONES.title.w)
+  const titleLineHeight = nameSize * 1.05
+  const titleStartY = VERTICAL_INFO_LABEL_ZONES.title.y + VERTICAL_INFO_LABEL_ZONES.title.h - nameSize
+
+  nameLines.slice(0, 3).forEach((line, index) => {
+    drawCenteredText(
+      page,
+      line,
+      VERTICAL_INFO_LABEL_ZONES.title.x + VERTICAL_INFO_LABEL_ZONES.title.w / 2,
+      titleStartY - index * titleLineHeight,
+      nameSize,
+      fonts.name,
+      text
+    )
+  })
+
+  if (product.showCookingInstructions === false) return
+
+  const headingSize = 10
+  drawCenteredText(
+    page,
+    'Cooking Instructions',
+    VERTICAL_INFO_LABEL_ZONES.cookingTitle.x + VERTICAL_INFO_LABEL_ZONES.cookingTitle.w / 2,
+    VERTICAL_INFO_LABEL_ZONES.cookingTitle.y + 2,
+    headingSize,
+    fonts.bodyBold,
+    text
+  )
+
+  const body = product.cookingInstructions || 'Add cooking instructions'
+  const bodySize = 8
+  const bodyLines = wrapText(body, fonts.ingredients, bodySize, VERTICAL_INFO_LABEL_ZONES.cookingBody.w)
+  const bodyLineHeight = bodySize * 1.18
+  let y = VERTICAL_INFO_LABEL_ZONES.cookingBody.y + VERTICAL_INFO_LABEL_ZONES.cookingBody.h - bodySize
+
+  for (const line of bodyLines.slice(0, 4)) {
+    drawCenteredText(
+      page,
+      line,
+      VERTICAL_INFO_LABEL_ZONES.cookingBody.x + VERTICAL_INFO_LABEL_ZONES.cookingBody.w / 2,
+      y,
+      bodySize,
+      fonts.ingredients,
+      text
+    )
+    y -= bodyLineHeight
+  }
+}
+
+function drawInfoText(
+  page: PDFPage,
+  product: Product,
+  fonts: { body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
+  color: ReturnType<typeof rgb>,
+): void {
+  const x = INFO_LABEL_ZONES.infoText.x
+  const width = INFO_LABEL_ZONES.infoText.w
+  const bottomY = INFO_LABEL_ZONES.infoText.y
+  let y = INFO_LABEL_ZONES.infoText.y + INFO_LABEL_ZONES.infoText.h - 6
+  const titleSize = 7.2
+
+  const sections = [
+    { title: 'Nutrition Facts:', body: joinInfo(product.servingInfo, product.nutritionInfo), bodySize: 8, font: fonts.ingredients },
+    { title: 'Cooking Instructions', body: product.showCookingInstructions ? (product.cookingInstructions || '') : '', bodySize: 8, font: fonts.ingredients },
+    { title: 'Ingredients:', body: product.ingredients || '', bodySize: 8, font: fonts.ingredients },
+  ]
+
+  for (const section of sections) {
+    if (!section.body) continue
+    if (y <= bottomY + titleSize) break
+    page.drawText(section.title, { x, y, size: titleSize, font: fonts.bodyBold, color })
+    y -= titleSize * 1.45
+    const bodyFont = section.font ?? fonts.body
+    const lines = wrapText(section.body, bodyFont, section.bodySize, width)
+    const lineHeight = section.bodySize * 1.2
+    for (const line of lines) {
+      if (y <= bottomY + section.bodySize) break
+      page.drawText(line, { x, y, size: section.bodySize, font: bodyFont, color })
+      y -= lineHeight
+    }
+    y -= section.bodySize * 0.5
+  }
+
+  if (product.allergenStatement) {
+    const lines = wrapText(product.allergenStatement, fonts.ingredients, 8, width)
+    for (const line of lines) {
+      if (y <= bottomY + 8) break
+      page.drawText(line, { x, y, size: 8, font: fonts.ingredients, color: rgb(0.25, 0.25, 0.28) })
+      y -= 8 * 1.2
+    }
+  }
+}
+
+function joinInfo(servingInfo: string, nutritionInfo: string): string {
+  return [servingInfo, nutritionInfo].filter(Boolean).join(' | ')
+}
+
+async function buildLabelPDF(product: Product, topImageBytes: Buffer | null, barcodeBytes: Buffer | null): Promise<Uint8Array> {
+  const template = getLabelTemplate(product.templateId)
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
 
-  const fonts       = await embedFonts(doc)
-  const templateImg = templateBytes ? await doc.embedPng(templateBytes) : null
-  const barcodeImg  = barcodePNG
-    ? await doc.embedPng(barcodePNG).catch(() => null)
+  const fonts = await embedFonts(doc)
+  const topImage = topImageBytes
+    ? await embedImageAsset(doc, topImageBytes, product.logoImagePath ?? getDefaultTopLogoPath())
     : null
+  const barcodeImage = barcodeBytes ? await embedImageAsset(doc, barcodeBytes, product.barcodeImagePath) : null
 
-  const page = doc.addPage([LW, LH])
-  await drawLabel(page, product, 0, 0, templateImg, barcodeImg, fonts)
+  const page = doc.addPage([template.width, template.height])
+  await drawLabel(page, product, topImage, barcodeImage, fonts)
   return doc.save()
 }
 
-// ── Public exports ────────────────────────────────────────────────────────────
-
 export async function exportSingleLabelPDF(product: Product, outputPath: string): Promise<string> {
-  const templateBytes = loadTemplateBytesOnce()
-  const barcodePNG    = await getBarcodePNG(product)
-  const bytes         = await buildLabelPDF(product, templateBytes, barcodePNG)
+  const topImageBytes = getTopImageBytes(product)
+  const barcodeBytes = await getBarcodePNG(product)
+  const bytes = await buildLabelPDF(product, topImageBytes, barcodeBytes)
   writeFileSync(outputPath, bytes)
   return outputPath
 }
 
-export async function exportSheetPDF(
-  products:  Product[],
-  startSlot: number,
-  outputPath: string,
-): Promise<string> {
-  const templateBytes = loadTemplateBytesOnce()
-
-  // Pre-render barcodes (keyed by product id)
+export async function exportSheetPDF(products: Product[], startSlot: number, outputPath: string): Promise<string> {
   const barcodeCache = new Map<string, Buffer | null>()
-  for (const p of products) {
-    if (!barcodeCache.has(p.id)) barcodeCache.set(p.id, await getBarcodePNG(p))
+  const imageCache = new Map<string, Buffer | null>()
+
+  for (const product of products) {
+    if (!barcodeCache.has(product.id)) barcodeCache.set(product.id, await getBarcodePNG(product))
+    if (!imageCache.has(product.id)) imageCache.set(product.id, getTopImageBytes(product))
   }
 
-  // Main sheet document (US Letter portrait)
-  const sheetDoc  = await PDFDocument.create()
+  const sheetDoc = await PDFDocument.create()
   const sheetPage = sheetDoc.addPage([AVERY.pageW, AVERY.pageH])
-
-  sheetPage.drawRectangle({
-    x: 0, y: 0, width: AVERY.pageW, height: AVERY.pageH,
-    color: rgb(0.965, 0.949, 0.875),
-    borderWidth: 0,
-  })
+  sheetPage.drawRectangle({ x: 0, y: 0, width: AVERY.pageW, height: AVERY.pageH, color: hexToRgb('#f6f2df'), borderWidth: 0 })
 
   for (let slot = 1; slot <= 8; slot++) {
-    const pIdx = slot - startSlot
-    if (pIdx < 0 || pIdx >= products.length) continue
-    const product = products[pIdx]
+    const productIndex = slot - startSlot
+    if (productIndex < 0 || productIndex >= products.length) continue
+    const product = products[productIndex]
     if (!product) continue
 
-    const col   = (slot - 1) % AVERY.cols
-    const row   = Math.floor((slot - 1) / AVERY.cols)
+    const template = getLabelTemplate(product.templateId)
+    const col = (slot - 1) % AVERY.cols
+    const row = Math.floor((slot - 1) / AVERY.cols)
     const slotX = AVERY.marginLeft + col * AVERY.slotW
     const slotY = AVERY.pageH - AVERY.marginTop - (row + 1) * AVERY.slotH
 
-    // Build a portrait label PDF, embed it, then draw rotated into slot
-    const labelBytes = await buildLabelPDF(product, templateBytes, barcodeCache.get(product.id) ?? null)
+    const labelBytes = await buildLabelPDF(
+      product,
+      imageCache.get(product.id) ?? null,
+      barcodeCache.get(product.id) ?? null
+    )
     const [embeddedLabel] = await sheetDoc.embedPdf(labelBytes)
 
-    /**
-     * drawPage with rotate(90°) CCW:
-     *   After CCW rotation a w×h rect at (x,y) occupies x:[x-h, x], y:[y, y+w].
-     *   To fill slot (slotX,slotY)→(slotX+288, slotY+180):
-     *     x = slotX+288, y = slotY, width = 180, height = 288
-     *   This places portrait branding (visual top = high PDF y) on the LEFT
-     *   and the white content area on the RIGHT — matching the reference layout.
-     */
-    sheetPage.drawPage(embeddedLabel, {
-      x:      slotX + AVERY.slotW,
-      y:      slotY,
-      width:  AVERY.slotH,
-      height: AVERY.slotW,
-      rotate: degrees(90),
-      borderWidth: 0,
-    })
+    if (template.layout === 'info') {
+      sheetPage.drawPage(embeddedLabel, {
+        x: slotX,
+        y: slotY,
+        width: AVERY.slotW,
+        height: AVERY.slotH,
+        borderWidth: 0,
+      })
+    } else {
+      sheetPage.drawPage(embeddedLabel, {
+        x: slotX + AVERY.slotW,
+        y: slotY,
+        width: AVERY.slotH,
+        height: AVERY.slotW,
+        rotate: degrees(90),
+        borderWidth: 0,
+      })
+    }
   }
 
   writeFileSync(outputPath, await sheetDoc.save())
@@ -347,91 +635,232 @@ export async function exportSheetPDF(
 }
 
 export async function exportSingleLabelSVG(product: Product): Promise<string> {
-  const w = LW
-  const h = LH
-  const tPath = getTemplatePNGPath()
-  const templateUri = existsSync(tPath)
-    ? `data:image/png;base64,${readFileSync(tPath).toString('base64')}`
-    : ''
+  const template = getLabelTemplate(product.templateId)
+  const topImageUri = product.logoImagePath
+    ? readImageAsBase64(product.logoImagePath)
+    : readImageAsBase64(getDefaultTopLogoPath())
+  const avenirFontUri = readFontDataUri(getAvenirNextCondensedFontPath())
 
   let barcodeUri = ''
   try {
-    const png = await getBarcodePNG(product)
-    if (png) barcodeUri = `data:image/png;base64,${png.toString('base64')}`
-  } catch { /* leave empty */ }
+    const barcode = await getBarcodePNG(product)
+    if (barcode) barcodeUri = `data:image/png;base64,${barcode.toString('base64')}`
+  } catch {
+    // ignore
+  }
 
-  const nameSize  = product.name.length > 28 ? 15 : product.name.length > 20 ? 17 : product.name.length > 14 ? 19 : 22
-  const nameMaxChars = nameSize >= 19 ? 13 : nameSize >= 17 ? 15 : 18
-  const nameLines = splitLines(product.name, nameMaxChars, 2)
-  const nameLineH = nameSize * 1.16
-  const nameY0 = nameLines.length > 1 ? 145 : 152
-  const priceSize = product.price.length > 10 ? 24 : 28
+  if (template.layout === 'info') {
+    return buildInfoSvg(product, template, topImageUri, barcodeUri, avenirFontUri)
+  }
+  if (template.layout === 'vertical-info') {
+    return buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri)
+  }
+  if (template.layout === 'logo-only') {
+    return buildLogoOnlySvg(template, topImageUri)
+  }
+  return buildFrontSvg(product, template, topImageUri, barcodeUri)
+}
 
-  const nameLastBaseline = nameY0 + (nameLines.length - 1) * nameLineH
-  const nameBottomY = nameLastBaseline + nameSize * 0.26
-  const barcodeTopY = h - F.barcode.y - F.barcode.h
-  const priceCenterY = (nameBottomY + barcodeTopY) / 2
-  const priceBaselineY = priceCenterY + priceSize * 0.34
-
-  const nameEls = nameLines.map((line, i) =>
-    `<text x="${w/2}" y="${nameY0 + i * nameLineH}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="#1a2332">${xml(line)}</text>`
+function buildFrontSvg(
+  product: Product,
+  template: ReturnType<typeof getLabelTemplate>,
+  topImageUri: string,
+  barcodeUri: string,
+): string {
+  const name = product.name || 'Product Name'
+  const price = product.price || '$13.99'
+  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
+  const nameLines = splitLines(name, nameSize >= 22 ? 14 : nameSize >= 18 ? 18 : 22, 3)
+  const lineHeight = nameSize * 1.08
+  const nameStartY = svgYFromBottom(LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize, 0, template.height)
+  const priceY = svgYFromBottom(LABEL_ZONES.price.y, 0, template.height)
+  const contentY = svgYFromBottom(LABEL_ZONES.contentPanel.y, LABEL_ZONES.contentPanel.h, template.height)
+  const imageY = svgYFromBottom(LABEL_ZONES.topImage.y, LABEL_ZONES.topImage.h, template.height)
+  const barcodeY = svgYFromBottom(LABEL_ZONES.barcode.y, LABEL_ZONES.barcode.h, template.height)
+  const nameEls = nameLines.map((line, index) =>
+    `<text x="${LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2}" y="${nameStartY + index * lineHeight}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="${template.textColor}">${xml(line)}</text>`
   ).join('\n  ')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-     viewBox="0 0 ${w} ${h}" width="${w}pt" height="${h}pt" version="1.1">
-  ${templateUri ? `<image x="0" y="0" width="${w}" height="${h}" xlink:href="${templateUri}" preserveAspectRatio="none"/>` : `<rect x="0" y="0" width="${w}" height="${h}" fill="#f7f5ee"/>`}
-  <rect x="${w*0.035}" y="${h*0.42}" width="${w*0.93}" height="${h*0.555}" fill="white"/>
+     viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <image x="${LABEL_ZONES.topImage.x}" y="${imageY}" width="${LABEL_ZONES.topImage.w}" height="${LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
+  <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
   ${nameEls}
-  <text x="${w/2}" y="${priceBaselineY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${priceSize}" fill="#1a2332">${xml(product.price)}</text>
-  ${barcodeUri ? `<image x="${F.barcode.x}" y="${h-F.barcode.y-F.barcode.h}" width="${F.barcode.w}" height="${F.barcode.h}" xlink:href="${barcodeUri}"/>` : ''}
+  ${product.showPrice ? `<text x="${LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2}" y="${priceY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${price.length > 10 ? 22 : 28}" fill="${template.textColor}">${xml(price)}</text>` : ''}
+  ${product.showBarcode && barcodeUri ? `<image x="${LABEL_ZONES.barcode.x}" y="${barcodeY}" width="${LABEL_ZONES.barcode.w}" height="${LABEL_ZONES.barcode.h}" xlink:href="${barcodeUri}"/>` : ''}
 </svg>`
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
+function buildInfoSvg(
+  product: Product,
+  template: ReturnType<typeof getLabelTemplate>,
+  topImageUri: string,
+  barcodeUri: string,
+  avenirFontUri: string,
+): string {
+  const name = product.name || 'Product Name'
+  const price = product.price || '$8.99'
+  const nameSize = 12
+  const nameLines = splitLines(name, 18, 2)
+  const lineHeight = nameSize * 1.08
+  const nameStartY = svgYFromBottom(INFO_LABEL_ZONES.leftName.y + INFO_LABEL_ZONES.leftName.h - nameSize, 0, template.height)
+  const priceY = svgYFromBottom(INFO_LABEL_ZONES.leftPrice.y, 0, template.height)
+  const panelY = svgYFromBottom(INFO_LABEL_ZONES.infoPanel.y, INFO_LABEL_ZONES.infoPanel.h, template.height)
+  const imageY = svgYFromBottom(INFO_LABEL_ZONES.topImage.y, INFO_LABEL_ZONES.topImage.h, template.height)
+  const barcodeY = svgYFromBottom(INFO_LABEL_ZONES.barcode.y, INFO_LABEL_ZONES.barcode.h, template.height)
+  const infoBlock = buildInfoHtml(product)
+  const nameEls = nameLines.map((line, index) =>
+    `<text x="${INFO_LABEL_ZONES.leftName.x + INFO_LABEL_ZONES.leftName.w / 2}" y="${nameStartY + index * lineHeight}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="${template.textColor}">${xml(line)}</text>`
+  ).join('\n  ')
 
-function wrapText(
-  text: string,
-  font: { widthOfTextAtSize(t: string, s: number): number },
-  size: number,
-  maxW: number,
-): string[] {
-  const words = text.split(' ')
-  const lines: string[] = []
-  let cur = ''
-  for (const w of words) {
-    const trial = cur ? `${cur} ${w}` : w
-    if (font.widthOfTextAtSize(trial, size) <= maxW) cur = trial
-    else { if (cur) lines.push(cur); cur = w }
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
+  ${avenirFontUri ? `<style>
+    @font-face {
+      font-family: 'Avenir Next Condensed Asset';
+      src: url('${avenirFontUri}') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+    }
+  </style>` : ''}
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" rx="12" fill="${template.shellColor}" stroke="none"/>
+  <image x="${INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${INFO_LABEL_ZONES.topImage.w}" height="${INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
+  <rect x="${INFO_LABEL_ZONES.infoPanel.x}" y="${panelY}" width="${INFO_LABEL_ZONES.infoPanel.w}" height="${INFO_LABEL_ZONES.infoPanel.h}" rx="10" fill="${template.infoPanelColor ?? '#ffffff'}"/>
+  ${nameEls}
+  ${product.showPrice ? `<text x="${INFO_LABEL_ZONES.leftPrice.x + INFO_LABEL_ZONES.leftPrice.w / 2}" y="${priceY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="12" fill="${template.textColor}">${xml(price)}</text>` : ''}
+  ${infoBlock}
+  ${product.showBarcode && barcodeUri ? `<image x="${INFO_LABEL_ZONES.barcode.x}" y="${barcodeY}" width="${INFO_LABEL_ZONES.barcode.w}" height="${INFO_LABEL_ZONES.barcode.h}" xlink:href="${barcodeUri}"/>` : ''}
+</svg>`
+}
+
+function buildVerticalInfoSvg(
+  product: Product,
+  template: ReturnType<typeof getLabelTemplate>,
+  topImageUri: string,
+  avenirFontUri: string,
+): string {
+  const name = product.name || 'Product Title'
+  const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24
+  const nameLines = splitLines(name, nameSize >= 24 ? 13 : nameSize >= 20 ? 16 : 19, 3)
+  const titleLineHeight = nameSize * 1.05
+  const titleStartY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.title.y + VERTICAL_INFO_LABEL_ZONES.title.h - nameSize, 0, template.height)
+  const panelY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.contentPanel.y, VERTICAL_INFO_LABEL_ZONES.contentPanel.h, template.height)
+  const imageY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.topImage.y, VERTICAL_INFO_LABEL_ZONES.topImage.h, template.height)
+  const headingY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingTitle.y + 2, 0, template.height)
+  const bodyStartY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingBody.y + VERTICAL_INFO_LABEL_ZONES.cookingBody.h - 8, 0, template.height)
+  const bodyLineHeight = 8 * 1.18
+  const nameEls = nameLines.map((line, index) =>
+    `<text x="${VERTICAL_INFO_LABEL_ZONES.title.x + VERTICAL_INFO_LABEL_ZONES.title.w / 2}" y="${titleStartY + index * titleLineHeight}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="${template.textColor}">${xml(line)}</text>`
+  ).join('\n  ')
+  const cookingLines = product.showCookingInstructions === false
+    ? []
+    : splitLines(product.cookingInstructions || 'Add cooking instructions', 28, 4)
+  const cookingEls = cookingLines.map((line, index) =>
+    `<text x="${VERTICAL_INFO_LABEL_ZONES.cookingBody.x + VERTICAL_INFO_LABEL_ZONES.cookingBody.w / 2}" y="${bodyStartY + index * bodyLineHeight}" text-anchor="middle" font-family="&quot;Avenir Next Condensed Asset&quot;,&quot;Avenir Next Condensed&quot;,&quot;Avenir Next&quot;,&quot;Arial Narrow&quot;,Arial,sans-serif" font-size="8" font-weight="400" fill="${template.textColor}">${xml(line)}</text>`
+  ).join('\n  ')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
+  ${avenirFontUri ? `<style>
+    @font-face {
+      font-family: 'Avenir Next Condensed Asset';
+      src: url('${avenirFontUri}') format('opentype');
+      font-weight: 400;
+      font-style: normal;
+    }
+  </style>` : ''}
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <image x="${VERTICAL_INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${VERTICAL_INFO_LABEL_ZONES.topImage.w}" height="${VERTICAL_INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
+  <rect x="${VERTICAL_INFO_LABEL_ZONES.contentPanel.x}" y="${panelY}" width="${VERTICAL_INFO_LABEL_ZONES.contentPanel.w}" height="${VERTICAL_INFO_LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
+  ${nameEls}
+  ${product.showCookingInstructions === false ? '' : `<text x="${VERTICAL_INFO_LABEL_ZONES.cookingTitle.x + VERTICAL_INFO_LABEL_ZONES.cookingTitle.w / 2}" y="${headingY}" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="10" fill="${template.textColor}">Cooking Instructions</text>`}
+  ${cookingEls}
+</svg>`
+}
+
+function buildLogoOnlySvg(
+  template: ReturnType<typeof getLabelTemplate>,
+  topImageUri: string,
+): string {
+  const imageY = svgYFromBottom(LOGO_ONLY_LABEL_ZONES.topImage.y, LOGO_ONLY_LABEL_ZONES.topImage.h, template.height)
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" fill="${template.shellColor}"/>
+  <image x="${LOGO_ONLY_LABEL_ZONES.topImage.x}" y="${imageY}" width="${LOGO_ONLY_LABEL_ZONES.topImage.w}" height="${LOGO_ONLY_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
+</svg>`
+}
+
+function buildInfoHtml(product: Product): string {
+  const x = INFO_LABEL_ZONES.infoText.x
+  const maxY = svgYFromBottom(INFO_LABEL_ZONES.infoText.y, 0, 181)
+  let y = svgYFromBottom(INFO_LABEL_ZONES.infoText.y + INFO_LABEL_ZONES.infoText.h - 6, 0, 181)
+  const out: string[] = []
+  const titleSize = 7.2
+  const sections = [
+    { title: 'Nutrition Facts:', body: joinInfo(product.servingInfo, product.nutritionInfo), bodySize: 8, maxChars: 34 },
+    { title: 'Cooking Instructions', body: product.showCookingInstructions ? (product.cookingInstructions || '') : '', bodySize: 8, maxChars: 34 },
+    { title: 'Ingredients:', body: product.ingredients || '', bodySize: 8, maxChars: 34 },
+  ]
+
+  for (const section of sections) {
+    if (!section.body) continue
+    if (y >= maxY - titleSize) break
+    out.push(`<text x="${x}" y="${y}" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="${titleSize}" fill="#1b2733">${xml(section.title)}</text>`)
+    y += titleSize * 1.45
+    const lines = splitLines(section.body, section.maxChars, 12)
+    const lineHeight = section.bodySize * 1.2
+    for (const line of lines) {
+      if (y >= maxY - section.bodySize) break
+      out.push(`<text x="${x}" y="${y}" font-family="&quot;Avenir Next Condensed Asset&quot;,&quot;Avenir Next Condensed&quot;,&quot;Avenir Next&quot;,&quot;Arial Narrow&quot;,Arial,sans-serif" font-size="${section.bodySize}" font-weight="400" fill="#1b2733">${xml(line)}</text>`)
+      y += lineHeight
+    }
+    y += section.bodySize * 0.5
   }
-  if (cur) lines.push(cur)
-  return lines.length ? lines : [text]
-}
 
-function splitLines(text: string, maxChars: number, maxLines = Number.POSITIVE_INFINITY): string[] {
-  const words = text.trim().split(/\s+/)
-  const lines: string[] = []
-  let cur = ''
-  for (const w of words) {
-    const trial = (cur + ' ' + w).trim()
-    if (trial.length <= maxChars) cur = trial
-    else { if (cur) lines.push(cur); cur = w }
+  if (product.allergenStatement) {
+    const lines = splitLines(product.allergenStatement, 34, 12)
+    for (const line of lines) {
+      if (y >= maxY - 8) break
+      out.push(`<text x="${x}" y="${y}" font-family="&quot;Avenir Next Condensed Asset&quot;,&quot;Avenir Next Condensed&quot;,&quot;Avenir Next&quot;,&quot;Arial Narrow&quot;,Arial,sans-serif" font-size="8" font-weight="400" fill="#3f3f46">${xml(line)}</text>`)
+      y += 8 * 1.2
+    }
   }
-  if (cur) lines.push(cur)
-  if (!lines.length) return [text]
-  if (lines.length <= maxLines) return lines
 
-  const clipped = lines.slice(0, maxLines)
-  const lastIdx = clipped.length - 1
-  const tail = clipped[lastIdx]
-  clipped[lastIdx] = `${tail.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`
-  return clipped
+  return out.join('\n  ')
 }
 
-function xml(s: string): string {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&apos;')
+function readFontDataUri(filePath: string): string {
+  if (!existsSync(filePath)) return ''
+  const bytes = readFileSync(filePath)
+  return `data:font/otf;base64,${bytes.toString('base64')}`
 }
 
-// Re-export for other modules
+function xml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function hexToRgb(hex: string): ReturnType<typeof rgb> {
+  const normalized = hex.replace('#', '')
+  const value = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized
+  const intValue = Number.parseInt(value, 16)
+  return rgb(
+    ((intValue >> 16) & 255) / 255,
+    ((intValue >> 8) & 255) / 255,
+    (intValue & 255) / 255
+  )
+}
+
 export { AVERY as AVERY_5821 }

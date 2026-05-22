@@ -20,8 +20,13 @@ const api = {
   file: {
     pickBarcodeImage: () => electron.ipcRenderer.invoke("file:pickBarcodeImage"),
     saveBarcodeImage: (sourcePath, productId) => electron.ipcRenderer.invoke("file:saveBarcodeImage", sourcePath, productId),
+    pickLogoImage: () => electron.ipcRenderer.invoke("file:pickLogoImage"),
+    saveLogoImage: (sourcePath, productId) => electron.ipcRenderer.invoke("file:saveLogoImage", sourcePath, productId),
     readImageAsBase64: (filePath) => electron.ipcRenderer.invoke("file:readImageAsBase64", filePath),
-    getTemplatePNG: () => electron.ipcRenderer.invoke("file:getTemplatePNG"),
+    getTemplatePNG: (templateId) => electron.ipcRenderer.invoke("file:getTemplatePNG", templateId),
+    listTemplates: () => electron.ipcRenderer.invoke("file:listTemplates"),
+    pickTemplateImage: () => electron.ipcRenderer.invoke("file:pickTemplateImage"),
+    saveTemplateImage: (sourcePath) => electron.ipcRenderer.invoke("file:saveTemplateImage", sourcePath),
     pickExportFolder: () => electron.ipcRenderer.invoke("file:pickExportFolder")
   },
   // Export

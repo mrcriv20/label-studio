@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { ArrowLeft, FileText, Info, Printer } from 'lucide-react'
 import LabelPreview from '../components/LabelPreview'
 import type { Product } from '../types'
+import { getLabelTemplate } from '../../../shared/labelTemplates'
 
 interface SlotAssignment {
   product: Product | null
@@ -275,6 +276,8 @@ function SheetSlotPreview({
   // Slot is 4"x2.5" (aspect 1.6). Scale portrait label so that after -90deg
   // rotation it fills the slot width and keeps full content visible.
   const SLOT_ASPECT = 4 / 2.5
+  const template = product ? getLabelTemplate(product.templateId) : null
+  const isInfoLayout = template?.layout === 'info'
 
   return (
     <div
@@ -302,9 +305,10 @@ function SheetSlotPreview({
         >
           <div
             style={{
-              height: `${SLOT_ASPECT * 100}%`,
-              aspectRatio: '181 / 289',
-              transform: 'rotate(-90deg)',
+              width: isInfoLayout ? '100%' : 'auto',
+              height: isInfoLayout ? 'auto' : `${SLOT_ASPECT * 100}%`,
+              aspectRatio: isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : '181 / 289',
+              transform: isInfoLayout ? 'none' : 'rotate(-90deg)',
               transformOrigin: 'center',
               flexShrink: 0,
             }}
