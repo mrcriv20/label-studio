@@ -25,7 +25,10 @@ node scripts/seed.js
 |---|---|
 | `npm run dev` | Start Electron app in hot-reload dev mode |
 | `npm run build` | Build all three bundles (main, preload, renderer) |
+| `npm run build:icon:mac` | Generate `build/icon.icns` from `assets/label-app-icon.png` |
 | `npm run package` | Build + package as macOS .dmg |
+| `npm run package:mac` | Build unsigned macOS .dmg (recommended for local testing) |
+| `npm run package:mac:signed` | Build signed macOS .dmg (requires Apple Developer ID certificate) |
 | `npm run convert-template` | Re-convert EPS → PNG (requires Ghostscript) |
 
 ---
@@ -174,6 +177,26 @@ In macOS Print dialog:
 - Do NOT select "Fit to Page" or "Scale to Fit"
 
 The exported PDF is exactly sized for US Letter paper with Avery 5821 placement. Any scaling will misalign labels with the physical sheet.
+
+---
+
+## macOS Signing Notes
+
+If packaging fails with a codesign chain error like `unable to build chain to self-signed root` or `errSecInternalComponent`, use:
+
+```bash
+npm run package:mac
+```
+
+This creates an unsigned DMG for local testing and avoids certificate discovery.
+
+For signed distribution builds, use:
+
+```bash
+npm run package:mac:signed
+```
+
+Signed distribution requires a valid `Developer ID Application` certificate (not only `Apple Development`) with a trusted certificate chain in Keychain Access.
 
 ---
 
