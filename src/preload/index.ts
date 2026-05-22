@@ -16,6 +16,8 @@ const api = {
     delete: (id: string): Promise<IpcResult<boolean>> => ipcRenderer.invoke('product:delete', id),
     duplicate: (id: string): Promise<IpcResult<Product>> =>
       ipcRenderer.invoke('product:duplicate', id),
+    importSpreadsheet: (): Promise<IpcResult<{ imported: number; skipped: string[] } | null>> =>
+      ipcRenderer.invoke('product:importSpreadsheet'),
   },
 
   // Settings

@@ -7355,6 +7355,8 @@ function Library({ onEdit, onOpenSheet }) {
   const [error, setError] = reactExports.useState("");
   const [deleting, setDeleting] = reactExports.useState(null);
   const [exporting, setExporting] = reactExports.useState(null);
+  const [importing, setImporting] = reactExports.useState(false);
+  const [activeCategory, setActiveCategory] = reactExports.useState("__all__");
   const load = reactExports.useCallback(async () => {
     setLoading(true);
     const result = await window.api.product.list();
@@ -7370,6 +7372,31 @@ function Library({ onEdit, onOpenSheet }) {
   const filtered = products.filter(
     (p2) => p2.name.toLowerCase().includes(query.toLowerCase()) || p2.barcodeValue.includes(query) || p2.price.toLowerCase().includes(query.toLowerCase())
   );
+  const categories = Array.from(
+    new Set(products.map((p2) => p2.category?.trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+  const categoryFiltered = filtered.filter(
+    (p2) => activeCategory === "__all__" || (p2.category?.trim() || "") === activeCategory
+  );
+  function buildGroups(items2) {
+    if (activeCategory !== "__all__" || categories.length === 0) {
+      return [{ label: "", items: items2 }];
+    }
+    const map = /* @__PURE__ */ new Map();
+    for (const p2 of items2) {
+      const key = p2.category?.trim() || "";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(p2);
+    }
+    const groups = [];
+    for (const cat of categories) {
+      const rows = map.get(cat);
+      if (rows?.length) groups.push({ label: cat, items: rows });
+    }
+    const uncategorised = map.get("") ?? [];
+    if (uncategorised.length) groups.push({ label: "Uncategorised", items: uncategorised });
+    return groups;
+  }
   async function handleDelete(id2) {
     if (!confirm("Delete this product? This cannot be undone.")) return;
     setDeleting(id2);
@@ -7383,6 +7410,25 @@ function Library({ onEdit, onOpenSheet }) {
     if (result.ok) setProducts((prev) => [result.data, ...prev]);
     else alert(`Duplicate failed: ${result.error}`);
   }
+  async function handleImport() {
+    setImporting(true);
+    const result = await window.api.product.importSpreadsheet();
+    setImporting(false);
+    if (!result.ok) {
+      alert(`Import failed: ${result.error}`);
+      return;
+    }
+    if (result.data === null) return;
+    const { imported, skipped } = result.data;
+    await load();
+    let msg = `Imported ${imported} product${imported !== 1 ? "s" : ""}.`;
+    if (skipped.length) msg += `
+
+Skipped ${skipped.length} row${skipped.length !== 1 ? "s" : ""}:
+${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
+…and ${skipped.length - 10} more` : ""}`;
+    alert(msg);
+  }
   async function handleExportPDF(product) {
     setExporting(product.id);
     const result = await window.api.export.singlePDF(product);
@@ -7392,7 +7438,7 @@ function Library({ onEdit, onOpenSheet }) {
   function fmtDate(iso) {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "screen", style: { display: "flex", flexDirection: "column", gap: 20 }, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "screen", style: { display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { style: { fontSize: 22, fontWeight: 700, color: "#1a2332", margin: 0 }, children: "Products" }),
@@ -7405,6 +7451,11 @@ function Library({ onEdit, onOpenSheet }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: load, className: "btn btn-icon", title: "Refresh", children: /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 13 }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleImport, disabled: importing, className: "btn-outline btn-sm", title: "Import from CSV / Excel", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 13 }),
+          " ",
+          importing ? "Importing…" : "Import"
+        ] }),
         products.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => onOpenSheet(products.slice(0, 8)), className: "btn-outline btn-sm", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }),
           " Print Sheet"
@@ -7428,12 +7479,38 @@ function Library({ onEdit, onOpenSheet }) {
         }
       )
     ] }),
+    categories.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Tag, { size: 12, style: { color: "#94a3b8", flexShrink: 0 } }),
+      [{ id: "__all__", label: "All" }, ...categories.map((c) => ({ id: c, label: c }))].map(({ id: id2, label }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          onClick: () => setActiveCategory(id2),
+          style: {
+            padding: "3px 12px",
+            borderRadius: 20,
+            border: "1px solid",
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: "pointer",
+            transition: "all 0.1s",
+            borderColor: activeCategory === id2 ? "#2563eb" : "#e2e8f0",
+            background: activeCategory === id2 ? "#2563eb" : "white",
+            color: activeCategory === id2 ? "white" : "#64748b"
+          },
+          children: [
+            label,
+            id2 !== "__all__" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: 5, opacity: 0.7 }, children: products.filter((p2) => (p2.category?.trim() || "") === id2).length })
+          ]
+        },
+        id2
+      ))
+    ] }),
     error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#dc2626" }, children: error }),
-    loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13, paddingTop: 60 }, children: "Loading products…" }) : filtered.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 8 }, children: [
+    loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13, paddingTop: 60 }, children: "Loading products…" }) : categoryFiltered.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 8 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 40 }, children: "🏪" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 600, color: "#1a2332", margin: 0 }, children: query ? "No products match your search" : "No products yet" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 13, color: "#94a3b8", marginTop: 2 }, children: query ? "Try a different search term." : "Create your first product label to get started." }),
-      !query && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 600, color: "#1a2332", margin: 0 }, children: query || activeCategory !== "__all__" ? "No products match your filter" : "No products yet" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 13, color: "#94a3b8", marginTop: 2 }, children: query || activeCategory !== "__all__" ? "Try clearing the search or selecting a different category." : "Create your first product label to get started." }),
+      !query && activeCategory === "__all__" && /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
           onClick: () => onEdit(void 0),
@@ -7445,46 +7522,57 @@ function Library({ onEdit, onOpenSheet }) {
           ]
         }
       )
-    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "card", style: { overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { style: { borderBottom: "1px solid #f1f5f9", background: "#fafafa" }, children: [
+    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "card", style: { flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, minHeight: 0, overflow: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { style: { position: "sticky", top: 0, zIndex: 1 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { style: { borderBottom: "1px solid #f1f5f9", background: "#fafafa" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Product" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Price" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Barcode" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Modified" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "right", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: "Actions" })
       ] }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: filtered.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "tr",
-        {
-          style: { borderBottom: "1px solid #f8fafc" },
-          onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
-          onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", fontWeight: 600, color: "#1a2332" }, children: p2.name }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 2 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  onClick: () => handleDelete(p2.id),
-                  disabled: deleting === p2.id,
-                  className: "btn btn-icon danger",
-                  title: "Delete",
-                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
-                }
-              )
-            ] }) })
-          ]
-        },
-        p2.id
-      )) })
-    ] }) })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: buildGroups(categoryFiltered).map(({ label, items: items2 }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        label && /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { colSpan: 5, style: { padding: "8px 16px 4px", fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }, children: [
+          label,
+          " ",
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontWeight: 400, color: "#94a3b8" }, children: [
+            "(",
+            items2.length,
+            ")"
+          ] })
+        ] }) }, `group-${label}`),
+        items2.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "tr",
+          {
+            style: { borderBottom: "1px solid #f8fafc" },
+            onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
+            onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", fontWeight: 600, color: "#1a2332" }, children: p2.name }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 2 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    onClick: () => handleDelete(p2.id),
+                    disabled: deleting === p2.id,
+                    className: "btn btn-icon danger",
+                    title: "Delete",
+                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 13 })
+                  }
+                )
+              ] }) })
+            ]
+          },
+          p2.id
+        ))
+      ] })) })
+    ] }) }) })
   ] });
 }
 var barcodes = {};
@@ -11177,6 +11265,7 @@ function generateBarcodeValue() {
 const EMPTY_PRODUCT = () => ({
   name: "",
   price: "",
+  category: "",
   barcodeValue: generateBarcodeValue(),
   barcodeType: "CODE128",
   barcodeImagePath: null,
@@ -11245,6 +11334,7 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       result = await window.api.product.create({
         name: product.name,
         price: product.price,
+        category: product.category ?? "",
         barcodeValue: product.barcodeValue.trim(),
         barcodeType: "CODE128",
         barcodeImagePath: product.barcodeImagePath ?? null,
@@ -11420,6 +11510,19 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Include symbol and unit — e.g. $9.99/lb or $4.50 each" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Category" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "input",
+              placeholder: "e.g. Grab & Go, Sauces, Cheese…",
+              value: product.category ?? "",
+              onChange: (e) => update("category", e.target.value),
+              maxLength: 60
+            }
+          )
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 12 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [

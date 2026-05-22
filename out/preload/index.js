@@ -8,7 +8,8 @@ const api = {
     create: (data) => electron.ipcRenderer.invoke("product:create", data),
     update: (product) => electron.ipcRenderer.invoke("product:update", product),
     delete: (id) => electron.ipcRenderer.invoke("product:delete", id),
-    duplicate: (id) => electron.ipcRenderer.invoke("product:duplicate", id)
+    duplicate: (id) => electron.ipcRenderer.invoke("product:duplicate", id),
+    importSpreadsheet: () => electron.ipcRenderer.invoke("product:importSpreadsheet")
   },
   // Settings
   settings: {

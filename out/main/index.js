@@ -5,10 +5,28 @@ const utils = require("@electron-toolkit/utils");
 const fs = require("fs");
 const url = require("url");
 const nanoid = require("nanoid");
+const XLSX = require("xlsx");
 const pdfLib = require("pdf-lib");
 const fontkit = require("@pdf-lib/fontkit");
 const os = require("os");
 const bwipjs = require("bwip-js");
+function _interopNamespaceDefault(e) {
+  const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
+  if (e) {
+    for (const k in e) {
+      if (k !== "default") {
+        const d = Object.getOwnPropertyDescriptor(e, k);
+        Object.defineProperty(n, k, d.get ? d : {
+          enumerable: true,
+          get: () => e[k]
+        });
+      }
+    }
+  }
+  n.default = e;
+  return Object.freeze(n);
+}
+const XLSX__namespace = /* @__PURE__ */ _interopNamespaceDefault(XLSX);
 const DATA_DIR = () => electron.app.getPath("userData");
 function dbPath() {
   return path.join(DATA_DIR(), "products.json");
@@ -493,6 +511,76 @@ function registerIpcHandlers() {
       };
       createProduct(copy);
       return ok(copy);
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("product:importSpreadsheet", async () => {
+    try {
+      let findCol = function(headers2, ...candidates) {
+        return headers2.find((h) => candidates.includes(norm(h)));
+      };
+      const result = await electron.dialog.showOpenDialog({
+        title: "Import Products from Spreadsheet",
+        filters: [
+          { name: "Spreadsheets", extensions: ["csv", "xlsx", "xls"] }
+        ],
+        properties: ["openFile"]
+      });
+      if (result.canceled || !result.filePaths.length) return ok(null);
+      const filePath = result.filePaths[0];
+      const wb = XLSX__namespace.readFile(filePath, { type: "file", raw: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX__namespace.utils.sheet_to_json(ws, {
+        defval: "",
+        raw: false
+      });
+      const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (rows.length === 0) return fail("Spreadsheet is empty or unreadable.");
+      const headers = Object.keys(rows[0]);
+      const nameCol = findCol(headers, "name", "productname", "product", "description", "item");
+      const priceCol = findCol(headers, "price", "cost", "unitprice", "retailprice");
+      const barcodeCol = findCol(headers, "barcode", "barcodevalue", "barcodenumber", "upc", "ean", "sku", "code");
+      const categoryCol = findCol(headers, "category", "type", "section", "department", "group");
+      if (!nameCol) return fail('Could not find a "name" column. Expected a column named: name, product, description.');
+      if (!priceCol) return fail('Could not find a "price" column. Expected a column named: price, cost, unitprice.');
+      if (!barcodeCol) return fail('Could not find a "barcode" column. Expected a column named: barcode, upc, ean, sku.');
+      const settings = getSettings();
+      let imported = 0;
+      const skipped = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const name = String(row[nameCol] ?? "").trim();
+        const price = String(row[priceCol] ?? "").trim();
+        const barcode = String(row[barcodeCol] ?? "").trim();
+        const category = categoryCol ? String(row[categoryCol] ?? "").trim() : "";
+        if (!name && !price && !barcode) continue;
+        if (!name) {
+          skipped.push(`Row ${i + 2}: missing name`);
+          continue;
+        }
+        if (!barcode) {
+          skipped.push(`Row ${i + 2}: missing barcode`);
+          continue;
+        }
+        const normalPrice = price ? /^\d/.test(price) ? `${settings.pricePrefix}${price}` : price : "";
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        const product = {
+          id: nanoid.nanoid(),
+          name,
+          price: normalPrice,
+          category,
+          barcodeValue: barcode,
+          barcodeType: "CODE128",
+          barcodeImagePath: null,
+          templateId: settings.templateId,
+          createdAt: now,
+          updatedAt: now
+        };
+        createProduct(product);
+        imported++;
+      }
+      return ok({ imported, skipped });
     } catch (e) {
       return fail(String(e));
     }

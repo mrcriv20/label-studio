@@ -5,6 +5,7 @@ export interface Product {
   id: string
   name: string
   price: string
+  category: string
   barcodeValue: string
   barcodeType: 'CODE128'
   barcodeImagePath: string | null
@@ -34,6 +35,7 @@ declare global {
         update(product: Product): Promise<IpcResult<Product>>
         delete(id: string): Promise<IpcResult<boolean>>
         duplicate(id: string): Promise<IpcResult<Product>>
+        importSpreadsheet(): Promise<IpcResult<{ imported: number; skipped: string[] } | null>>
       }
       settings: {
         get(): Promise<IpcResult<AppSettings>>

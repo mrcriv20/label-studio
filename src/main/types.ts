@@ -4,6 +4,7 @@ export interface Product {
   id: string
   name: string
   price: string
+  category: string       // e.g. "Grab & Go", "Sauces", etc. Empty string = uncategorised.
   barcodeValue: string
   barcodeType: 'CODE128'
   barcodeImagePath: string | null

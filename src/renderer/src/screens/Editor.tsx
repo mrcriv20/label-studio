@@ -19,6 +19,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   name: '',
   price: '',
+  category: '',
   barcodeValue: generateBarcodeValue(),
   barcodeType: 'CODE128',
   barcodeImagePath: null,
@@ -94,6 +95,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
       result = await window.api.product.create({
         name: product.name!,
         price: product.price!,
+        category: product.category ?? '',
         barcodeValue: product.barcodeValue.trim(),
         barcodeType: 'CODE128',
         barcodeImagePath: product.barcodeImagePath ?? null,
@@ -272,6 +274,18 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
               <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
                 Include symbol and unit — e.g. $9.99/lb or $4.50 each
               </p>
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="label-text">Category</label>
+              <input
+                className="input"
+                placeholder="e.g. Grab & Go, Sauces, Cheese…"
+                value={product.category ?? ''}
+                onChange={(e) => update('category', e.target.value)}
+                maxLength={60}
+              />
             </div>
 
             {/* Barcode */}
