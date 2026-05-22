@@ -3,6 +3,7 @@ const electron = require("electron");
 const path = require("path");
 const utils = require("@electron-toolkit/utils");
 const fs = require("fs");
+const url = require("url");
 const nanoid = require("nanoid");
 const pdfLib = require("pdf-lib");
 const fontkit = require("@pdf-lib/fontkit");
@@ -163,8 +164,51 @@ function readFontBytes(...paths) {
 const home = os.homedir();
 const USER_FONTS = path.join(home, "Library", "Fonts");
 const SYS_FONTS = "/Library/Fonts";
-const LORA_BYTES = readFontBytes(path.join(USER_FONTS, "Lora-Bold.ttf"), path.join(SYS_FONTS, "Lora-Bold.ttf"));
-const GENTY_BYTES = readFontBytes(path.join(USER_FONTS, "GentyDemo-Regular.ttf"), path.join(SYS_FONTS, "GentyDemo-Regular.ttf"));
+const APPLE_SYS_FONTS = "/System/Library/Fonts";
+function scoreFontFile(fileName) {
+  const n = fileName.toLowerCase();
+  let score = 0;
+  if (n.includes("bold")) score += 100;
+  if (n.includes("variable")) score += 70;
+  if (n.includes("regular")) score += 40;
+  if (n.includes("italic")) score -= 20;
+  return score;
+}
+function findFamilyFontBytes(family, exactCandidates) {
+  const dirs = [USER_FONTS, SYS_FONTS, APPLE_SYS_FONTS];
+  const exactPaths = [];
+  for (const dir of dirs) {
+    for (const fileName of exactCandidates) exactPaths.push(path.join(dir, fileName));
+  }
+  const exact = readFontBytes(...exactPaths);
+  if (exact) return exact;
+  const familyNeedle = family.toLowerCase();
+  const discovered = [];
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      for (const fileName of fs.readdirSync(dir)) {
+        const lower = fileName.toLowerCase();
+        if (!lower.includes(familyNeedle)) continue;
+        if (!/\.(ttf|otf)$/.test(lower)) continue;
+        discovered.push(path.join(dir, fileName));
+      }
+    } catch {
+    }
+  }
+  discovered.sort((a, b) => scoreFontFile(b) - scoreFontFile(a));
+  return readFontBytes(...discovered);
+}
+const LORA_BYTES = findFamilyFontBytes("lora", [
+  "Lora-Bold.ttf",
+  "Lora-SemiBold.ttf",
+  "Lora-VariableFont_wght.ttf",
+  "Lora-Regular.ttf"
+]);
+const GENTY_BYTES = findFamilyFontBytes("genty", [
+  "GentyDemo-Regular.ttf",
+  "Genty Demo Regular.ttf"
+]);
 async function embedFonts(pdfDoc) {
   const fallback = await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
   const nameFnt = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : fallback;
@@ -321,12 +365,19 @@ async function exportSingleLabelSVG(product) {
     if (png) barcodeUri = `data:image/png;base64,${png.toString("base64")}`;
   } catch {
   }
-  const nameSize = product.name.length > 18 ? 20 : product.name.length > 12 ? 24 : 28;
-  const nameLines = splitLines(product.name, 20);
-  const nameY0 = h - 90;
-  const priceSize = product.price.length > 10 ? 26 : 32;
+  const nameSize = product.name.length > 28 ? 15 : product.name.length > 20 ? 17 : product.name.length > 14 ? 19 : 22;
+  const nameMaxChars = nameSize >= 19 ? 13 : nameSize >= 17 ? 15 : 18;
+  const nameLines = splitLines(product.name, nameMaxChars, 2);
+  const nameLineH = nameSize * 1.16;
+  const nameY0 = nameLines.length > 1 ? 145 : 152;
+  const priceSize = product.price.length > 10 ? 24 : 28;
+  const nameLastBaseline = nameY0 + (nameLines.length - 1) * nameLineH;
+  const nameBottomY = nameLastBaseline + nameSize * 0.26;
+  const barcodeTopY = h - F.barcode.y - F.barcode.h;
+  const priceCenterY = (nameBottomY + barcodeTopY) / 2;
+  const priceBaselineY = priceCenterY + priceSize * 0.34;
   const nameEls = nameLines.map(
-    (line, i) => `<text x="${w / 2}" y="${nameY0 + i * nameSize * 1.25}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="#1a2332">${xml(line)}</text>`
+    (line, i) => `<text x="${w / 2}" y="${nameY0 + i * nameLineH}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="#1a2332">${xml(line)}</text>`
   ).join("\n  ");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -334,7 +385,7 @@ async function exportSingleLabelSVG(product) {
   ${templateUri ? `<image x="0" y="0" width="${w}" height="${h}" xlink:href="${templateUri}" preserveAspectRatio="none"/>` : `<rect x="0" y="0" width="${w}" height="${h}" fill="#f7f5ee"/>`}
   <rect x="${w * 0.035}" y="${h * 0.42}" width="${w * 0.93}" height="${h * 0.555}" fill="white"/>
   ${nameEls}
-  <text x="${w / 2}" y="${h - 118}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${priceSize}" fill="#1a2332">${xml(product.price)}</text>
+  <text x="${w / 2}" y="${priceBaselineY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${priceSize}" fill="#1a2332">${xml(product.price)}</text>
   ${barcodeUri ? `<image x="${F.barcode.x}" y="${h - F.barcode.y - F.barcode.h}" width="${F.barcode.w}" height="${F.barcode.h}" xlink:href="${barcodeUri}"/>` : ""}
 </svg>`;
 }
@@ -353,8 +404,8 @@ function wrapText(text, font, size, maxW) {
   if (cur) lines.push(cur);
   return lines.length ? lines : [text];
 }
-function splitLines(text, maxChars) {
-  const words = text.split(" ");
+function splitLines(text, maxChars, maxLines = Number.POSITIVE_INFINITY) {
+  const words = text.trim().split(/\s+/);
   const lines = [];
   let cur = "";
   for (const w of words) {
@@ -366,7 +417,13 @@ function splitLines(text, maxChars) {
     }
   }
   if (cur) lines.push(cur);
-  return lines.length ? lines : [text];
+  if (!lines.length) return [text];
+  if (lines.length <= maxLines) return lines;
+  const clipped = lines.slice(0, maxLines);
+  const lastIdx = clipped.length - 1;
+  const tail = clipped[lastIdx];
+  clipped[lastIdx] = `${tail.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+  return clipped;
 }
 function xml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
@@ -549,6 +606,18 @@ function registerIpcHandlers() {
       }
     }
   );
+  electron.ipcMain.handle("print:sheet", async (_e, products, startSlot) => {
+    const tempPath = path.join(electron.app.getPath("temp"), `label-sheet-print-${Date.now()}-${nanoid.nanoid(8)}.html`);
+    try {
+      const html = await buildSheetPrintHtml(products, startSlot);
+      fs.writeFileSync(tempPath, html, "utf8");
+      const printed = await printHtmlWithDialog(tempPath);
+      scheduleTempPdfCleanup(tempPath);
+      return ok(printed);
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
   electron.ipcMain.handle("print:getTemplatePNG", () => {
     try {
       return ok(readTemplatePNGBase64());
@@ -561,9 +630,139 @@ function generateBarcode() {
   const num = Math.floor(Math.random() * 9e11) + 1e11;
   return String(num);
 }
+async function printHtmlWithDialog(htmlPath) {
+  return new Promise((resolve, reject) => {
+    const printWin = new electron.BrowserWindow({
+      width: 900,
+      height: 700,
+      show: true,
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: false }
+    });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (!printWin.isDestroyed()) printWin.close();
+      resolve(result);
+    };
+    printWin.webContents.once("did-finish-load", () => {
+      setTimeout(() => {
+        if (settled || printWin.isDestroyed()) return;
+        printWin.webContents.print(
+          { silent: false, printBackground: true },
+          (success) => finish(success)
+        );
+      }, 150);
+    });
+    printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
+      if (!settled) {
+        settled = true;
+        if (!printWin.isDestroyed()) printWin.destroy();
+        reject(new Error(`Failed to load printable document: ${desc}`));
+      }
+    });
+    printWin.loadURL(url.pathToFileURL(htmlPath).toString()).catch((err) => {
+      if (!settled) {
+        settled = true;
+        if (!printWin.isDestroyed()) printWin.destroy();
+        reject(err);
+      }
+    });
+  });
+}
+async function buildSheetPrintHtml(products, startSlot) {
+  const slotHtml = [];
+  for (let slot = 1; slot <= 8; slot++) {
+    const pIdx = slot - startSlot;
+    if (pIdx < 0 || pIdx >= products.length) continue;
+    const product = products[pIdx];
+    if (!product) continue;
+    const col = (slot - 1) % 2;
+    const row = Math.floor((slot - 1) / 2);
+    const leftIn = 0.25 + col * 4;
+    const topIn = 0.5 + row * 2.5;
+    const svg = await exportSingleLabelSVG(product);
+    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    slotHtml.push(`
+      <div class="slot" style="left:${leftIn}in; top:${topIn}in;">
+        <div class="label-rotated">
+          <img src="${svgDataUri}" alt="${escapeHtml(product.name)}" />
+        </div>
+      </div>
+    `);
+  }
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Label Sheet Print</title>
+    <style>
+      @page { size: Letter portrait; margin: 0; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 8.5in;
+        height: 11in;
+        background: white;
+      }
+      * {
+        box-sizing: border-box;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .sheet {
+        position: relative;
+        width: 8.5in;
+        height: 11in;
+        overflow: hidden;
+        background: white;
+      }
+      .slot {
+        position: absolute;
+        width: 4in;
+        height: 2.5in;
+        overflow: hidden;
+      }
+      .label-rotated {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 2.5in;
+        height: 4in;
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center;
+      }
+      .label-rotated img {
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      ${slotHtml.join("\n")}
+    </div>
+  </body>
+</html>`;
+}
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function scheduleTempPdfCleanup(filePath) {
+  setTimeout(() => {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+    }
+  }, 6e4);
+}
 function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9_\-. ]/gi, "_").trim().slice(0, 60);
 }
+electron.app.disableHardwareAcceleration();
 function createWindow() {
   const win = new electron.BrowserWindow({
     width: 1280,
@@ -583,8 +782,8 @@ function createWindow() {
   win.on("ready-to-show", () => {
     win.show();
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    electron.shell.openExternal(url);
+  win.webContents.setWindowOpenHandler(({ url: url2 }) => {
+    electron.shell.openExternal(url2);
     return { action: "deny" };
   });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {

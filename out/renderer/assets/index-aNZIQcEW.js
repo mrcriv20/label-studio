@@ -7204,6 +7204,23 @@ const Plus = createLucideIcon("Plus", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Printer = createLucideIcon("Printer", [
+  [
+    "path",
+    {
+      d: "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2",
+      key: "143wyd"
+    }
+  ],
+  ["path", { d: "M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6", key: "1itne7" }],
+  ["rect", { x: "6", y: "14", width: "12", height: "8", rx: "1", key: "1ue0tg" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const RefreshCw = createLucideIcon("RefreshCw", [
   ["path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8", key: "v9h5vc" }],
   ["path", { d: "M21 3v5h-5", key: "1q7to0" }],
@@ -11187,6 +11204,20 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       if (r2.ok && r2.data) setBarcodeOverrideDataUri(r2.data);
     });
   }, [initialProduct?.barcodeImagePath]);
+  const barcodeValidity = reactExports.useMemo(() => {
+    const value = (product.barcodeValue ?? "").trim();
+    if (!value) return null;
+    try {
+      const svg2 = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      JsBarcode$1(svg2, value, {
+        format: "CODE128",
+        displayValue: false
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [product.barcodeValue]);
   function update(field, value) {
     setProduct((prev) => ({ ...prev, [field]: value }));
     if (saveStatus === "saved") setSaveStatus("idle");
@@ -11202,6 +11233,11 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       setSaveStatus("error");
       return null;
     }
+    if (!product.barcodeValue?.trim()) {
+      setSaveError("Barcode value is required.");
+      setSaveStatus("error");
+      return null;
+    }
     setSaveStatus("saving");
     setSaveError("");
     let result;
@@ -11209,13 +11245,16 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
       result = await window.api.product.create({
         name: product.name,
         price: product.price,
-        barcodeValue: product.barcodeValue,
+        barcodeValue: product.barcodeValue.trim(),
         barcodeType: "CODE128",
         barcodeImagePath: product.barcodeImagePath ?? null,
         templateId: "avery5821"
       });
     } else {
-      result = await window.api.product.update(product);
+      result = await window.api.product.update({
+        ...product,
+        barcodeValue: product.barcodeValue.trim()
+      });
     }
     if (result.ok) {
       setProduct(result.data);
@@ -11394,15 +11433,23 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               " Regenerate"
             ] })
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: {
-            background: "#f8fafc",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontFamily: "monospace",
-            fontSize: 13,
-            color: "#475569",
-            letterSpacing: "0.05em"
-          }, children: product.barcodeValue ?? "—" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Barcode Number" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "input",
+                placeholder: "Type barcode value",
+                value: product.barcodeValue ?? "",
+                onChange: (e) => update("barcodeValue", e.target.value),
+                maxLength: 80,
+                style: { fontFamily: "monospace", letterSpacing: "0.04em" }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "You can type your own barcode or regenerate one automatically." }),
+            barcodeValidity === false && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#dc2626", marginTop: 5 }, children: "This value cannot be rendered as Code 128." }),
+            barcodeValidity === true && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#16a34a", marginTop: 5 }, children: "Valid Code 128 value." })
+          ] }),
           barcodeOverrideDataUri ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "img",
@@ -11412,14 +11459,14 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
                 style: { height: 36, objectFit: "contain", background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: 4 }
               }
             ),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, color: "#64748b", flex: 1 }, children: "Custom barcode image" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, color: "#64748b", flex: 1 }, children: "Custom uploaded image (overrides typed/generated barcode)" }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleRemoveBarcodeImage, className: "btn-ghost btn-sm", style: { color: "#f87171" }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 12 }),
               " Remove"
             ] })
           ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleUploadBarcode, className: "btn-outline btn-sm", style: { alignSelf: "flex-start" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 12 }),
-            " Upload barcode image"
+            " Upload image"
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
@@ -11446,6 +11493,7 @@ function SheetBuilder({ initialProducts, onBack }) {
   const [fillProduct, setFillProduct] = reactExports.useState(null);
   const [fillCount, setFillCount] = reactExports.useState(8);
   const [exporting, setExporting] = reactExports.useState(false);
+  const [printing, setPrinting] = reactExports.useState(false);
   const [activeSlot, setActiveSlot] = reactExports.useState(null);
   const [mode, setMode] = reactExports.useState("fill");
   reactExports.useEffect(() => {
@@ -11495,6 +11543,19 @@ function SheetBuilder({ initialProducts, onBack }) {
     if (!result.ok) alert(`Export failed: ${result.error}`);
     setExporting(false);
   }
+  async function handlePrintDirect() {
+    const toPrint = resolveSlots();
+    if (toPrint.length === 0) {
+      alert("No products assigned to slots.");
+      return;
+    }
+    setPrinting(true);
+    const result = await window.api.print.sheet(toPrint, startSlot);
+    if (!result.ok) {
+      alert(`Print failed: ${result.error}`);
+    }
+    setPrinting(false);
+  }
   function buildDisplaySlots() {
     if (mode === "fill" && fillProduct) {
       return Array.from({ length: 8 }, (_, i) => {
@@ -11526,11 +11587,18 @@ function SheetBuilder({ initialProducts, onBack }) {
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#cbd5e1", fontSize: 13 }, children: "/" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332" }, children: "Print Sheet Builder" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, background: "#f1f5f9", color: "#64748b", borderRadius: 20, padding: "2px 10px", marginLeft: 4 }, children: "Avery 5821 — 8 labels per sheet" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginLeft: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleExport, disabled: exporting, className: "btn-primary btn-sm", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }),
-        " ",
-        exporting ? "Exporting…" : "Export PDF"
-      ] }) })
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginLeft: "auto", display: "flex", gap: 8 }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handlePrintDirect, disabled: printing, className: "btn-green btn-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }),
+          " ",
+          printing ? "Opening…" : "Print"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleExport, disabled: exporting, className: "btn-primary btn-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }),
+          " ",
+          exporting ? "Exporting…" : "Export PDF"
+        ] })
+      ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flex: 1, overflow: "hidden" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, overflowY: "auto", padding: "24px 28px", background: "white" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { maxWidth: 520, display: "flex", flexDirection: "column", gap: 20 }, children: [
@@ -11683,6 +11751,7 @@ function SheetSlotPreview({
   isActive,
   onClick
 }) {
+  const SLOT_ASPECT = 4 / 2.5;
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     "div",
     {
@@ -11700,7 +11769,32 @@ function SheetSlotPreview({
         justifyContent: "center"
       },
       title: product ? product.name : `Slot ${index + 1} — empty`,
-      children: product ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, overflow: "hidden", transform: "rotate(-90deg) scale(0.62)", transformOrigin: "center" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(LabelPreview, { product, templateDataUri, scale: 1 }) }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, color: "#cbd5e1", fontWeight: 500 }, children: index + 1 })
+      children: product ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "div",
+        {
+          style: {
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center"
+          },
+          children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              style: {
+                height: `${SLOT_ASPECT * 100}%`,
+                aspectRatio: "181 / 289",
+                transform: "rotate(-90deg)",
+                transformOrigin: "center",
+                flexShrink: 0
+              },
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(LabelPreview, { product, templateDataUri, scale: 1 })
+            }
+          )
+        }
+      ) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, color: "#cbd5e1", fontWeight: 500 }, children: index + 1 })
     }
   );
 }

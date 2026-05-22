@@ -50,6 +50,12 @@ const api = {
     sheetPDF: (products: Product[], startSlot: number): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('export:sheetPDF', products, startSlot),
   },
+
+  // Print
+  print: {
+    sheet: (products: Product[], startSlot: number): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('print:sheet', products, startSlot),
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)
