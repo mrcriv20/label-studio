@@ -371,10 +371,15 @@ async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
       // Give the document a brief moment to finish SVG/image decode.
       setTimeout(() => {
         if (settled || printWin.isDestroyed()) return
-        printWin.webContents.print(
-          { silent: false, printBackground: true },
-          (success) => finish(success)
-        )
+        const options: Electron.WebContentsPrintOptions = {
+          silent: false,
+          printBackground: true,
+          pageSize: 'Letter',
+          landscape: false,
+          margins: { marginType: 'none' },
+        }
+
+        printWin.webContents.print(options, (success) => finish(success))
       }, 150)
     })
 
@@ -412,7 +417,8 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
     const topIn = 0.5 + row * 2.5
 
     const svg = await exportSingleLabelSVG(product)
-    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    const normalizedSvg = normalizeSheetPrintSvg(svg, getLabelTemplate(product.templateId), pageBackground)
+    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalizedSvg)}`
     const template = getLabelTemplate(product.templateId)
     const labelClass = template.layout === 'info' ? 'label-horizontal' : 'label-rotated'
 
@@ -456,6 +462,7 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         width: 4in;
         height: 2.5in;
         overflow: hidden;
+        background: ${pageBackground};
       }
       .label-rotated {
         position: absolute;
@@ -465,6 +472,7 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         height: 4in;
         transform: translate(-50%, -50%) rotate(90deg);
         transform-origin: center;
+        background: ${pageBackground};
       }
       .label-horizontal {
         position: absolute;
@@ -474,6 +482,7 @@ async function buildSheetPrintHtml(products: Product[], startSlot: number): Prom
         height: 2.5in;
         transform: translate(-50%, -50%);
         transform-origin: center;
+        background: ${pageBackground};
       }
       .label-rotated img {
         width: 100%;
@@ -504,6 +513,19 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function normalizeSheetPrintSvg(svg: string, template: ReturnType<typeof getLabelTemplate>, pageBackground: string): string {
+  const colorsToFlatten = new Set([
+    template.shellColor,
+    template.borderColor,
+  ].filter((value): value is string => Boolean(value)))
+
+  let normalized = svg
+  for (const color of colorsToFlatten) {
+    normalized = normalized.split(color).join(pageBackground)
+  }
+  return normalized
 }
 
 function scheduleTempPdfCleanup(filePath: string): void {
