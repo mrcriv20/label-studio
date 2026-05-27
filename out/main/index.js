@@ -1337,10 +1337,14 @@ async function printHtmlWithDialog(htmlPath) {
     printWin.webContents.once("did-finish-load", () => {
       setTimeout(() => {
         if (settled || printWin.isDestroyed()) return;
-        printWin.webContents.print(
-          { silent: false, printBackground: true },
-          (success) => finish(success)
-        );
+        const options = {
+          silent: false,
+          printBackground: true,
+          pageSize: "Letter",
+          landscape: false,
+          margins: { marginType: "none" }
+        };
+        printWin.webContents.print(options, (success) => finish(success));
       }, 150);
     });
     printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
@@ -1372,7 +1376,8 @@ async function buildSheetPrintHtml(products, startSlot) {
     const leftIn = 0.25 + col * 4;
     const topIn = 0.5 + row * 2.5;
     const svg = await exportSingleLabelSVG(product);
-    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    const normalizedSvg = normalizeSheetPrintSvg(svg, getLabelTemplate(product.templateId), pageBackground);
+    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalizedSvg)}`;
     const template = getLabelTemplate(product.templateId);
     const labelClass = template.layout === "info" ? "label-horizontal" : "label-rotated";
     slotHtml.push(`
@@ -1414,6 +1419,7 @@ async function buildSheetPrintHtml(products, startSlot) {
         width: 4in;
         height: 2.5in;
         overflow: hidden;
+        background: ${pageBackground};
       }
       .label-rotated {
         position: absolute;
@@ -1423,6 +1429,7 @@ async function buildSheetPrintHtml(products, startSlot) {
         height: 4in;
         transform: translate(-50%, -50%) rotate(90deg);
         transform-origin: center;
+        background: ${pageBackground};
       }
       .label-horizontal {
         position: absolute;
@@ -1432,6 +1439,7 @@ async function buildSheetPrintHtml(products, startSlot) {
         height: 2.5in;
         transform: translate(-50%, -50%);
         transform-origin: center;
+        background: ${pageBackground};
       }
       .label-rotated img {
         width: 100%;
@@ -1456,6 +1464,17 @@ async function buildSheetPrintHtml(products, startSlot) {
 }
 function escapeHtml(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function normalizeSheetPrintSvg(svg, template, pageBackground) {
+  const colorsToFlatten = new Set([
+    template.shellColor,
+    template.borderColor
+  ].filter((value) => Boolean(value)));
+  let normalized = svg;
+  for (const color of colorsToFlatten) {
+    normalized = normalized.split(color).join(pageBackground);
+  }
+  return normalized;
 }
 function scheduleTempPdfCleanup(filePath) {
   setTimeout(() => {

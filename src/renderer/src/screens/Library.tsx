@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Edit2, Copy, Trash2, FileText, Layers, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { Product } from '../types'
 
 interface Props {
@@ -145,7 +145,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
           </button>
           {products.length > 0 && (
             <button onClick={() => onOpenSheet(sortedProducts.slice(0, 8))} className="btn-outline btn-sm">
-              <Layers size={13} /> Print Sheet
+              <Printer size={13} /> Print Sheet
             </button>
           )}
           <button onClick={() => onEdit(undefined as unknown as Product)} className="btn-primary">
@@ -275,7 +275,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                         <button onClick={() => onEdit(p)} className="btn btn-icon" title="Edit"><Edit2 size={13} /></button>
                         <button onClick={() => handleDuplicate(p.id)} className="btn btn-icon" title="Duplicate"><Copy size={13} /></button>
                         <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id} className="btn btn-icon" title="Export PDF"><FileText size={13} /></button>
-                        <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Layers size={13} /></button>
+                        <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Printer size={13} /></button>
                         <button
                           onClick={() => handleDelete(p.id)}
                           disabled={deleting === p.id}

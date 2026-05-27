@@ -7504,7 +7504,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
           importing ? "Importing…" : "Import"
         ] }),
         products.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => onOpenSheet(sortedProducts.slice(0, 8)), className: "btn-outline btn-sm", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }),
           " Print Sheet"
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => onEdit(void 0), className: "btn-primary", children: [
@@ -7604,7 +7604,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "button",
                 {
