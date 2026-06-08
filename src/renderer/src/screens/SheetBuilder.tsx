@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, FileText, Info, Printer } from 'lucide-react'
 import LabelPreview from '../components/LabelPreview'
-import type { Product } from '../types'
+import type { AppSettings, Product } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
+import {
+  getSlotBoundsIn,
+  PLS_780,
+  toInches,
+} from '../../../shared/sheetLayout'
 
 interface SlotAssignment {
   product: Product | null
@@ -14,12 +19,15 @@ interface Props {
 }
 
 export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.Element {
-  const [slots, setSlots] = useState<SlotAssignment[]>(Array.from({ length: 8 }, () => ({ product: null })))
+  const [slots, setSlots] = useState<SlotAssignment[]>(
+    Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
+  )
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [templateDataUri, setTemplateDataUri] = useState('')
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const [startSlot, setStartSlot] = useState(1)
   const [fillProduct, setFillProduct] = useState<Product | null>(null)
-  const [fillCount, setFillCount] = useState(8)
+  const [fillCount, setFillCount] = useState(PLS_780.labelsPerSheet)
   const [exporting, setExporting] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [activeSlot, setActiveSlot] = useState<number | null>(null)
@@ -28,6 +36,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
   useEffect(() => {
     window.api.product.list().then((r) => { if (r.ok) setAllProducts(r.data) })
     window.api.file.getTemplatePNG().then((r) => { if (r.ok && r.data) setTemplateDataUri(r.data) })
+    window.api.settings.get().then((r) => { if (r.ok) setSettings(r.data) })
   }, [])
 
   useEffect(() => {
@@ -35,8 +44,8 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
       setFillProduct(initialProducts[0])
       setMode('fill')
     } else if (initialProducts.length > 1) {
-      const newSlots: SlotAssignment[] = Array.from({ length: 8 }, () => ({ product: null }))
-      initialProducts.slice(0, 8).forEach((p, i) => { newSlots[i].product = p })
+      const newSlots: SlotAssignment[] = Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
+      initialProducts.slice(0, PLS_780.labelsPerSheet).forEach((p, i) => { newSlots[i].product = p })
       setSlots(newSlots)
       setMode('manual')
     }
@@ -45,7 +54,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
   function resolveSlots(): Product[] {
     if (mode === 'fill' && fillProduct) {
       const result: Product[] = []
-      for (let s = startSlot; s <= 8 && result.length < fillCount; s++) result.push(fillProduct)
+      for (let s = startSlot; s <= PLS_780.labelsPerSheet && result.length < fillCount; s++) result.push(fillProduct)
       return result
     }
     return slots.map((s) => s.product).filter(Boolean) as Product[]
@@ -81,7 +90,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
 
   function buildDisplaySlots(): (Product | null)[] {
     if (mode === 'fill' && fillProduct) {
-      return Array.from({ length: 8 }, (_, i) => {
+      return Array.from({ length: PLS_780.labelsPerSheet }, (_, i) => {
         const slot = i + 1
         if (slot < startSlot) return null
         if (slot - startSlot < fillCount) return fillProduct
@@ -110,7 +119,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
         <span style={{ color: '#cbd5e1', fontSize: 13 }}>/</span>
         <span style={{ fontSize: 13, fontWeight: 600, color: '#1a2332' }}>Print Sheet Builder</span>
         <span style={{ fontSize: 11, background: '#f1f5f9', color: '#64748b', borderRadius: 20, padding: '2px 10px', marginLeft: 4 }}>
-          Avery 5821 — 8 labels per sheet
+          Premium Label Supply PLS780 — 8 labels per sheet
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={handlePrintDirect} disabled={printing} className="btn-green btn-sm">
@@ -170,9 +179,9 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
                   <div style={{ flex: 1 }}>
                     <label className="label-text">Quantity</label>
                     <input
-                      type="number" className="input" min={1} max={8 - startSlot + 1}
+                      type="number" className="input" min={1} max={PLS_780.labelsPerSheet - startSlot + 1}
                       value={fillCount}
-                      onChange={(e) => setFillCount(Math.min(8, Math.max(1, Number(e.target.value))))}
+                      onChange={(e) => setFillCount(Math.min(PLS_780.labelsPerSheet, Math.max(1, Number(e.target.value))))}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
@@ -183,10 +192,10 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
                       onChange={(e) => {
                         const s = Number(e.target.value)
                         setStartSlot(s)
-                        setFillCount(Math.min(fillCount, 8 - s + 1))
+                        setFillCount(Math.min(fillCount, PLS_780.labelsPerSheet - s + 1))
                       }}
                     >
-                      {Array.from({ length: 8 }, (_, i) => (
+                      {Array.from({ length: PLS_780.labelsPerSheet }, (_, i) => (
                         <option key={i + 1} value={i + 1}>Slot {i + 1}{i === 0 ? ' (top-left)' : ''}</option>
                       ))}
                     </select>
@@ -225,7 +234,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
             <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#78716c' }}>
               <Info size={13} style={{ flexShrink: 0, marginTop: 1, color: '#f59e0b' }} />
               <span>
-                <strong>Print at 100% / Actual Size.</strong> Do not enable "Fit to Page." The PDF is sized for Avery 5821 (US Letter, 8 labels).
+                <strong>Print at 100% / Actual Size.</strong> Do not enable "Fit to Page." The PDF is sized for Premium Label Supply PLS780 4" × 2.5" sheets on US Letter.
               </span>
             </div>
           </div>
@@ -242,13 +251,15 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
             Sheet Preview
           </p>
           <div style={{ width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: 'repeat(4, 1fr)', gap: 2, background: '#d1d5db', aspectRatio: '8.5 / 11' }}>
+            <div style={{ position: 'relative', background: '#d1d5db', aspectRatio: '8.5 / 11' }}>
               {displaySlots.map((product, i) => (
                 <SheetSlotPreview
                   key={i}
                   index={i}
                   product={product}
                   templateDataUri={templateDataUri}
+                  offsetXIn={toInches(settings?.sheetOffsetXIn)}
+                  offsetYIn={toInches(settings?.sheetOffsetYIn)}
                   isActive={activeSlot === i}
                   onClick={() => setActiveSlot(activeSlot === i ? null : i)}
                 />
@@ -256,7 +267,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
             </div>
           </div>
           <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
-            {filled} / 8 slots filled
+            {filled} / {PLS_780.labelsPerSheet} slots filled
           </p>
         </div>
       </div>
@@ -265,17 +276,26 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
 }
 
 function SheetSlotPreview({
-  index, product, templateDataUri, isActive, onClick,
+  index, product, templateDataUri, offsetXIn, offsetYIn, isActive, onClick,
 }: {
   index: number
   product: Product | null
   templateDataUri: string
+  offsetXIn: number
+  offsetYIn: number
   isActive: boolean
   onClick: () => void
 }): JSX.Element {
   // Slot is 4"x2.5" (aspect 1.6). Scale portrait label so that after -90deg
   // rotation it fills the slot width and keeps full content visible.
-  const SLOT_ASPECT = 4 / 2.5
+  const bounds = getSlotBoundsIn(index + 1, offsetXIn, offsetYIn)
+  const pageWidth = PLS_780.pageWidthIn
+  const pageHeight = PLS_780.pageHeightIn
+  const slotLeft = (bounds.leftIn / pageWidth) * 100
+  const slotTop = (bounds.topIn / pageHeight) * 100
+  const slotWidth = (bounds.widthIn / pageWidth) * 100
+  const slotHeight = (bounds.heightIn / pageHeight) * 100
+  const SLOT_ASPECT = bounds.widthIn / bounds.heightIn
   const template = product ? getLabelTemplate(product.templateId) : null
   const isInfoLayout = template?.layout === 'info'
 
@@ -283,11 +303,14 @@ function SheetSlotPreview({
     <div
       onClick={onClick}
       style={{
-        position: 'relative', cursor: 'pointer', overflow: 'hidden',
+        position: 'absolute', cursor: 'pointer', overflow: 'hidden',
         background: product ? 'white' : '#f8fafc',
         outline: isActive ? '2px solid #2d8f2d' : 'none',
         outlineOffset: -2,
-        aspectRatio: '4 / 2.5',
+        left: `${slotLeft}%`,
+        top: `${slotTop}%`,
+        width: `${slotWidth}%`,
+        height: `${slotHeight}%`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
       title={product ? product.name : `Slot ${index + 1} — empty`}

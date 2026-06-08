@@ -22,7 +22,7 @@ import {
   readTemplatePNGBase64,
   listTemplates,
 } from './fileManager'
-import { exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import { buildSheetPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import { getLabelTemplate } from '../shared/labelTemplates'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -321,12 +321,12 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('print:sheet', async (_e, products: Product[], startSlot: number) => {
-    const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.html`)
+    const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.pdf`)
     try {
-      const html = await buildSheetPrintHtml(products, startSlot)
-      writeFileSync(tempPath, html, 'utf8')
-      const printed = await printHtmlWithDialog(tempPath)
-      scheduleTempPdfCleanup(tempPath)
+      const pdfBytes = await buildSheetPDF(products, startSlot)
+      writeFileSync(tempPath, pdfBytes)
+      const printed = await printPdfWithDialog(tempPath)
+      scheduleTempFileCleanup(tempPath)
       return ok(printed)
     } catch (e) {
       return fail(String(e))
@@ -349,7 +349,7 @@ export function generateBarcode(): string {
   return String(num)
 }
 
-async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
+async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const printWin = new BrowserWindow({
       width: 900,
@@ -368,7 +368,7 @@ async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
     }
 
     printWin.webContents.once('did-finish-load', () => {
-      // Give the document a brief moment to finish SVG/image decode.
+      // Give Chromium's built-in PDF viewer time to fully initialise.
       setTimeout(() => {
         if (settled || printWin.isDestroyed()) return
         const options: Electron.WebContentsPrintOptions = {
@@ -380,18 +380,18 @@ async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
         }
 
         printWin.webContents.print(options, (success) => finish(success))
-      }, 150)
+      }, 400)
     })
 
     printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
       if (!settled) {
         settled = true
         if (!printWin.isDestroyed()) printWin.destroy()
-        reject(new Error(`Failed to load printable document: ${desc}`))
+        reject(new Error(`Failed to load printable PDF: ${desc}`))
       }
     })
 
-    printWin.loadURL(pathToFileURL(htmlPath).toString()).catch((err) => {
+    printWin.loadURL(pathToFileURL(pdfPath).toString()).catch((err) => {
       if (!settled) {
         settled = true
         if (!printWin.isDestroyed()) printWin.destroy()
@@ -401,134 +401,7 @@ async function printHtmlWithDialog(htmlPath: string): Promise<boolean> {
   })
 }
 
-async function buildSheetPrintHtml(products: Product[], startSlot: number): Promise<string> {
-  const slotHtml: string[] = []
-  const pageBackground = '#f6f2df'
-
-  for (let slot = 1; slot <= 8; slot++) {
-    const pIdx = slot - startSlot
-    if (pIdx < 0 || pIdx >= products.length) continue
-    const product = products[pIdx]
-    if (!product) continue
-
-    const col = (slot - 1) % 2
-    const row = Math.floor((slot - 1) / 2)
-    const leftIn = 0.25 + col * 4
-    const topIn = 0.5 + row * 2.5
-
-    const svg = await exportSingleLabelSVG(product)
-    const normalizedSvg = normalizeSheetPrintSvg(svg, getLabelTemplate(product.templateId), pageBackground)
-    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalizedSvg)}`
-    const template = getLabelTemplate(product.templateId)
-    const labelClass = template.layout === 'info' ? 'label-horizontal' : 'label-rotated'
-
-    slotHtml.push(`
-      <div class="slot" style="left:${leftIn}in; top:${topIn}in;">
-        <div class="${labelClass}">
-          <img src="${svgDataUri}" alt="${escapeHtml(product.name)}" />
-        </div>
-      </div>
-    `)
-  }
-
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Label Sheet Print</title>
-    <style>
-      @page { size: Letter portrait; margin: 0; }
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 8.5in;
-        height: 11in;
-        background: ${pageBackground};
-      }
-      * {
-        box-sizing: border-box;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-      .sheet {
-        position: relative;
-        width: 8.5in;
-        height: 11in;
-        overflow: hidden;
-        background: ${pageBackground};
-      }
-      .slot {
-        position: absolute;
-        width: 4in;
-        height: 2.5in;
-        overflow: hidden;
-        background: ${pageBackground};
-      }
-      .label-rotated {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 2.5in;
-        height: 4in;
-        transform: translate(-50%, -50%) rotate(90deg);
-        transform-origin: center;
-        background: ${pageBackground};
-      }
-      .label-horizontal {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 4in;
-        height: 2.5in;
-        transform: translate(-50%, -50%);
-        transform-origin: center;
-        background: ${pageBackground};
-      }
-      .label-rotated img {
-        width: 100%;
-        height: 100%;
-        object-fit: fill;
-        display: block;
-      }
-      .label-horizontal img {
-        width: 100%;
-        height: 100%;
-        object-fit: fill;
-        display: block;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="sheet">
-      ${slotHtml.join('\n')}
-    </div>
-  </body>
-</html>`
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function normalizeSheetPrintSvg(svg: string, template: ReturnType<typeof getLabelTemplate>, pageBackground: string): string {
-  const colorsToFlatten = new Set([
-    template.shellColor,
-    template.borderColor,
-  ].filter((value): value is string => Boolean(value)))
-
-  let normalized = svg
-  for (const color of colorsToFlatten) {
-    normalized = normalized.split(color).join(pageBackground)
-  }
-  return normalized
-}
-
-function scheduleTempPdfCleanup(filePath: string): void {
+function scheduleTempFileCleanup(filePath: string): void {
   // Keep file around briefly so OS print spooler can reliably consume it.
   setTimeout(() => {
     try {

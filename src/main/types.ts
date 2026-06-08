@@ -28,6 +28,8 @@ export interface AppSettings {
   exportFolder: string       // absolute path
   templateId: string         // e.g. "avery5821"
   pricePrefix: string        // e.g. "$"
+  sheetOffsetXIn: string     // printer calibration offset, inches
+  sheetOffsetYIn: string     // printer calibration offset, inches
 }
 
 export interface LabelTemplate {

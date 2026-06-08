@@ -61,7 +61,9 @@ function loadSettings() {
     barcodeType: "CODE128",
     exportFolder: electron.app.getPath("desktop"),
     templateId: "avery5821",
-    pricePrefix: "$"
+    pricePrefix: "$",
+    sheetOffsetXIn: "0",
+    sheetOffsetYIn: "0"
   };
   if (fs.existsSync(p)) {
     try {
@@ -323,15 +325,43 @@ function prettifyTemplateName(id) {
 function getBundledAssetsDir() {
   return !electron.app.isPackaged ? path.join(__dirname, "../../assets") : path.join(process.resourcesPath, "assets");
 }
-const AVERY = {
-  pageW: 612,
-  pageH: 792,
-  slotW: 288,
-  slotH: 180,
-  marginLeft: 18,
-  marginTop: 36,
-  cols: 2
+const PLS_780 = {
+  pageWidthIn: 8.5,
+  pageHeightIn: 11,
+  labelWidthIn: 2.5,
+  // portrait label width / landscape slot height
+  labelHeightIn: 4,
+  columns: 2,
+  rows: 4,
+  marginTopIn: 0.5,
+  marginLeftIn: 0.15625,
+  horizontalGapIn: 0.1875,
+  verticalGapIn: 0
 };
+const POINTS_PER_INCH = 72;
+const PLS_780_SLOT_WIDTH_IN = PLS_780.labelHeightIn;
+const PLS_780_SLOT_HEIGHT_IN = PLS_780.labelWidthIn;
+function toInches(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number.parseFloat(String(value ?? "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function getSheetLayoutPoints(offsetXIn = 0, offsetYIn = 0) {
+  return {
+    pageW: PLS_780.pageWidthIn * POINTS_PER_INCH,
+    pageH: PLS_780.pageHeightIn * POINTS_PER_INCH,
+    slotW: PLS_780_SLOT_WIDTH_IN * POINTS_PER_INCH,
+    slotH: PLS_780_SLOT_HEIGHT_IN * POINTS_PER_INCH,
+    marginLeft: PLS_780.marginLeftIn * POINTS_PER_INCH,
+    marginTop: PLS_780.marginTopIn * POINTS_PER_INCH,
+    gapX: PLS_780.horizontalGapIn * POINTS_PER_INCH,
+    gapY: PLS_780.verticalGapIn * POINTS_PER_INCH,
+    offsetX: offsetXIn * POINTS_PER_INCH,
+    offsetY: offsetYIn * POINTS_PER_INCH,
+    cols: PLS_780.columns,
+    rows: PLS_780.rows
+  };
+}
 function readFontBytes(...paths) {
   for (const p of paths) {
     if (fs.existsSync(p)) {
@@ -761,26 +791,38 @@ async function exportSingleLabelPDF(product, outputPath) {
   fs.writeFileSync(outputPath, bytes);
   return outputPath;
 }
-async function exportSheetPDF(products, startSlot, outputPath) {
+async function buildSheetPDF(products, startSlot) {
   const barcodeCache = /* @__PURE__ */ new Map();
   const imageCache = /* @__PURE__ */ new Map();
+  const settings = getSettings();
+  const sheetLayout = getSheetLayoutPoints(
+    toInches(settings.sheetOffsetXIn),
+    toInches(settings.sheetOffsetYIn)
+  );
   for (const product of products) {
     if (!barcodeCache.has(product.id)) barcodeCache.set(product.id, await getBarcodePNG(product));
     if (!imageCache.has(product.id)) imageCache.set(product.id, getTopImageBytes(product));
   }
   const sheetDoc = await pdfLib.PDFDocument.create();
-  const sheetPage = sheetDoc.addPage([AVERY.pageW, AVERY.pageH]);
-  sheetPage.drawRectangle({ x: 0, y: 0, width: AVERY.pageW, height: AVERY.pageH, color: hexToRgb("#f6f2df"), borderWidth: 0 });
-  for (let slot = 1; slot <= 8; slot++) {
+  const sheetPage = sheetDoc.addPage([sheetLayout.pageW, sheetLayout.pageH]);
+  sheetPage.drawRectangle({
+    x: 0,
+    y: 0,
+    width: sheetLayout.pageW,
+    height: sheetLayout.pageH,
+    color: hexToRgb("#f6f2df"),
+    borderWidth: 0
+  });
+  for (let slot = 1; slot <= sheetLayout.cols * sheetLayout.rows; slot++) {
     const productIndex = slot - startSlot;
     if (productIndex < 0 || productIndex >= products.length) continue;
     const product = products[productIndex];
     if (!product) continue;
     const template = getLabelTemplate(product.templateId);
-    const col = (slot - 1) % AVERY.cols;
-    const row = Math.floor((slot - 1) / AVERY.cols);
-    const slotX = AVERY.marginLeft + col * AVERY.slotW;
-    const slotY = AVERY.pageH - AVERY.marginTop - (row + 1) * AVERY.slotH;
+    const col = (slot - 1) % sheetLayout.cols;
+    const row = Math.floor((slot - 1) / sheetLayout.cols);
+    const slotX = sheetLayout.marginLeft + sheetLayout.offsetX + col * (sheetLayout.slotW + sheetLayout.gapX);
+    const slotY = sheetLayout.pageH - sheetLayout.marginTop - sheetLayout.offsetY - (row + 1) * sheetLayout.slotH - row * sheetLayout.gapY;
     const labelBytes = await buildLabelPDF(
       product,
       imageCache.get(product.id) ?? null,
@@ -791,22 +833,26 @@ async function exportSheetPDF(products, startSlot, outputPath) {
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,
-        width: AVERY.slotW,
-        height: AVERY.slotH,
+        width: sheetLayout.slotW,
+        height: sheetLayout.slotH,
         borderWidth: 0
       });
     } else {
       sheetPage.drawPage(embeddedLabel, {
-        x: slotX + AVERY.slotW,
+        x: slotX + sheetLayout.slotW,
         y: slotY,
-        width: AVERY.slotH,
-        height: AVERY.slotW,
+        width: sheetLayout.slotH,
+        height: sheetLayout.slotW,
         rotate: pdfLib.degrees(90),
         borderWidth: 0
       });
     }
   }
-  fs.writeFileSync(outputPath, await sheetDoc.save());
+  return sheetDoc.save();
+}
+async function exportSheetPDF(products, startSlot, outputPath) {
+  const bytes = await buildSheetPDF(products, startSlot);
+  fs.writeFileSync(outputPath, bytes);
   return outputPath;
 }
 async function exportSingleLabelSVG(product) {
@@ -1295,12 +1341,12 @@ function registerIpcHandlers() {
     }
   );
   electron.ipcMain.handle("print:sheet", async (_e, products, startSlot) => {
-    const tempPath = path.join(electron.app.getPath("temp"), `label-sheet-print-${Date.now()}-${nanoid.nanoid(8)}.html`);
+    const tempPath = path.join(electron.app.getPath("temp"), `label-sheet-print-${Date.now()}-${nanoid.nanoid(8)}.pdf`);
     try {
-      const html = await buildSheetPrintHtml(products, startSlot);
-      fs.writeFileSync(tempPath, html, "utf8");
-      const printed = await printHtmlWithDialog(tempPath);
-      scheduleTempPdfCleanup(tempPath);
+      const pdfBytes = await buildSheetPDF(products, startSlot);
+      fs.writeFileSync(tempPath, pdfBytes);
+      const printed = await printPdfWithDialog(tempPath);
+      scheduleTempFileCleanup(tempPath);
       return ok(printed);
     } catch (e) {
       return fail(String(e));
@@ -1318,7 +1364,7 @@ function generateBarcode() {
   const num = Math.floor(Math.random() * 9e11) + 1e11;
   return String(num);
 }
-async function printHtmlWithDialog(htmlPath) {
+async function printPdfWithDialog(pdfPath) {
   return new Promise((resolve, reject) => {
     const printWin = new electron.BrowserWindow({
       width: 900,
@@ -1345,16 +1391,16 @@ async function printHtmlWithDialog(htmlPath) {
           margins: { marginType: "none" }
         };
         printWin.webContents.print(options, (success) => finish(success));
-      }, 150);
+      }, 400);
     });
     printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
       if (!settled) {
         settled = true;
         if (!printWin.isDestroyed()) printWin.destroy();
-        reject(new Error(`Failed to load printable document: ${desc}`));
+        reject(new Error(`Failed to load printable PDF: ${desc}`));
       }
     });
-    printWin.loadURL(url.pathToFileURL(htmlPath).toString()).catch((err) => {
+    printWin.loadURL(url.pathToFileURL(pdfPath).toString()).catch((err) => {
       if (!settled) {
         settled = true;
         if (!printWin.isDestroyed()) printWin.destroy();
@@ -1363,120 +1409,7 @@ async function printHtmlWithDialog(htmlPath) {
     });
   });
 }
-async function buildSheetPrintHtml(products, startSlot) {
-  const slotHtml = [];
-  const pageBackground = "#f6f2df";
-  for (let slot = 1; slot <= 8; slot++) {
-    const pIdx = slot - startSlot;
-    if (pIdx < 0 || pIdx >= products.length) continue;
-    const product = products[pIdx];
-    if (!product) continue;
-    const col = (slot - 1) % 2;
-    const row = Math.floor((slot - 1) / 2);
-    const leftIn = 0.25 + col * 4;
-    const topIn = 0.5 + row * 2.5;
-    const svg = await exportSingleLabelSVG(product);
-    const normalizedSvg = normalizeSheetPrintSvg(svg, getLabelTemplate(product.templateId), pageBackground);
-    const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalizedSvg)}`;
-    const template = getLabelTemplate(product.templateId);
-    const labelClass = template.layout === "info" ? "label-horizontal" : "label-rotated";
-    slotHtml.push(`
-      <div class="slot" style="left:${leftIn}in; top:${topIn}in;">
-        <div class="${labelClass}">
-          <img src="${svgDataUri}" alt="${escapeHtml(product.name)}" />
-        </div>
-      </div>
-    `);
-  }
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Label Sheet Print</title>
-    <style>
-      @page { size: Letter portrait; margin: 0; }
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 8.5in;
-        height: 11in;
-        background: ${pageBackground};
-      }
-      * {
-        box-sizing: border-box;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-      .sheet {
-        position: relative;
-        width: 8.5in;
-        height: 11in;
-        overflow: hidden;
-        background: ${pageBackground};
-      }
-      .slot {
-        position: absolute;
-        width: 4in;
-        height: 2.5in;
-        overflow: hidden;
-        background: ${pageBackground};
-      }
-      .label-rotated {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 2.5in;
-        height: 4in;
-        transform: translate(-50%, -50%) rotate(90deg);
-        transform-origin: center;
-        background: ${pageBackground};
-      }
-      .label-horizontal {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 4in;
-        height: 2.5in;
-        transform: translate(-50%, -50%);
-        transform-origin: center;
-        background: ${pageBackground};
-      }
-      .label-rotated img {
-        width: 100%;
-        height: 100%;
-        object-fit: fill;
-        display: block;
-      }
-      .label-horizontal img {
-        width: 100%;
-        height: 100%;
-        object-fit: fill;
-        display: block;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="sheet">
-      ${slotHtml.join("\n")}
-    </div>
-  </body>
-</html>`;
-}
-function escapeHtml(value) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function normalizeSheetPrintSvg(svg, template, pageBackground) {
-  const colorsToFlatten = new Set([
-    template.shellColor,
-    template.borderColor
-  ].filter((value) => Boolean(value)));
-  let normalized = svg;
-  for (const color of colorsToFlatten) {
-    normalized = normalized.split(color).join(pageBackground);
-  }
-  return normalized;
-}
-function scheduleTempPdfCleanup(filePath) {
+function scheduleTempFileCleanup(filePath) {
   setTimeout(() => {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);

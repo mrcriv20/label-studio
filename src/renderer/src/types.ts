@@ -29,6 +29,8 @@ export interface AppSettings {
   exportFolder: string
   templateId: string
   pricePrefix: string
+  sheetOffsetXIn: string
+  sheetOffsetYIn: string
 }
 
 export interface LabelTemplate {

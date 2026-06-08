@@ -5,6 +5,7 @@ import { join, extname } from 'path'
 import { homedir } from 'os'
 import bwipjs from 'bwip-js'
 import type { Product } from './types'
+import { getSettings } from './database'
 import { getAvenirNextCondensedFontPath, getDefaultTopLogoPath, readImageAsBase64 } from './fileManager'
 import {
   getLabelTemplate,
@@ -14,13 +15,10 @@ import {
   VERTICAL_INFO_LABEL_ZONES,
   svgYFromBottom,
 } from '../shared/labelTemplates'
-
-const AVERY = {
-  pageW: 612, pageH: 792,
-  slotW: 288, slotH: 180,
-  marginLeft: 18, marginTop: 36,
-  cols: 2, rows: 4,
-}
+import {
+  getSheetLayoutPoints,
+  toInches,
+} from '../shared/sheetLayout'
 
 type EmbeddedFont = Awaited<ReturnType<PDFDocument['embedFont']>>
 type EmbeddedImage =
@@ -578,9 +576,14 @@ export async function exportSingleLabelPDF(product: Product, outputPath: string)
   return outputPath
 }
 
-export async function exportSheetPDF(products: Product[], startSlot: number, outputPath: string): Promise<string> {
+export async function buildSheetPDF(products: Product[], startSlot: number): Promise<Uint8Array> {
   const barcodeCache = new Map<string, Buffer | null>()
   const imageCache = new Map<string, Buffer | null>()
+  const settings = getSettings()
+  const sheetLayout = getSheetLayoutPoints(
+    toInches(settings.sheetOffsetXIn),
+    toInches(settings.sheetOffsetYIn)
+  )
 
   for (const product of products) {
     if (!barcodeCache.has(product.id)) barcodeCache.set(product.id, await getBarcodePNG(product))
@@ -588,20 +591,32 @@ export async function exportSheetPDF(products: Product[], startSlot: number, out
   }
 
   const sheetDoc = await PDFDocument.create()
-  const sheetPage = sheetDoc.addPage([AVERY.pageW, AVERY.pageH])
-  sheetPage.drawRectangle({ x: 0, y: 0, width: AVERY.pageW, height: AVERY.pageH, color: hexToRgb('#f6f2df'), borderWidth: 0 })
+  const sheetPage = sheetDoc.addPage([sheetLayout.pageW, sheetLayout.pageH])
+  sheetPage.drawRectangle({
+    x: 0,
+    y: 0,
+    width: sheetLayout.pageW,
+    height: sheetLayout.pageH,
+    color: hexToRgb('#f6f2df'),
+    borderWidth: 0,
+  })
 
-  for (let slot = 1; slot <= 8; slot++) {
+  for (let slot = 1; slot <= sheetLayout.cols * sheetLayout.rows; slot++) {
     const productIndex = slot - startSlot
     if (productIndex < 0 || productIndex >= products.length) continue
     const product = products[productIndex]
     if (!product) continue
 
     const template = getLabelTemplate(product.templateId)
-    const col = (slot - 1) % AVERY.cols
-    const row = Math.floor((slot - 1) / AVERY.cols)
-    const slotX = AVERY.marginLeft + col * AVERY.slotW
-    const slotY = AVERY.pageH - AVERY.marginTop - (row + 1) * AVERY.slotH
+    const col = (slot - 1) % sheetLayout.cols
+    const row = Math.floor((slot - 1) / sheetLayout.cols)
+    const slotX = sheetLayout.marginLeft + sheetLayout.offsetX + col * (sheetLayout.slotW + sheetLayout.gapX)
+    const slotY =
+      sheetLayout.pageH
+      - sheetLayout.marginTop
+      - sheetLayout.offsetY
+      - (row + 1) * sheetLayout.slotH
+      - row * sheetLayout.gapY
 
     const labelBytes = await buildLabelPDF(
       product,
@@ -614,23 +629,28 @@ export async function exportSheetPDF(products: Product[], startSlot: number, out
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,
-        width: AVERY.slotW,
-        height: AVERY.slotH,
+        width: sheetLayout.slotW,
+        height: sheetLayout.slotH,
         borderWidth: 0,
       })
     } else {
       sheetPage.drawPage(embeddedLabel, {
-        x: slotX + AVERY.slotW,
+        x: slotX + sheetLayout.slotW,
         y: slotY,
-        width: AVERY.slotH,
-        height: AVERY.slotW,
+        width: sheetLayout.slotH,
+        height: sheetLayout.slotW,
         rotate: degrees(90),
         borderWidth: 0,
       })
     }
   }
 
-  writeFileSync(outputPath, await sheetDoc.save())
+  return sheetDoc.save()
+}
+
+export async function exportSheetPDF(products: Product[], startSlot: number, outputPath: string): Promise<string> {
+  const bytes = await buildSheetPDF(products, startSlot)
+  writeFileSync(outputPath, bytes)
   return outputPath
 }
 
@@ -863,4 +883,4 @@ function hexToRgb(hex: string): ReturnType<typeof rgb> {
   )
 }
 
-export { AVERY as AVERY_5821 }
+export { getSheetLayoutPoints as getPLS780LayoutPoints }

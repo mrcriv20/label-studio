@@ -118,6 +118,43 @@ export default function Settings(): JSX.Element {
             </div>
           </div>
 
+          <div className="card" style={{ padding: '20px 20px 24px' }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', margin: '0 0 16px' }}>Print Calibration</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="label-text">Horizontal offset (in)</label>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    value={settings.sheetOffsetXIn}
+                    onChange={(e) => update('sheetOffsetXIn', e.target.value)}
+                    placeholder="0"
+                  />
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                    Positive moves the sheet content right. Negative moves it left.
+                  </p>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="label-text">Vertical offset (in)</label>
+                  <input
+                    className="input"
+                    inputMode="decimal"
+                    value={settings.sheetOffsetYIn}
+                    onChange={(e) => update('sheetOffsetYIn', e.target.value)}
+                    placeholder="0"
+                  />
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                    Positive moves the sheet content down. Negative moves it up.
+                  </p>
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
+                These offsets apply to both sheet PDF export and direct printing. Small values like `0.02` or `-0.03` inches are typical.
+              </p>
+            </div>
+          </div>
+
           {/* Template info */}
           <div className="card" style={{ padding: '20px 20px 24px' }}>
             <h2 style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', margin: '0 0 16px' }}>Label Template</h2>
@@ -134,10 +171,10 @@ export default function Settings(): JSX.Element {
               <div style={{ display: 'flex', gap: 10, fontSize: 13, color: '#475569' }}>
                 <Info size={15} style={{ marginTop: 1, color: '#3b82f6', flexShrink: 0 }} />
                 <div>
-                  <p style={{ fontWeight: 500, margin: 0 }}>Avery 5821 Layout and Alternatives</p>
+                  <p style={{ fontWeight: 500, margin: 0 }}>Premium Label Supply PLS780 Sheet Layout</p>
                   <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                     8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows.
-                    Labels printed landscape (4" × 2.5" per slot). Margins: 0.25" left/right, 0.5" top/bottom.
+                    Labels print landscape at 4" × 2.5" per slot with 0.15625" side margins, a 0.1875" center gutter, and 0.5" top/bottom margins.
                     Product templates are now built from modular header, brand, and content zones and can be selected per label.
                   </p>
                 </div>

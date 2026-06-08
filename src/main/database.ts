@@ -55,6 +55,8 @@ function loadSettings(): void {
     exportFolder: app.getPath('desktop'),
     templateId: 'avery5821',
     pricePrefix: '$',
+    sheetOffsetXIn: '0',
+    sheetOffsetYIn: '0',
   }
   if (existsSync(p)) {
     try {

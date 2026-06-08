@@ -49,19 +49,20 @@ label-studio/
 │   │   └── fileManager.ts          # Asset copy, barcode image management
 │   ├── preload/
 │   │   └── index.ts                # contextBridge API surface
+│   ├── shared/
+│   │   └── sheetLayout.ts          # Premium Label Supply PLS780 sheet constants
 │   └── renderer/src/               # React UI (TypeScript)
 │       ├── App.tsx                 # Root router
 │       ├── screens/
 │       │   ├── Library.tsx         # Product list / dashboard
 │       │   ├── Editor.tsx          # Label editor with live preview
-│       │   ├── SheetBuilder.tsx    # 8-up Avery sheet layout + export
+│       │   ├── SheetBuilder.tsx    # 8-up PLS780 sheet layout + export
 │       │   └── Settings.tsx        # App settings
 │       ├── components/
 │       │   ├── LabelPreview.tsx    # WYSIWYG label canvas
 │       │   ├── BarcodeCanvas.tsx   # JsBarcode SVG component
 │       │   └── Nav.tsx             # Top navigation bar
 │       └── lib/
-│           ├── avery5821.ts        # Avery 5821 layout constants
 │           └── barcode.ts          # Barcode value generator
 ├── scripts/
 │   ├── seed.js                     # Inject sample product into DB
@@ -107,12 +108,12 @@ For fully-vector output, the product name and price text in the exported PDF **a
 
 ---
 
-## Avery 5821 Sheet Layout
+## Premium Label Supply PLS780 Sheet Layout
 
-### Dimensions (verified from physical label constraints)
+### Dimensions (verified against the official `PLS780-4x2.5.pdf` template)
 
 ```typescript
-const AVERY_5821 = {
+const PLS_780 = {
   pageWidthIn:      8.5,    // US Letter
   pageHeightIn:     11,
   labelWidthIn:     2.5,    // portrait width
@@ -120,9 +121,9 @@ const AVERY_5821 = {
   labelsPerSheet:   8,
   columns:          2,
   rows:             4,
-  marginTopIn:      0.5,    // (11 - 4×2.5) / 2
-  marginLeftIn:     0.25,   // (8.5 - 2×4) / 2
-  horizontalGapIn:  0,
+  marginTopIn:      0.5,
+  marginLeftIn:     0.15625,
+  horizontalGapIn:  0.1875,
   verticalGapIn:    0,
 }
 ```
@@ -132,20 +133,20 @@ The label template is **portrait** (2.5" wide × 4" tall). To fit 8 labels on a 
 
 ```
  ┌──────────────────────────────┐  ← 8.5"
- │  ┌──────────┐┌──────────┐   │
- │  │  Slot 1  ││  Slot 2  │   │ ← 0.5" top margin
- │  ├──────────┤├──────────┤   │ ← 2.5" each
- │  │  Slot 3  ││  Slot 4  │   │
- │  ├──────────┤├──────────┤   │
- │  │  Slot 5  ││  Slot 6  │   │
- │  ├──────────┤├──────────┤   │
- │  │  Slot 7  ││  Slot 8  │   │
- │  └──────────┘└──────────┘   │ ← 0.5" bottom margin
+ │ ┌──────────┐ ┌──────────┐   │
+ │ │  Slot 1  │ │  Slot 2  │   │ ← 0.5" top margin
+ │ ├──────────┤ ├──────────┤   │ ← 2.5" each
+ │ │  Slot 3  │ │  Slot 4  │   │
+ │ ├──────────┤ ├──────────┤   │
+ │ │  Slot 5  │ │  Slot 6  │   │
+ │ ├──────────┤ ├──────────┤   │
+ │ │  Slot 7  │ │  Slot 8  │   │
+ │ └──────────┘ └──────────┘   │ ← 0.5" bottom margin
  └──────────────────────────────┘
-    0.25"      4"      0.25"
+   0.15625"  4"  0.1875"  4"  0.15625"
 ```
 
-Each slot is 4" × 2.5". The label template image is stretched to fill each slot.
+Each slot is 4" × 2.5". The exported sheet matches the Premium Label Supply PLS780 PDF template with a center gutter between the two columns.
 
 ---
 
@@ -176,7 +177,11 @@ In macOS Print dialog:
 - Paper: **US Letter**
 - Do NOT select "Fit to Page" or "Scale to Fit"
 
-The exported PDF is exactly sized for US Letter paper with Avery 5821 placement. Any scaling will misalign labels with the physical sheet.
+The app's `Print` action now sends the same generated sheet PDF used by `Export PDF` to the print dialog, so both paths share identical placement logic.
+
+If your printer still drifts slightly, use `Settings > Print Calibration` to apply small horizontal and vertical offsets. These offsets are measured in inches and affect both exported sheet PDFs and direct printing.
+
+The exported PDF is exactly sized for US Letter paper with Premium Label Supply PLS780 placement. Any scaling will misalign labels with the physical sheet.
 
 ---
 
