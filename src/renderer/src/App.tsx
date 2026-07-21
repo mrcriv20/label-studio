@@ -4,9 +4,10 @@ import Library from './screens/Library'
 import Editor from './screens/Editor'
 import SheetBuilder from './screens/SheetBuilder'
 import Settings from './screens/Settings'
+import HowTo from './screens/HowTo'
 import type { Product } from './types'
 
-export type Screen = 'library' | 'editor' | 'sheet' | 'settings'
+export type Screen = 'library' | 'editor' | 'sheet' | 'settings' | 'how-to'
 
 export default function App(): JSX.Element {
   const [screen, setScreen] = useState<Screen>('library')
@@ -55,6 +56,7 @@ export default function App(): JSX.Element {
           />
         )}
         {screen === 'settings' && <Settings />}
+        {screen === 'how-to' && <HowTo onNavigate={setScreen} />}
       </div>
     </div>
   )

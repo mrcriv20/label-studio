@@ -1,4 +1,4 @@
-import { LayoutGrid, Tag, Layers, Settings } from 'lucide-react'
+import { LayoutGrid, Tag, Layers, Settings, CircleHelp } from 'lucide-react'
 import type { Screen } from '../App'
 
 const items: { id: Screen; label: string; Icon: typeof LayoutGrid }[] = [
@@ -6,6 +6,7 @@ const items: { id: Screen; label: string; Icon: typeof LayoutGrid }[] = [
   { id: 'editor', label: 'New Label', Icon: Tag },
   { id: 'sheet', label: 'Print Sheet', Icon: Layers },
   { id: 'settings', label: 'Settings', Icon: Settings },
+  { id: 'how-to', label: 'How to Use', Icon: CircleHelp },
 ]
 
 interface Props {
