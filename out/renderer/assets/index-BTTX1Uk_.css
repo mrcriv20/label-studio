@@ -1,13 +1,15 @@
 @font-face {
   font-family: 'Lora';
   font-weight: 700;
-  src: local('Lora Bold'), local('Lora-Bold');
+  font-style: normal;
+  src: url('./Lora-Bold-B_ZP4FU_.ttf') format('truetype');
 }
 
 @font-face {
   font-family: 'Genty Demo';
   font-weight: 400;
-  src: local('Genty Demo'), local('GentyDemo');
+  font-style: normal;
+  src: url('./GentyDemo-Regular-CyzOugf2.ttf') format('truetype');
 }
 
 @font-face {

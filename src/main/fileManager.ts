@@ -69,6 +69,14 @@ export function getAvenirNextCondensedFontPath(): string {
   return join(getBundledAssetsDir(), 'AvenirNextCondensed-Regular.otf')
 }
 
+export function getLoraBoldFontPath(): string {
+  return join(getBundledAssetsDir(), 'Lora-Bold.ttf')
+}
+
+export function getGentyRegularFontPath(): string {
+  return join(getBundledAssetsDir(), 'GentyDemo-Regular.ttf')
+}
+
 export function templateExists(): boolean {
   return existsSync(TEMPLATE_PNG)
 }

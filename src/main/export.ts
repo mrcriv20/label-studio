@@ -6,7 +6,13 @@ import { homedir } from 'os'
 import bwipjs from 'bwip-js'
 import type { Product } from './types'
 import { getSettings } from './database'
-import { getAvenirNextCondensedFontPath, getDefaultTopLogoPath, readImageAsBase64 } from './fileManager'
+import {
+  getAvenirNextCondensedFontPath,
+  getDefaultTopLogoPath,
+  getGentyRegularFontPath,
+  getLoraBoldFontPath,
+  readImageAsBase64,
+} from './fileManager'
 import {
   getLabelTemplate,
   LOGO_ONLY_LABEL_ZONES,
@@ -109,12 +115,12 @@ function findFamilyFontBytes(family: string, exactCandidates: string[], weight: 
   return readFontBytes(...matchingWeight)
 }
 
-const LORA_BYTES = findFamilyFontBytes('lora', [
+const LORA_BYTES = readFontBytes(getLoraBoldFontPath()) ?? findFamilyFontBytes('lora', [
   'Lora-Bold.ttf',
   'Lora-SemiBold.ttf',
 ], 'bold')
 
-const GENTY_BYTES = findFamilyFontBytes('genty', [
+const GENTY_BYTES = readFontBytes(getGentyRegularFontPath()) ?? findFamilyFontBytes('genty', [
   'GentyDemo-Regular.ttf',
   'Genty Demo Regular.ttf',
 ], 'regular')

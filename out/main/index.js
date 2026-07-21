@@ -283,6 +283,12 @@ function getDefaultTopLogoPath() {
 function getAvenirNextCondensedFontPath() {
   return path.join(getBundledAssetsDir(), "AvenirNextCondensed-Regular.otf");
 }
+function getLoraBoldFontPath() {
+  return path.join(getBundledAssetsDir(), "Lora-Bold.ttf");
+}
+function getGentyRegularFontPath() {
+  return path.join(getBundledAssetsDir(), "GentyDemo-Regular.ttf");
+}
 function readTemplatePNGBase64(templateId = DEFAULT_TEMPLATE_ID) {
   const templatePath = getTemplatePNGPath(templateId);
   if (!fs.existsSync(templatePath)) return "";
@@ -437,11 +443,11 @@ function findFamilyFontBytes(family, exactCandidates, weight) {
   const matchingWeight = discovered.filter((fontPath) => scoreFontFile(fontPath, weight) > 0).sort((a, b) => scoreFontFile(b, weight) - scoreFontFile(a, weight));
   return readFontBytes(...matchingWeight);
 }
-const LORA_BYTES = findFamilyFontBytes("lora", [
+const LORA_BYTES = readFontBytes(getLoraBoldFontPath()) ?? findFamilyFontBytes("lora", [
   "Lora-Bold.ttf",
   "Lora-SemiBold.ttf"
 ], "bold");
-const GENTY_BYTES = findFamilyFontBytes("genty", [
+const GENTY_BYTES = readFontBytes(getGentyRegularFontPath()) ?? findFamilyFontBytes("genty", [
   "GentyDemo-Regular.ttf",
   "Genty Demo Regular.ttf"
 ], "regular");
