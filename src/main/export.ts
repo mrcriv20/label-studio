@@ -38,19 +38,55 @@ const home = homedir()
 const USER_FONTS = join(home, 'Library', 'Fonts')
 const SYS_FONTS = '/Library/Fonts'
 const APPLE_SYS_FONTS = '/System/Library/Fonts'
+const WINDOWS_USER_FONTS = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Microsoft', 'Windows', 'Fonts') : ''
+const WINDOWS_SYS_FONTS = process.env.WINDIR ? join(process.env.WINDIR, 'Fonts') : ''
+const LINUX_USER_FONTS = join(home, '.local', 'share', 'fonts')
 
-function scoreFontFile(fileName: string): number {
+type FontWeight = 'regular' | 'bold'
+
+function scoreFontFile(fileName: string, weight: FontWeight): number {
   const lower = fileName.toLowerCase()
   let score = 0
-  if (lower.includes('bold')) score += 100
-  if (lower.includes('variable')) score += 70
-  if (lower.includes('regular')) score += 40
-  if (lower.includes('italic')) score -= 20
+  const isBold = lower.includes('bold') || lower.includes('semibold') || lower.includes('demibold')
+  const isRegular = lower.includes('regular') || lower.includes('book')
+  if (weight === 'bold') {
+    if (lower.includes('bold') && !lower.includes('semibold')) score += 200
+    else if (isBold) score += 150
+    if (isRegular) score -= 100
+  } else {
+    if (isRegular) score += 200
+    if (isBold) score -= 150
+  }
+  // A static face is more predictable in pdf-lib than a variable collection.
+  if (lower.includes('variable')) score -= 25
+  if (lower.includes('italic') || lower.includes('oblique')) score -= 200
   return score
 }
 
-function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer | null {
-  const dirs = [USER_FONTS, SYS_FONTS, APPLE_SYS_FONTS]
+function listFontFiles(dir: string, depth = 0): string[] {
+  if (!dir || !existsSync(dir) || depth > 2) return []
+  try {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) return listFontFiles(path, depth + 1)
+      return /\.(ttf|otf)$/i.test(entry.name) ? [path] : []
+    })
+  } catch {
+    return []
+  }
+}
+
+function findFamilyFontBytes(family: string, exactCandidates: string[], weight: FontWeight): Buffer | null {
+  const dirs = [
+    USER_FONTS,
+    SYS_FONTS,
+    APPLE_SYS_FONTS,
+    WINDOWS_USER_FONTS,
+    WINDOWS_SYS_FONTS,
+    LINUX_USER_FONTS,
+    '/usr/local/share/fonts',
+    '/usr/share/fonts',
+  ]
   const exactPaths: string[] = []
   for (const dir of dirs) {
     for (const fileName of exactCandidates) exactPaths.push(join(dir, fileName))
@@ -59,36 +95,29 @@ function findFamilyFontBytes(family: string, exactCandidates: string[]): Buffer 
   if (exact) return exact
 
   const discovered: string[] = []
-  const familyNeedle = family.toLowerCase()
+  const familyNeedle = family.toLowerCase().replace(/[^a-z0-9]/g, '')
   for (const dir of dirs) {
-    if (!existsSync(dir)) continue
-    try {
-      for (const fileName of readdirSync(dir)) {
-        const lower = fileName.toLowerCase()
-        if (!lower.includes(familyNeedle)) continue
-        if (!/\.(ttf|otf)$/.test(lower)) continue
-        discovered.push(join(dir, fileName))
-      }
-    } catch {
-      // ignore
+    for (const fontPath of listFontFiles(dir)) {
+      const normalizedName = fontPath.split(/[\\/]/).pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') ?? ''
+      if (normalizedName.includes(familyNeedle)) discovered.push(fontPath)
     }
   }
 
-  discovered.sort((a, b) => scoreFontFile(b) - scoreFontFile(a))
-  return readFontBytes(...discovered)
+  const matchingWeight = discovered
+    .filter((fontPath) => scoreFontFile(fontPath, weight) > 0)
+    .sort((a, b) => scoreFontFile(b, weight) - scoreFontFile(a, weight))
+  return readFontBytes(...matchingWeight)
 }
 
 const LORA_BYTES = findFamilyFontBytes('lora', [
   'Lora-Bold.ttf',
   'Lora-SemiBold.ttf',
-  'Lora-VariableFont_wght.ttf',
-  'Lora-Regular.ttf',
-])
+], 'bold')
 
 const GENTY_BYTES = findFamilyFontBytes('genty', [
   'GentyDemo-Regular.ttf',
   'Genty Demo Regular.ttf',
-])
+], 'regular')
 
 const ARIAL_REGULAR_BYTES = readFontBytes(
   '/System/Library/Fonts/Supplemental/Arial.ttf',
@@ -129,7 +158,10 @@ async function embedFonts(pdfDoc: PDFDocument): Promise<{
   const ingredients = ingredientsBytes
     ? await pdfDoc.embedFont(ingredientsBytes)
     : body
-  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : body
+  // Keep the requested weight even when the optional Lora face is unavailable.
+  // Falling back to `body` here made print output regular although the preview
+  // explicitly renders product names at weight 700.
+  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold
   const price = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body
   return { name, price, body, bodyBold, bodyItalic, ingredients }
 }

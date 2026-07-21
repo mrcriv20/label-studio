@@ -377,17 +377,49 @@ const home = os.homedir();
 const USER_FONTS = path.join(home, "Library", "Fonts");
 const SYS_FONTS = "/Library/Fonts";
 const APPLE_SYS_FONTS = "/System/Library/Fonts";
-function scoreFontFile(fileName) {
+const WINDOWS_USER_FONTS = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts") : "";
+const WINDOWS_SYS_FONTS = process.env.WINDIR ? path.join(process.env.WINDIR, "Fonts") : "";
+const LINUX_USER_FONTS = path.join(home, ".local", "share", "fonts");
+function scoreFontFile(fileName, weight) {
   const lower = fileName.toLowerCase();
   let score = 0;
-  if (lower.includes("bold")) score += 100;
-  if (lower.includes("variable")) score += 70;
-  if (lower.includes("regular")) score += 40;
-  if (lower.includes("italic")) score -= 20;
+  const isBold = lower.includes("bold") || lower.includes("semibold") || lower.includes("demibold");
+  const isRegular = lower.includes("regular") || lower.includes("book");
+  if (weight === "bold") {
+    if (lower.includes("bold") && !lower.includes("semibold")) score += 200;
+    else if (isBold) score += 150;
+    if (isRegular) score -= 100;
+  } else {
+    if (isRegular) score += 200;
+    if (isBold) score -= 150;
+  }
+  if (lower.includes("variable")) score -= 25;
+  if (lower.includes("italic") || lower.includes("oblique")) score -= 200;
   return score;
 }
-function findFamilyFontBytes(family, exactCandidates) {
-  const dirs = [USER_FONTS, SYS_FONTS, APPLE_SYS_FONTS];
+function listFontFiles(dir, depth = 0) {
+  if (!dir || !fs.existsSync(dir) || depth > 2) return [];
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path$1 = path.join(dir, entry.name);
+      if (entry.isDirectory()) return listFontFiles(path$1, depth + 1);
+      return /\.(ttf|otf)$/i.test(entry.name) ? [path$1] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+function findFamilyFontBytes(family, exactCandidates, weight) {
+  const dirs = [
+    USER_FONTS,
+    SYS_FONTS,
+    APPLE_SYS_FONTS,
+    WINDOWS_USER_FONTS,
+    WINDOWS_SYS_FONTS,
+    LINUX_USER_FONTS,
+    "/usr/local/share/fonts",
+    "/usr/share/fonts"
+  ];
   const exactPaths = [];
   for (const dir of dirs) {
     for (const fileName of exactCandidates) exactPaths.push(path.join(dir, fileName));
@@ -395,32 +427,24 @@ function findFamilyFontBytes(family, exactCandidates) {
   const exact = readFontBytes(...exactPaths);
   if (exact) return exact;
   const discovered = [];
-  const familyNeedle = family.toLowerCase();
+  const familyNeedle = family.toLowerCase().replace(/[^a-z0-9]/g, "");
   for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue;
-    try {
-      for (const fileName of fs.readdirSync(dir)) {
-        const lower = fileName.toLowerCase();
-        if (!lower.includes(familyNeedle)) continue;
-        if (!/\.(ttf|otf)$/.test(lower)) continue;
-        discovered.push(path.join(dir, fileName));
-      }
-    } catch {
+    for (const fontPath of listFontFiles(dir)) {
+      const normalizedName = fontPath.split(/[\\/]/).pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+      if (normalizedName.includes(familyNeedle)) discovered.push(fontPath);
     }
   }
-  discovered.sort((a, b) => scoreFontFile(b) - scoreFontFile(a));
-  return readFontBytes(...discovered);
+  const matchingWeight = discovered.filter((fontPath) => scoreFontFile(fontPath, weight) > 0).sort((a, b) => scoreFontFile(b, weight) - scoreFontFile(a, weight));
+  return readFontBytes(...matchingWeight);
 }
 const LORA_BYTES = findFamilyFontBytes("lora", [
   "Lora-Bold.ttf",
-  "Lora-SemiBold.ttf",
-  "Lora-VariableFont_wght.ttf",
-  "Lora-Regular.ttf"
-]);
+  "Lora-SemiBold.ttf"
+], "bold");
 const GENTY_BYTES = findFamilyFontBytes("genty", [
   "GentyDemo-Regular.ttf",
   "Genty Demo Regular.ttf"
-]);
+], "regular");
 const ARIAL_REGULAR_BYTES = readFontBytes(
   "/System/Library/Fonts/Supplemental/Arial.ttf",
   "/Library/Fonts/Arial.ttf",
@@ -442,7 +466,7 @@ async function embedFonts(pdfDoc) {
   const bodyItalic = ARIAL_ITALIC_BYTES ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaOblique);
   const ingredientsBytes = readFontBytes(getAvenirNextCondensedFontPath());
   const ingredients = ingredientsBytes ? await pdfDoc.embedFont(ingredientsBytes) : body;
-  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : body;
+  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold;
   const price = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body;
   return { name, price, body, bodyBold, bodyItalic, ingredients };
 }

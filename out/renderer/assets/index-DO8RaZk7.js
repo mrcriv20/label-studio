@@ -12465,13 +12465,50 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     ] })
   ] });
 }
+const PLS_780 = {
+  pageWidthIn: 8.5,
+  pageHeightIn: 11,
+  labelWidthIn: 2.5,
+  // portrait label width / landscape slot height
+  labelHeightIn: 4,
+  // portrait label height / landscape slot width
+  labelsPerSheet: 8,
+  columns: 2,
+  marginTopIn: 0.5,
+  marginLeftIn: 0.15625,
+  horizontalGapIn: 0.1875,
+  verticalGapIn: 0
+};
+function slotPosition(slot) {
+  const idx = slot - 1;
+  return { col: idx % PLS_780.columns, row: Math.floor(idx / PLS_780.columns) };
+}
+const PLS_780_SLOT_WIDTH_IN = PLS_780.labelHeightIn;
+const PLS_780_SLOT_HEIGHT_IN = PLS_780.labelWidthIn;
+function toInches(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number.parseFloat(String(value ?? "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function getSlotBoundsIn(slot, offsetXIn = 0, offsetYIn = 0) {
+  const { col, row } = slotPosition(slot);
+  return {
+    leftIn: PLS_780.marginLeftIn + col * (PLS_780_SLOT_WIDTH_IN + PLS_780.horizontalGapIn) + offsetXIn,
+    topIn: PLS_780.marginTopIn + row * (PLS_780_SLOT_HEIGHT_IN + PLS_780.verticalGapIn) + offsetYIn,
+    widthIn: PLS_780_SLOT_WIDTH_IN,
+    heightIn: PLS_780_SLOT_HEIGHT_IN
+  };
+}
 function SheetBuilder({ initialProducts, onBack }) {
-  const [slots, setSlots] = reactExports.useState(Array.from({ length: 8 }, () => ({ product: null })));
+  const [slots, setSlots] = reactExports.useState(
+    Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
+  );
   const [allProducts, setAllProducts] = reactExports.useState([]);
   const [templateDataUri, setTemplateDataUri] = reactExports.useState("");
+  const [settings, setSettings] = reactExports.useState(null);
   const [startSlot, setStartSlot] = reactExports.useState(1);
   const [fillProduct, setFillProduct] = reactExports.useState(null);
-  const [fillCount, setFillCount] = reactExports.useState(8);
+  const [fillCount, setFillCount] = reactExports.useState(PLS_780.labelsPerSheet);
   const [exporting, setExporting] = reactExports.useState(false);
   const [printing, setPrinting] = reactExports.useState(false);
   const [activeSlot, setActiveSlot] = reactExports.useState(null);
@@ -12483,14 +12520,17 @@ function SheetBuilder({ initialProducts, onBack }) {
     window.api.file.getTemplatePNG().then((r2) => {
       if (r2.ok && r2.data) setTemplateDataUri(r2.data);
     });
+    window.api.settings.get().then((r2) => {
+      if (r2.ok) setSettings(r2.data);
+    });
   }, []);
   reactExports.useEffect(() => {
     if (initialProducts.length === 1) {
       setFillProduct(initialProducts[0]);
       setMode("fill");
     } else if (initialProducts.length > 1) {
-      const newSlots = Array.from({ length: 8 }, () => ({ product: null }));
-      initialProducts.slice(0, 8).forEach((p2, i) => {
+      const newSlots = Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }));
+      initialProducts.slice(0, PLS_780.labelsPerSheet).forEach((p2, i) => {
         newSlots[i].product = p2;
       });
       setSlots(newSlots);
@@ -12500,7 +12540,7 @@ function SheetBuilder({ initialProducts, onBack }) {
   function resolveSlots() {
     if (mode === "fill" && fillProduct) {
       const result = [];
-      for (let s = startSlot; s <= 8 && result.length < fillCount; s++) result.push(fillProduct);
+      for (let s = startSlot; s <= PLS_780.labelsPerSheet && result.length < fillCount; s++) result.push(fillProduct);
       return result;
     }
     return slots.map((s) => s.product).filter(Boolean);
@@ -12538,7 +12578,7 @@ function SheetBuilder({ initialProducts, onBack }) {
   }
   function buildDisplaySlots() {
     if (mode === "fill" && fillProduct) {
-      return Array.from({ length: 8 }, (_, i) => {
+      return Array.from({ length: PLS_780.labelsPerSheet }, (_, i) => {
         const slot = i + 1;
         if (slot < startSlot) return null;
         if (slot - startSlot < fillCount) return fillProduct;
@@ -12566,7 +12606,7 @@ function SheetBuilder({ initialProducts, onBack }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#cbd5e1", fontSize: 13 }, children: "/" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332" }, children: "Print Sheet Builder" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, background: "#f1f5f9", color: "#64748b", borderRadius: 20, padding: "2px 10px", marginLeft: 4 }, children: "Avery 5821 — 8 labels per sheet" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, background: "#f1f5f9", color: "#64748b", borderRadius: 20, padding: "2px 10px", marginLeft: 4 }, children: "Premium Label Supply PLS780 — 8 labels per sheet" }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginLeft: "auto", display: "flex", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handlePrintDirect, disabled: printing, className: "btn-green btn-sm", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }),
@@ -12634,9 +12674,9 @@ function SheetBuilder({ initialProducts, onBack }) {
                   type: "number",
                   className: "input",
                   min: 1,
-                  max: 8 - startSlot + 1,
+                  max: PLS_780.labelsPerSheet - startSlot + 1,
                   value: fillCount,
-                  onChange: (e) => setFillCount(Math.min(8, Math.max(1, Number(e.target.value))))
+                  onChange: (e) => setFillCount(Math.min(PLS_780.labelsPerSheet, Math.max(1, Number(e.target.value))))
                 }
               )
             ] }),
@@ -12650,9 +12690,9 @@ function SheetBuilder({ initialProducts, onBack }) {
                   onChange: (e) => {
                     const s = Number(e.target.value);
                     setStartSlot(s);
-                    setFillCount(Math.min(fillCount, 8 - s + 1));
+                    setFillCount(Math.min(fillCount, PLS_780.labelsPerSheet - s + 1));
                   },
-                  children: Array.from({ length: 8 }, (_, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: i + 1, children: [
+                  children: Array.from({ length: PLS_780.labelsPerSheet }, (_, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: i + 1, children: [
                     "Slot ",
                     i + 1,
                     i === 0 ? " (top-left)" : ""
@@ -12688,7 +12728,7 @@ function SheetBuilder({ initialProducts, onBack }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx(Info, { size: 13, style: { flexShrink: 0, marginTop: 1, color: "#f59e0b" } }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { children: "Print at 100% / Actual Size." }),
-            ' Do not enable "Fit to Page." The PDF is sized for Avery 5821 (US Letter, 8 labels).'
+            ' Do not enable "Fit to Page." The PDF is sized for Premium Label Supply PLS780 4" × 2.5" sheets on US Letter.'
           ] })
         ] })
       ] }) }),
@@ -12705,12 +12745,14 @@ function SheetBuilder({ initialProducts, onBack }) {
         overflowY: "auto"
       }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }, children: "Sheet Preview" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: "100%", background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "repeat(4, 1fr)", gap: 2, background: "#d1d5db", aspectRatio: "8.5 / 11" }, children: displaySlots.map((product, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: "100%", background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: 8 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "relative", background: "#d1d5db", aspectRatio: "8.5 / 11" }, children: displaySlots.map((product, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
           SheetSlotPreview,
           {
             index: i,
             product,
             templateDataUri,
+            offsetXIn: toInches(settings?.sheetOffsetXIn),
+            offsetYIn: toInches(settings?.sheetOffsetYIn),
             isActive: activeSlot === i,
             onClick: () => setActiveSlot(activeSlot === i ? null : i)
           },
@@ -12718,7 +12760,9 @@ function SheetBuilder({ initialProducts, onBack }) {
         )) }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { fontSize: 12, color: "#94a3b8", margin: 0 }, children: [
           filled,
-          " / 8 slots filled"
+          " / ",
+          PLS_780.labelsPerSheet,
+          " slots filled"
         ] })
       ] })
     ] })
@@ -12728,10 +12772,19 @@ function SheetSlotPreview({
   index,
   product,
   templateDataUri,
+  offsetXIn,
+  offsetYIn,
   isActive,
   onClick
 }) {
-  const SLOT_ASPECT = 4 / 2.5;
+  const bounds = getSlotBoundsIn(index + 1, offsetXIn, offsetYIn);
+  const pageWidth = PLS_780.pageWidthIn;
+  const pageHeight = PLS_780.pageHeightIn;
+  const slotLeft = bounds.leftIn / pageWidth * 100;
+  const slotTop = bounds.topIn / pageHeight * 100;
+  const slotWidth = bounds.widthIn / pageWidth * 100;
+  const slotHeight = bounds.heightIn / pageHeight * 100;
+  const SLOT_ASPECT = bounds.widthIn / bounds.heightIn;
   const template = product ? getLabelTemplate(product.templateId) : null;
   const isInfoLayout = template?.layout === "info";
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -12739,13 +12792,16 @@ function SheetSlotPreview({
     {
       onClick,
       style: {
-        position: "relative",
+        position: "absolute",
         cursor: "pointer",
         overflow: "hidden",
         background: product ? "white" : "#f8fafc",
         outline: isActive ? "2px solid #2d8f2d" : "none",
         outlineOffset: -2,
-        aspectRatio: "4 / 2.5",
+        left: `${slotLeft}%`,
+        top: `${slotTop}%`,
+        width: `${slotWidth}%`,
+        height: `${slotHeight}%`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center"
@@ -12890,6 +12946,42 @@ function Settings() {
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 16px" }, children: "Print Calibration" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 12 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Horizontal offset (in)" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  className: "input",
+                  inputMode: "decimal",
+                  value: settings.sheetOffsetXIn,
+                  onChange: (e) => update("sheetOffsetXIn", e.target.value),
+                  placeholder: "0"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Positive moves the sheet content right. Negative moves it left." })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Vertical offset (in)" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  className: "input",
+                  inputMode: "decimal",
+                  value: settings.sheetOffsetYIn,
+                  onChange: (e) => update("sheetOffsetYIn", e.target.value),
+                  placeholder: "0"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Positive moves the sheet content down. Negative moves it up." })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#64748b", margin: 0 }, children: "These offsets apply to both sheet PDF export and direct printing. Small values like `0.02` or `-0.03` inches are typical." })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 16px" }, children: "Label Template" }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 10 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 10, fontSize: 13, color: "#475569" }, children: [
@@ -12902,8 +12994,8 @@ function Settings() {
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 10, fontSize: 13, color: "#475569" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(Info, { size: 15, style: { marginTop: 1, color: "#3b82f6", flexShrink: 0 } }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 500, margin: 0 }, children: "Avery 5821 Layout and Alternatives" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 2 }, children: '8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows. Labels printed landscape (4" × 2.5" per slot). Margins: 0.25" left/right, 0.5" top/bottom. Product templates are now built from modular header, brand, and content zones and can be selected per label.' })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontWeight: 500, margin: 0 }, children: "Premium Label Supply PLS780 Sheet Layout" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 2 }, children: '8 labels per US Letter sheet (8.5" × 11"). 2 columns × 4 rows. Labels print landscape at 4" × 2.5" per slot with 0.15625" side margins, a 0.1875" center gutter, and 0.5" top/bottom margins. Product templates are now built from modular header, brand, and content zones and can be selected per label.' })
             ] })
           ] })
         ] })
