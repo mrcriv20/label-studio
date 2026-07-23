@@ -35,6 +35,16 @@ export interface AppSettings {
   sheetOffsetYIn: string
   pageBackgroundColor: string
   labelBackgroundColor: string
+  titleFontId: string
+  priceFontId: string
+  bodyFontId: string
+}
+
+export interface FontAsset {
+  id: string
+  family: string
+  source: 'bundled' | 'local' | 'upload' | 'google'
+  dataUri: string
 }
 
 export interface LabelTemplate {
@@ -72,6 +82,12 @@ declare global {
         pickTemplateImage(): Promise<IpcResult<string | null>>
         saveTemplateImage(sourcePath: string): Promise<IpcResult<LabelTemplate>>
         pickExportFolder(): Promise<IpcResult<string | null>>
+      }
+      font: {
+        list(): Promise<IpcResult<FontAsset[]>>
+        importLocal(): Promise<IpcResult<FontAsset | null>>
+        upload(): Promise<IpcResult<FontAsset | null>>
+        addGoogle(family: string): Promise<IpcResult<FontAsset>>
       }
       export: {
         singlePDF(product: Product): Promise<IpcResult<string | null>>

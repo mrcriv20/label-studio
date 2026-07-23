@@ -34,6 +34,9 @@ export interface AppSettings {
   sheetOffsetYIn: string     // printer calibration offset, inches
   pageBackgroundColor: string
   labelBackgroundColor: string
+  titleFontId: string
+  priceFontId: string
+  bodyFontId: string
 }
 
 export interface LabelTemplate {

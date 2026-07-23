@@ -59,6 +59,9 @@ function loadSettings(): void {
     sheetOffsetYIn: '0',
     pageBackgroundColor: '#f4f5f7',
     labelBackgroundColor: '',
+    titleFontId: 'bundled:lora',
+    priceFontId: 'bundled:genty',
+    bodyFontId: 'bundled:avenir',
   }
   if (existsSync(p)) {
     try {

@@ -29,6 +29,12 @@ const api = {
     saveTemplateImage: (sourcePath) => electron.ipcRenderer.invoke("file:saveTemplateImage", sourcePath),
     pickExportFolder: () => electron.ipcRenderer.invoke("file:pickExportFolder")
   },
+  font: {
+    list: () => electron.ipcRenderer.invoke("font:list"),
+    importLocal: () => electron.ipcRenderer.invoke("font:importLocal"),
+    upload: () => electron.ipcRenderer.invoke("font:upload"),
+    addGoogle: (family) => electron.ipcRenderer.invoke("font:addGoogle", family)
+  },
   // Export
   export: {
     singlePDF: (product) => electron.ipcRenderer.invoke("export:singlePDF", product),

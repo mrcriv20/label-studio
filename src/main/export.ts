@@ -6,6 +6,7 @@ import { homedir } from 'os'
 import bwipjs from 'bwip-js'
 import type { Product } from './types'
 import { getSettings } from './database'
+import { getFont } from './fonts'
 import {
   getAvenirNextCondensedFontPath,
   getDefaultTopLogoPath,
@@ -156,24 +157,36 @@ async function embedFonts(pdfDoc: PDFDocument): Promise<{
   bodyItalic: EmbeddedFont
   ingredients: EmbeddedFont
 }> {
-  const body = ARIAL_REGULAR_BYTES
+  const settings = getSettings()
+  const selectedBytes = (id: string): Buffer | null => {
+    const font = getFont(id)
+    return font ? readFontBytes(font.path) : null
+  }
+  const selectedTitle = selectedBytes(settings.titleFontId)
+  const selectedPrice = selectedBytes(settings.priceFontId)
+  const selectedBody = selectedBytes(settings.bodyFontId)
+  const embedOr = async (bytes: Buffer | null, fallback: EmbeddedFont): Promise<EmbeddedFont> => {
+    if (!bytes) return fallback
+    try { return await pdfDoc.embedFont(bytes) } catch { return fallback }
+  }
+  const standardBody = ARIAL_REGULAR_BYTES
     ? await pdfDoc.embedFont(ARIAL_REGULAR_BYTES)
     : await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const bodyBold = ARIAL_BOLD_BYTES
-    ? await pdfDoc.embedFont(ARIAL_BOLD_BYTES)
-    : await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const bodyItalic = ARIAL_ITALIC_BYTES
-    ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES)
-    : await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
-  const ingredientsBytes = readFontBytes(getAvenirNextCondensedFontPath())
-  const ingredients = ingredientsBytes
-    ? await pdfDoc.embedFont(ingredientsBytes)
-    : body
+  const body = await embedOr(selectedBody, standardBody)
+  const bodyBold = selectedBody
+    ? body
+    : ARIAL_BOLD_BYTES ? await pdfDoc.embedFont(ARIAL_BOLD_BYTES) : await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const bodyItalic = selectedBody
+    ? body
+    : ARIAL_ITALIC_BYTES ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES) : await pdfDoc.embedFont(StandardFonts.HelveticaOblique)
+  const ingredients = body
   // Keep the requested weight even when the optional Lora face is unavailable.
   // Falling back to `body` here made print output regular although the preview
   // explicitly renders product names at weight 700.
-  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold
-  const price = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body
+  const defaultName = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold
+  const defaultPrice = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body
+  const name = await embedOr(selectedTitle, defaultName)
+  const price = await embedOr(selectedPrice, defaultPrice)
   return { name, price, body, bodyBold, bodyItalic, ingredients }
 }
 

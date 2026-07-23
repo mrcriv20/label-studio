@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Save, FolderOpen, FileCheck, Info } from 'lucide-react'
-import type { AppSettings } from '../types'
+import { Save, FolderOpen, FileCheck, Info, Upload, Download } from 'lucide-react'
+import type { AppSettings, FontAsset } from '../types'
+import { applyFontSettings, installFonts } from '../lib/fonts'
 
 export default function Settings(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [fonts, setFonts] = useState<FontAsset[]>([])
+  const [googleFamily, setGoogleFamily] = useState('')
+  const [addingFont, setAddingFont] = useState(false)
 
   useEffect(() => {
     window.api.settings.get().then((r) => {
@@ -14,11 +18,20 @@ export default function Settings(): JSX.Element {
       else setError(r.error)
     })
   }, [])
+  useEffect(() => {
+    window.api.font.list().then((result) => {
+      if (result.ok) { setFonts(result.data); installFonts(result.data) }
+    })
+  }, [])
 
   function update(key: keyof AppSettings, value: string): void {
     setSettings((prev) => prev ? { ...prev, [key]: value } : null)
     if (key === 'pageBackgroundColor') {
       document.documentElement.style.setProperty('--page-background', value)
+    }
+    if (key === 'titleFontId' || key === 'priceFontId' || key === 'bodyFontId') {
+      const next = settings ? { ...settings, [key]: value } : null
+      if (next) applyFontSettings(next)
     }
     setSaved(false)
   }
@@ -45,6 +58,23 @@ export default function Settings(): JSX.Element {
   async function pickFolder(): Promise<void> {
     const result = await window.api.file.pickExportFolder()
     if (result.ok && result.data) update('exportFolder', result.data)
+  }
+
+  async function addFont(kind: 'local' | 'upload' | 'google'): Promise<void> {
+    setAddingFont(true)
+    setError('')
+    const result = kind === 'google'
+      ? await window.api.font.addGoogle(googleFamily)
+      : kind === 'local'
+        ? await window.api.font.importLocal()
+        : await window.api.font.upload()
+    setAddingFont(false)
+    if (!result.ok) { setError(result.error); return }
+    if (!result.data) return
+    const next = [...fonts, result.data]
+    setFonts(next)
+    installFonts(next)
+    if (kind === 'google') setGoogleFamily('')
   }
 
   if (!settings) {
@@ -93,6 +123,28 @@ export default function Settings(): JSX.Element {
                   <option value="GBP">GBP — British Pound</option>
                 </select>
               </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '20px 20px 24px' }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', margin: '0 0 6px' }}>Label Fonts</h2>
+            <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 16px', lineHeight: 1.5 }}>
+              Fonts are stored with the app and embedded in PDFs, so preview, export, and printing stay consistent.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <FontSelect label="Product title" value={settings.titleFontId} fonts={fonts} onChange={(v) => update('titleFontId', v)} />
+              <FontSelect label="Price" value={settings.priceFontId} fonts={fonts} onChange={(v) => update('priceFontId', v)} />
+              <FontSelect label="Details and instructions" value={settings.bodyFontId} fonts={fonts} onChange={(v) => update('bodyFontId', v)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button className="btn-outline" onClick={() => addFont('local')} disabled={addingFont}><FolderOpen size={13} /> Local font</button>
+              <button className="btn-outline" onClick={() => addFont('upload')} disabled={addingFont}><Upload size={13} /> Upload file</button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <input className="input" value={googleFamily} onChange={(e) => setGoogleFamily(e.target.value)} placeholder="Google Fonts family, e.g. Roboto" />
+              <button className="btn-outline" onClick={() => addFont('google')} disabled={addingFont || !googleFamily.trim()} style={{ flexShrink: 0 }}>
+                <Download size={13} /> {addingFont ? 'Adding…' : 'Add Google font'}
+              </button>
             </div>
           </div>
 
@@ -227,6 +279,18 @@ export default function Settings(): JSX.Element {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function FontSelect({ label, value, fonts, onChange }: { label: string; value: string; fonts: FontAsset[]; onChange: (value: string) => void }): JSX.Element {
+  return (
+    <div>
+      <label className="label-text">{label}</label>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {fonts.map((font) => <option key={font.id} value={font.id}>{font.family} · {font.source}</option>)}
+      </select>
+      <div style={{ marginTop: 5, fontSize: 18, lineHeight: 1.2, fontFamily: `LabelFont-${value.replace(/[^a-z0-9_-]/gi, '-')}` }}>Grazia’s Aa</div>
     </div>
   )
 }

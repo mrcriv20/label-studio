@@ -65,7 +65,10 @@ function loadSettings() {
     sheetOffsetXIn: "0",
     sheetOffsetYIn: "0",
     pageBackgroundColor: "#f4f5f7",
-    labelBackgroundColor: ""
+    labelBackgroundColor: "",
+    titleFontId: "bundled:lora",
+    priceFontId: "bundled:genty",
+    bodyFontId: "bundled:avenir"
   };
   if (fs.existsSync(p)) {
     try {
@@ -336,6 +339,72 @@ function prettifyTemplateName(id) {
 function getBundledAssetsDir() {
   return !electron.app.isPackaged ? path.join(__dirname, "../../assets") : path.join(process.resourcesPath, "assets");
 }
+const fontDir = () => path.join(electron.app.getPath("userData"), "fonts");
+const catalogPath = () => path.join(fontDir(), "catalog.json");
+function customFonts() {
+  try {
+    return JSON.parse(fs.readFileSync(catalogPath(), "utf8"));
+  } catch {
+    return [];
+  }
+}
+function bundledFonts() {
+  return [
+    { id: "bundled:lora", family: "Lora", source: "bundled", path: getLoraBoldFontPath() },
+    { id: "bundled:genty", family: "Genty Demo", source: "bundled", path: getGentyRegularFontPath() },
+    { id: "bundled:avenir", family: "Avenir Next Condensed", source: "bundled", path: getAvenirNextCondensedFontPath() }
+  ];
+}
+function initFonts() {
+  fs.mkdirSync(fontDir(), { recursive: true });
+}
+function listFonts() {
+  return [...bundledFonts(), ...customFonts()].filter((font) => fs.existsSync(font.path));
+}
+function getFont(id) {
+  return listFonts().find((font) => font.id === id) ?? null;
+}
+function fontDataUri(id) {
+  const font = getFont(id);
+  if (!font) return "";
+  const extension = path.extname(font.path).toLowerCase();
+  const mime = extension === ".woff2" ? "font/woff2" : extension === ".woff" ? "font/woff" : extension === ".otf" ? "font/otf" : "font/ttf";
+  return `data:${mime};base64,${fs.readFileSync(font.path).toString("base64")}`;
+}
+function importFont(sourcePath, source = "upload") {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (![".ttf", ".otf", ".woff", ".woff2"].includes(extension)) throw new Error("Choose a TTF, OTF, WOFF, or WOFF2 font file.");
+  const family = path.basename(sourcePath, extension).replace(/[-_]+/g, " ").replace(/\b(regular|bold|medium|semibold|italic)\b/gi, "").trim();
+  const id = `${source}:${Date.now()}`;
+  const path$1 = path.join(fontDir(), `${id.replace(":", "-")}${extension}`);
+  fs.copyFileSync(sourcePath, path$1);
+  const asset = { id, family, source, path: path$1 };
+  writeCatalog([...customFonts(), asset]);
+  return asset;
+}
+async function addGoogleFont(family) {
+  const cleanFamily = family.trim();
+  if (!cleanFamily) throw new Error("Enter a Google Fonts family name.");
+  const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(cleanFamily).replace(/%20/g, "+")}:wght@400;700`;
+  const cssResponse = await fetch(cssUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!cssResponse.ok) throw new Error(`Google Fonts returned ${cssResponse.status}. Check the family name and internet connection.`);
+  const css = await cssResponse.text();
+  const urls = [...css.matchAll(/url\((https:\/\/[^)]+)\)/g)].map((match) => match[1]);
+  if (!urls.length) throw new Error("Google Fonts did not return a usable font file.");
+  const fontResponse = await fetch(urls[urls.length - 1]);
+  if (!fontResponse.ok) throw new Error(`Could not download the Google font (${fontResponse.status}).`);
+  const remoteExtension = path.extname(new URL(urls[urls.length - 1]).pathname).toLowerCase();
+  const extension = [".ttf", ".otf", ".woff", ".woff2"].includes(remoteExtension) ? remoteExtension : ".woff2";
+  const id = `google:${Date.now()}`;
+  const path$1 = path.join(fontDir(), `${id.replace(":", "-")}${extension}`);
+  fs.writeFileSync(path$1, Buffer.from(await fontResponse.arrayBuffer()));
+  const asset = { id, family: cleanFamily, source: "google", path: path$1 };
+  writeCatalog([...customFonts(), asset]);
+  return asset;
+}
+function writeCatalog(fonts) {
+  fs.writeFileSync(catalogPath(), JSON.stringify(fonts, null, 2), "utf8");
+}
 const PLS_780 = {
   pageWidthIn: 8.5,
   pageHeightIn: 11,
@@ -476,13 +545,31 @@ const ARIAL_ITALIC_BYTES = readFontBytes(
   path.join(USER_FONTS, "Arial Italic.ttf")
 );
 async function embedFonts(pdfDoc) {
-  const body = ARIAL_REGULAR_BYTES ? await pdfDoc.embedFont(ARIAL_REGULAR_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
-  const bodyBold = ARIAL_BOLD_BYTES ? await pdfDoc.embedFont(ARIAL_BOLD_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
-  const bodyItalic = ARIAL_ITALIC_BYTES ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaOblique);
-  const ingredientsBytes = readFontBytes(getAvenirNextCondensedFontPath());
-  const ingredients = ingredientsBytes ? await pdfDoc.embedFont(ingredientsBytes) : body;
-  const name = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold;
-  const price = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body;
+  const settings = getSettings();
+  const selectedBytes = (id) => {
+    const font = getFont(id);
+    return font ? readFontBytes(font.path) : null;
+  };
+  const selectedTitle = selectedBytes(settings.titleFontId);
+  const selectedPrice = selectedBytes(settings.priceFontId);
+  const selectedBody = selectedBytes(settings.bodyFontId);
+  const embedOr = async (bytes, fallback) => {
+    if (!bytes) return fallback;
+    try {
+      return await pdfDoc.embedFont(bytes);
+    } catch {
+      return fallback;
+    }
+  };
+  const standardBody = ARIAL_REGULAR_BYTES ? await pdfDoc.embedFont(ARIAL_REGULAR_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
+  const body = await embedOr(selectedBody, standardBody);
+  const bodyBold = selectedBody ? body : ARIAL_BOLD_BYTES ? await pdfDoc.embedFont(ARIAL_BOLD_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
+  const bodyItalic = selectedBody ? body : ARIAL_ITALIC_BYTES ? await pdfDoc.embedFont(ARIAL_ITALIC_BYTES) : await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaOblique);
+  const ingredients = body;
+  const defaultName = LORA_BYTES ? await pdfDoc.embedFont(LORA_BYTES) : bodyBold;
+  const defaultPrice = GENTY_BYTES ? await pdfDoc.embedFont(GENTY_BYTES) : body;
+  const name = await embedOr(selectedTitle, defaultName);
+  const price = await embedOr(selectedPrice, defaultPrice);
   return { name, price, body, bodyBold, bodyItalic, ingredients };
 }
 async function renderBarcodePNG(value, colorHex) {
@@ -1261,6 +1348,38 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
+  electron.ipcMain.handle("font:list", () => {
+    try {
+      return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) })));
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  async function chooseFont(source) {
+    try {
+      const result = await electron.dialog.showOpenDialog({
+        title: source === "local" ? "Choose a Font Installed on This Computer" : "Upload a Font File",
+        defaultPath: source === "local" && process.platform === "darwin" ? path.join(electron.app.getPath("home"), "Library", "Fonts") : void 0,
+        filters: [{ name: "Fonts", extensions: ["ttf", "otf", "woff", "woff2"] }],
+        properties: ["openFile"]
+      });
+      if (result.canceled || !result.filePaths.length) return ok(null);
+      const font = importFont(result.filePaths[0], source);
+      return ok({ ...font, path: void 0, dataUri: fontDataUri(font.id) });
+    } catch (e) {
+      return fail(String(e));
+    }
+  }
+  electron.ipcMain.handle("font:importLocal", () => chooseFont("local"));
+  electron.ipcMain.handle("font:upload", () => chooseFont("upload"));
+  electron.ipcMain.handle("font:addGoogle", async (_e, family) => {
+    try {
+      const font = await addGoogleFont(family);
+      return ok({ ...font, path: void 0, dataUri: fontDataUri(font.id) });
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
   electron.ipcMain.handle("file:pickBarcodeImage", async () => {
     try {
       const result = await electron.dialog.showOpenDialog({
@@ -1521,6 +1640,7 @@ electron.app.whenReady().then(() => {
   });
   try {
     initFileManager();
+    initFonts();
     initDatabase();
     registerIpcHandlers();
   } catch (err) {

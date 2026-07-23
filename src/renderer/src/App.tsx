@@ -6,6 +6,7 @@ import SheetBuilder from './screens/SheetBuilder'
 import Settings from './screens/Settings'
 import HowTo from './screens/HowTo'
 import type { Product } from './types'
+import { applyFontSettings, installFonts } from './lib/fonts'
 
 export type Screen = 'library' | 'editor' | 'sheet' | 'settings' | 'how-to'
 
@@ -15,10 +16,11 @@ export default function App(): JSX.Element {
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
 
   useEffect(() => {
-    window.api.settings.get().then((result) => {
-      if (result.ok) {
-        document.documentElement.style.setProperty('--page-background', result.data.pageBackgroundColor)
-      }
+    Promise.all([window.api.settings.get(), window.api.font.list()]).then(([settings, fonts]) => {
+      if (fonts.ok) installFonts(fonts.data)
+      if (!settings.ok) return
+      document.documentElement.style.setProperty('--page-background', settings.data.pageBackgroundColor)
+      applyFontSettings(settings.data)
     })
   }, [])
 

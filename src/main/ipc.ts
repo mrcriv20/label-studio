@@ -24,6 +24,7 @@ import {
 } from './fileManager'
 import { buildSheetPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import { getLabelTemplate } from '../shared/labelTemplates'
+import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -191,6 +192,33 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:set', (_e, key: string, value: string) => {
     try { setSetting(key, value); return ok(true) }
     catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('font:list', () => {
+    try { return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) }))) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  async function chooseFont(source: 'local' | 'upload'): Promise<IpcResult<unknown>> {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: source === 'local' ? 'Choose a Font Installed on This Computer' : 'Upload a Font File',
+        defaultPath: source === 'local' && process.platform === 'darwin' ? join(app.getPath('home'), 'Library', 'Fonts') : undefined,
+        filters: [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      const font = importFont(result.filePaths[0], source)
+      return ok({ ...font, path: undefined, dataUri: fontDataUri(font.id) })
+    } catch (e) { return fail(String(e)) }
+  }
+  ipcMain.handle('font:importLocal', () => chooseFont('local'))
+  ipcMain.handle('font:upload', () => chooseFont('upload'))
+  ipcMain.handle('font:addGoogle', async (_e, family: string) => {
+    try {
+      const font = await addGoogleFont(family)
+      return ok({ ...font, path: undefined, dataUri: fontDataUri(font.id) })
+    } catch (e) { return fail(String(e)) }
   })
 
   // ── File ──────────────────────────────────────────────────────────────────

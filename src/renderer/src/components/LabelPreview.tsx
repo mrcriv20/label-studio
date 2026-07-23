@@ -185,7 +185,7 @@ function FrontLabelPreview({
         <span
           style={{
             fontSize: nameFontSize,
-            fontFamily: '"Lora", Georgia, serif',
+            fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
             fontWeight: 700,
             color: template.textColor,
             textAlign: 'center',
@@ -215,7 +215,7 @@ function FrontLabelPreview({
           <span
             style={{
               fontSize: priceFontSize,
-              fontFamily: '"Genty Demo", Georgia, serif',
+              fontFamily: 'var(--label-price-font, "Genty Demo", Georgia, serif)',
               fontWeight: 400,
               color: template.textColor,
               textAlign: 'center',
@@ -323,7 +323,7 @@ function InfoLabelPreview({
         <span
           style={{
             fontSize: infoNameSize,
-            fontFamily: '"Lora", Georgia, serif',
+            fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
             fontWeight: 700,
             color: template.textColor,
             lineHeight: 1.05,
@@ -350,7 +350,7 @@ function InfoLabelPreview({
           <span
             style={{
               fontSize: infoPriceSize,
-              fontFamily: '"Genty Demo", Georgia, serif',
+              fontFamily: 'var(--label-price-font, "Genty Demo", Georgia, serif)',
               fontWeight: 400,
               color: template.textColor,
               lineHeight: 1,
@@ -369,7 +369,7 @@ function InfoLabelPreview({
           width: toPercentWidth(INFO_LABEL_ZONES.infoText.w, template.width),
           height: toPercentHeight(INFO_LABEL_ZONES.infoText.h, template.height),
           color: template.textColor,
-          fontFamily: '"Helvetica Neue", Arial, sans-serif',
+          fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
           pointerEvents: 'none',
           overflow: 'hidden',
         }}
@@ -492,7 +492,7 @@ function VerticalInfoLabelPreview({
         <span
           style={{
             fontSize: titleSize,
-            fontFamily: '"Lora", Georgia, serif',
+            fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
             fontWeight: 700,
             color: template.textColor,
             textAlign: 'center',
@@ -523,7 +523,7 @@ function VerticalInfoLabelPreview({
             <span
               style={{
                 fontSize: '3.6cqw',
-                fontFamily: '"Helvetica Neue", Arial, sans-serif',
+                fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
                 fontWeight: 700,
                 color: template.textColor,
                 textAlign: 'center',
@@ -551,7 +551,7 @@ function VerticalInfoLabelPreview({
             <span
               style={{
                 fontSize: '2.8cqw',
-                fontFamily: '"Avenir Next Condensed Asset", "Avenir Next Condensed", "Avenir Next", "Arial Narrow", Arial, sans-serif',
+                fontFamily: 'var(--label-body-font, "Avenir Next Condensed Asset", Arial, sans-serif)',
                 fontWeight: 400,
                 color: template.textColor,
                 textAlign: 'center',
@@ -583,7 +583,7 @@ function VerticalInfoLabelPreview({
           <span
             style={{
               fontSize: '2.8cqw',
-              fontFamily: '"Helvetica Neue", Arial, sans-serif',
+              fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
               fontWeight: 700,
               color: template.textColor,
               textAlign: 'center',

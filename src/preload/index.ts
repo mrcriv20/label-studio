@@ -54,6 +54,13 @@ const api = {
     pickExportFolder: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('file:pickExportFolder'),
   },
+  font: {
+    list: (): Promise<IpcResult<Array<{ id: string; family: string; source: string; dataUri: string }>>> =>
+      ipcRenderer.invoke('font:list'),
+    importLocal: (): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:importLocal'),
+    upload: (): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:upload'),
+    addGoogle: (family: string): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:addGoogle', family),
+  },
 
   // Export
   export: {

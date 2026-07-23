@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase } from './database'
 import { initFileManager } from './fileManager'
 import { registerIpcHandlers } from './ipc'
+import { initFonts } from './fonts'
 
 // Avoid noisy Chromium GPU mailbox/overlay errors seen on some macOS setups.
 app.disableHardwareAcceleration()
@@ -53,6 +54,7 @@ app.whenReady().then(() => {
   // Initialize services
   try {
     initFileManager()
+    initFonts()
     initDatabase()
     registerIpcHandlers()
   } catch (err) {
