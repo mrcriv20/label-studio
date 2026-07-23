@@ -158,6 +158,8 @@ export function registerIpcHandlers(): void {
           servingInfo: '',
           nutritionInfo: '',
           cookingInstructions: '',
+          customerName: '',
+          labelBackgroundColor: '',
           ingredients: '',
           allergenStatement: '',
           barcodeValue: barcode,

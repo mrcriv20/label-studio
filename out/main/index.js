@@ -63,7 +63,9 @@ function loadSettings() {
     templateId: "avery5821",
     pricePrefix: "$",
     sheetOffsetXIn: "0",
-    sheetOffsetYIn: "0"
+    sheetOffsetYIn: "0",
+    pageBackgroundColor: "#f4f5f7",
+    labelBackgroundColor: ""
   };
   if (fs.existsSync(p)) {
     try {
@@ -121,6 +123,8 @@ function normalizeProduct(product) {
     servingInfo: product.servingInfo ?? "",
     nutritionInfo: product.nutritionInfo ?? "",
     cookingInstructions: product.cookingInstructions ?? "",
+    customerName: product.customerName ?? "",
+    labelBackgroundColor: product.labelBackgroundColor ?? "",
     ingredients: product.ingredients ?? "",
     allergenStatement: product.allergenStatement ?? "",
     barcodeValue: product.barcodeValue ?? "",
@@ -159,7 +163,8 @@ const VERTICAL_INFO_LABEL_ZONES = {
   contentPanel: { x: 10, y: 10, w: 161, h: 150 },
   title: { x: 20, y: 95, w: 141, h: 44 },
   cookingTitle: { x: 20, y: 66, w: 141 },
-  cookingBody: { x: 18, y: 28, w: 145, h: 34 }
+  cookingBody: { x: 18, y: 31, w: 145, h: 31 },
+  customerName: { x: 18, y: 14, w: 145 }
 };
 const LOGO_ONLY_LABEL_ZONES = {
   topImage: { x: 18, y: 86, w: 145, h: 120 }
@@ -368,6 +373,10 @@ function getSheetLayoutPoints(offsetXIn = 0, offsetYIn = 0) {
     rows: PLS_780.rows
   };
 }
+function resolveLabelBackground(product, templateColor) {
+  const candidate = product.labelBackgroundColor || getSettings().labelBackgroundColor;
+  return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : templateColor;
+}
 function readFontBytes(...paths) {
   for (const p of paths) {
     if (fs.existsSync(p)) {
@@ -572,7 +581,7 @@ function splitLines(text, maxChars, maxLines) {
 }
 async function drawLabel(page, product, topImage, barcodeImage, fonts) {
   const template = getLabelTemplate(product.templateId);
-  const shell = hexToRgb(template.shellColor);
+  const shell = hexToRgb(resolveLabelBackground(product, template.shellColor));
   const border = hexToRgb(template.borderColor);
   const panel = hexToRgb(template.panelColor);
   const text = hexToRgb(template.textColor);
@@ -736,6 +745,20 @@ function drawVerticalInfoLabel(page, product, topImage, fonts, panel, text) {
       text
     );
   });
+  const customerName = product.customerName.trim();
+  if (customerName) {
+    const orderText = `Order: ${customerName}`;
+    const orderSize = orderText.length > 34 ? 7 : 8;
+    drawCenteredText(
+      page,
+      orderText,
+      VERTICAL_INFO_LABEL_ZONES.customerName.x + VERTICAL_INFO_LABEL_ZONES.customerName.w / 2,
+      VERTICAL_INFO_LABEL_ZONES.customerName.y + 2,
+      orderSize,
+      fonts.bodyBold,
+      text
+    );
+  }
   if (product.showCookingInstructions === false) return;
   const headingSize = 10;
   drawCenteredText(
@@ -902,11 +925,12 @@ async function exportSingleLabelSVG(product) {
     return buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri);
   }
   if (template.layout === "logo-only") {
-    return buildLogoOnlySvg(template, topImageUri);
+    return buildLogoOnlySvg(template, topImageUri, resolveLabelBackground(product, template.shellColor));
   }
   return buildFrontSvg(product, template, topImageUri, barcodeUri);
 }
 function buildFrontSvg(product, template, topImageUri, barcodeUri) {
+  const labelBackground = resolveLabelBackground(product, template.shellColor);
   const name = product.name || "Product Name";
   const price = product.price || "$13.99";
   const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22;
@@ -923,7 +947,7 @@ function buildFrontSvg(product, template, topImageUri, barcodeUri) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${LABEL_ZONES.topImage.x}" y="${imageY}" width="${LABEL_ZONES.topImage.w}" height="${LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
   ${nameEls}
@@ -932,6 +956,7 @@ function buildFrontSvg(product, template, topImageUri, barcodeUri) {
 </svg>`;
 }
 function buildInfoSvg(product, template, topImageUri, barcodeUri, avenirFontUri) {
+  const labelBackground = resolveLabelBackground(product, template.shellColor);
   const name = product.name || "Product Name";
   const price = product.price || "$8.99";
   const nameSize = 12;
@@ -957,7 +982,7 @@ function buildInfoSvg(product, template, topImageUri, barcodeUri, avenirFontUri)
       font-style: normal;
     }
   </style>` : ""}
-  <rect x="0" y="0" width="${template.width}" height="${template.height}" rx="12" fill="${template.shellColor}" stroke="none"/>
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" rx="12" fill="${labelBackground}" stroke="none"/>
   <image x="${INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${INFO_LABEL_ZONES.topImage.w}" height="${INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${INFO_LABEL_ZONES.infoPanel.x}" y="${panelY}" width="${INFO_LABEL_ZONES.infoPanel.w}" height="${INFO_LABEL_ZONES.infoPanel.h}" rx="10" fill="${template.infoPanelColor ?? "#ffffff"}"/>
   ${nameEls}
@@ -967,6 +992,7 @@ function buildInfoSvg(product, template, topImageUri, barcodeUri, avenirFontUri)
 </svg>`;
 }
 function buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri) {
+  const labelBackground = resolveLabelBackground(product, template.shellColor);
   const name = product.name || "Product Title";
   const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24;
   const nameLines = splitLines(name, nameSize >= 24 ? 13 : nameSize >= 20 ? 16 : 19, 3);
@@ -977,6 +1003,10 @@ function buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri) {
   const headingY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingTitle.y + 2, 0, template.height);
   const bodyStartY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingBody.y + VERTICAL_INFO_LABEL_ZONES.cookingBody.h - 8, 0, template.height);
   const bodyLineHeight = 8 * 1.18;
+  const customerName = product.customerName.trim();
+  const orderText = customerName ? `Order: ${customerName}` : "";
+  const orderSize = orderText.length > 34 ? 7 : 8;
+  const orderY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.customerName.y + 2, 0, template.height);
   const nameEls = nameLines.map(
     (line, index) => `<text x="${VERTICAL_INFO_LABEL_ZONES.title.x + VERTICAL_INFO_LABEL_ZONES.title.w / 2}" y="${titleStartY + index * titleLineHeight}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="${template.textColor}">${xml(line)}</text>`
   ).join("\n  ");
@@ -995,20 +1025,21 @@ function buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri) {
       font-style: normal;
     }
   </style>` : ""}
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${VERTICAL_INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${VERTICAL_INFO_LABEL_ZONES.topImage.w}" height="${VERTICAL_INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${VERTICAL_INFO_LABEL_ZONES.contentPanel.x}" y="${panelY}" width="${VERTICAL_INFO_LABEL_ZONES.contentPanel.w}" height="${VERTICAL_INFO_LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
   ${nameEls}
   ${product.showCookingInstructions === false ? "" : `<text x="${VERTICAL_INFO_LABEL_ZONES.cookingTitle.x + VERTICAL_INFO_LABEL_ZONES.cookingTitle.w / 2}" y="${headingY}" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="10" fill="${template.textColor}">Cooking Instructions</text>`}
   ${cookingEls}
+  ${orderText ? `<text x="${VERTICAL_INFO_LABEL_ZONES.customerName.x + VERTICAL_INFO_LABEL_ZONES.customerName.w / 2}" y="${orderY}" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="${orderSize}" fill="${template.textColor}">${xml(orderText)}</text>` : ""}
 </svg>`;
 }
-function buildLogoOnlySvg(template, topImageUri) {
+function buildLogoOnlySvg(template, topImageUri, labelBackground = template.shellColor) {
   const imageY = svgYFromBottom(LOGO_ONLY_LABEL_ZONES.topImage.y, LOGO_ONLY_LABEL_ZONES.topImage.h, template.height);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0" y="0" width="${template.width}" height="${template.height}" fill="${template.shellColor}"/>
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" fill="${labelBackground}"/>
   <image x="${LOGO_ONLY_LABEL_ZONES.topImage.x}" y="${imageY}" width="${LOGO_ONLY_LABEL_ZONES.topImage.w}" height="${LOGO_ONLY_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
 </svg>`;
 }
@@ -1192,6 +1223,8 @@ function registerIpcHandlers() {
           servingInfo: "",
           nutritionInfo: "",
           cookingInstructions: "",
+          customerName: "",
+          labelBackgroundColor: "",
           ingredients: "",
           allergenStatement: "",
           barcodeValue: barcode,

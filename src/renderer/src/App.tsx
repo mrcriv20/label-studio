@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Nav from './components/Nav'
 import Library from './screens/Library'
 import Editor from './screens/Editor'
@@ -13,6 +13,14 @@ export default function App(): JSX.Element {
   const [screen, setScreen] = useState<Screen>('library')
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
+
+  useEffect(() => {
+    window.api.settings.get().then((result) => {
+      if (result.ok) {
+        document.documentElement.style.setProperty('--page-background', result.data.pageBackgroundColor)
+      }
+    })
+  }, [])
 
   function openEditor(product?: Product): void {
     setEditingProduct(product ?? null)

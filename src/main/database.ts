@@ -57,6 +57,8 @@ function loadSettings(): void {
     pricePrefix: '$',
     sheetOffsetXIn: '0',
     sheetOffsetYIn: '0',
+    pageBackgroundColor: '#f4f5f7',
+    labelBackgroundColor: '',
   }
   if (existsSync(p)) {
     try {
@@ -127,6 +129,8 @@ function normalizeProduct(product: Product): Product {
     servingInfo: product.servingInfo ?? '',
     nutritionInfo: product.nutritionInfo ?? '',
     cookingInstructions: product.cookingInstructions ?? '',
+    customerName: product.customerName ?? '',
+    labelBackgroundColor: product.labelBackgroundColor ?? '',
     ingredients: product.ingredients ?? '',
     allergenStatement: product.allergenStatement ?? '',
     barcodeValue: product.barcodeValue ?? '',

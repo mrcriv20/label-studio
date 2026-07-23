@@ -11226,7 +11226,8 @@ const VERTICAL_INFO_LABEL_ZONES = {
   contentPanel: { x: 10, y: 10, w: 161, h: 150 },
   title: { x: 20, y: 95, w: 141, h: 44 },
   cookingTitle: { x: 20, y: 66, w: 141, h: 16 },
-  cookingBody: { x: 18, y: 28, w: 145, h: 34 }
+  cookingBody: { x: 18, y: 31, w: 145, h: 31 },
+  customerName: { x: 18, y: 14, w: 145, h: 12 }
 };
 const LOGO_ONLY_LABEL_ZONES = {
   topImage: { x: 18, y: 86, w: 145, h: 120 }
@@ -11318,6 +11319,14 @@ function LabelPreview({
 }) {
   const barcodeRef = reactExports.useRef(null);
   const template = getLabelTemplate(product.templateId);
+  const [globalLabelBackground, setGlobalLabelBackground] = reactExports.useState("");
+  const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor;
+  const resolvedProduct = { ...product, labelBackgroundColor: labelBackground };
+  reactExports.useEffect(() => {
+    window.api.settings.get().then((result) => {
+      if (result.ok) setGlobalLabelBackground(result.data.labelBackgroundColor);
+    });
+  }, []);
   reactExports.useEffect(() => {
     if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri || product.showBarcode === false) return;
     try {
@@ -11338,7 +11347,7 @@ function LabelPreview({
     return /* @__PURE__ */ jsxRuntimeExports.jsx(
       InfoLabelPreview,
       {
-        product,
+        product: resolvedProduct,
         template,
         barcodeRef,
         barcodeOverrideDataUri,
@@ -11351,7 +11360,7 @@ function LabelPreview({
     return /* @__PURE__ */ jsxRuntimeExports.jsx(
       VerticalInfoLabelPreview,
       {
-        product,
+        product: resolvedProduct,
         template,
         logoDataUri,
         scale
@@ -11364,14 +11373,15 @@ function LabelPreview({
       {
         template,
         logoDataUri,
-        scale
+        scale,
+        labelBackground
       }
     );
   }
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     FrontLabelPreview,
     {
-      product,
+      product: resolvedProduct,
       template,
       barcodeRef,
       barcodeOverrideDataUri,
@@ -11402,7 +11412,7 @@ function FrontLabelPreview({
         overflow: "hidden",
         borderRadius: 18,
         boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0,
@@ -11542,7 +11552,7 @@ function InfoLabelPreview({
         overflow: "hidden",
         borderRadius: 18,
         boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0,
@@ -11723,7 +11733,7 @@ function VerticalInfoLabelPreview({
         overflow: "hidden",
         borderRadius: 18,
         boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0,
@@ -11853,7 +11863,41 @@ function VerticalInfoLabelPreview({
               )
             }
           )
-        ] })
+        ] }),
+        product.customerName?.trim() && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.customerName.y, VERTICAL_INFO_LABEL_ZONES.customerName.h, template.height),
+              left: toPercentX(VERTICAL_INFO_LABEL_ZONES.customerName.x, template.width),
+              width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.customerName.w, template.width),
+              height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.customerName.h, template.height),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              overflow: "hidden"
+            },
+            children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "span",
+              {
+                style: {
+                  fontSize: "2.8cqw",
+                  fontFamily: '"Helvetica Neue", Arial, sans-serif',
+                  fontWeight: 700,
+                  color: template.textColor,
+                  textAlign: "center",
+                  whiteSpace: "nowrap"
+                },
+                children: [
+                  "Order: ",
+                  product.customerName.trim()
+                ]
+              }
+            )
+          }
+        )
       ]
     }
   );
@@ -11861,7 +11905,8 @@ function VerticalInfoLabelPreview({
 function LogoOnlyLabelPreview({
   template,
   logoDataUri,
-  scale
+  scale,
+  labelBackground
 }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     "div",
@@ -11873,7 +11918,7 @@ function LogoOnlyLabelPreview({
         overflow: "hidden",
         borderRadius: 18,
         boxShadow: "0 4px 24px rgba(0,0,0,0.16)",
-        background: template.shellColor,
+        background: labelBackground,
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0,
@@ -11983,6 +12028,8 @@ const EMPTY_PRODUCT = () => ({
   servingInfo: "",
   nutritionInfo: "",
   cookingInstructions: "",
+  customerName: "",
+  labelBackgroundColor: "",
   ingredients: "",
   allergenStatement: "",
   barcodeValue: generateBarcodeValue(),
@@ -12002,6 +12049,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
   const [barcodeOverrideDataUri, setBarcodeOverrideDataUri] = reactExports.useState("");
   const [logoDataUri, setLogoDataUri] = reactExports.useState("");
   const [templates, setTemplates] = reactExports.useState([]);
+  const [categories, setCategories] = reactExports.useState([]);
+  const [globalLabelBackground, setGlobalLabelBackground] = reactExports.useState("");
   const [saveStatus, setSaveStatus] = reactExports.useState("idle");
   const [saveError, setSaveError] = reactExports.useState("");
   const [exporting, setExporting] = reactExports.useState(false);
@@ -12010,6 +12059,24 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
   reactExports.useEffect(() => {
     window.api.file.listTemplates().then((r2) => {
       if (r2.ok) setTemplates(r2.data);
+    });
+    window.api.product.list().then((r2) => {
+      if (!r2.ok) return;
+      const categoryByNormalizedName = /* @__PURE__ */ new Map();
+      r2.data.forEach(({ category }) => {
+        const trimmedCategory = category?.trim();
+        if (trimmedCategory) {
+          categoryByNormalizedName.set(trimmedCategory.toLocaleLowerCase(), trimmedCategory);
+        }
+      });
+      setCategories(
+        Array.from(categoryByNormalizedName.values()).sort(
+          (a, b) => a.localeCompare(b, void 0, { sensitivity: "base" })
+        )
+      );
+    });
+    window.api.settings.get().then((r2) => {
+      if (r2.ok) setGlobalLabelBackground(r2.data.labelBackgroundColor);
     });
   }, []);
   reactExports.useEffect(() => {
@@ -12076,6 +12143,11 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     return request;
   }
   async function persistProduct() {
+    if (product.labelBackgroundColor && !/^#[0-9a-f]{6}$/i.test(product.labelBackgroundColor)) {
+      setSaveError("Label background must be a 6-digit hex color, such as #f5efdc.");
+      setSaveStatus("error");
+      return null;
+    }
     if (requiresName && !product.name?.trim()) {
       setSaveError("Product name is required.");
       setSaveStatus("error");
@@ -12103,6 +12175,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
         servingInfo: product.servingInfo ?? "",
         nutritionInfo: product.nutritionInfo ?? "",
         cookingInstructions: product.cookingInstructions ?? "",
+        customerName: product.customerName ?? "",
+        labelBackgroundColor: product.labelBackgroundColor ?? "",
         ingredients: product.ingredients ?? "",
         allergenStatement: product.allergenStatement ?? "",
         barcodeValue: (product.barcodeValue ?? "").trim(),
@@ -12121,6 +12195,17 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     }
     if (result.ok) {
       setProduct(result.data);
+      const savedCategory = result.data.category.trim();
+      if (savedCategory) {
+        setCategories((current) => {
+          if (current.some((category) => category.localeCompare(savedCategory, void 0, { sensitivity: "base" }) === 0)) {
+            return current;
+          }
+          return [...current, savedCategory].sort(
+            (a, b) => a.localeCompare(b, void 0, { sensitivity: "base" })
+          );
+        });
+      }
       setSaveStatus("saved");
       return result.data;
     } else {
@@ -12305,6 +12390,34 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: templateNote })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Label Background" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                type: "color",
+                value: product.labelBackgroundColor || globalLabelBackground || activeTemplate.shellColor,
+                onChange: (e) => update("labelBackgroundColor", e.target.value),
+                "aria-label": "Label background color",
+                style: { width: 44, height: 36, padding: 2, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: "pointer" }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "input",
+                value: product.labelBackgroundColor || "",
+                onChange: (e) => update("labelBackgroundColor", e.target.value),
+                placeholder: "Using global default",
+                pattern: "^#[0-9A-Fa-f]{6}$",
+                maxLength: 7
+              }
+            ),
+            product.labelBackgroundColor && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline", onClick: () => update("labelBackgroundColor", ""), children: "Use Global" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Leave blank to use the global label color from Settings." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "label-text", children: [
             "Price ",
             usesPrice && product.showPrice !== false ? "*" : "(optional)"
@@ -12330,9 +12443,25 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               placeholder: "e.g. Grab & Go, Sauces, Cheese…",
               value: product.category ?? "",
               onChange: (e) => update("category", e.target.value),
+              list: "product-categories",
               maxLength: 60
             }
-          )
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("datalist", { id: "product-categories", children: categories.map((category) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: category }, category)) })
+        ] }),
+        activeTemplate.layout === "vertical-info" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Customer / Order Name" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "input",
+              placeholder: "e.g. The Smith Family",
+              value: product.customerName ?? "",
+              onChange: (e) => update("customerName", e.target.value),
+              maxLength: 60
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Shown at the bottom of the catering instruction label." })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 16, display: "flex", flexDirection: "column", gap: 14 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", style: { marginBottom: 0 }, children: "Details Panel" }),
@@ -12918,10 +13047,17 @@ function Settings() {
   }, []);
   function update(key, value) {
     setSettings((prev) => prev ? { ...prev, [key]: value } : null);
+    if (key === "pageBackgroundColor") {
+      document.documentElement.style.setProperty("--page-background", value);
+    }
     setSaved(false);
   }
   async function handleSave() {
     if (!settings) return;
+    if (!/^#[0-9a-f]{6}$/i.test(settings.pageBackgroundColor) || settings.labelBackgroundColor && !/^#[0-9a-f]{6}$/i.test(settings.labelBackgroundColor)) {
+      setError("Background colors must use a 6-digit hex value, such as #f4f5f7.");
+      return;
+    }
     setSaving(true);
     setError("");
     const entries = Object.entries(settings);
@@ -12982,6 +13118,31 @@ function Settings() {
               }
             )
           ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 16px" }, children: "Background Colors" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 16 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            ColorSetting,
+            {
+              label: "App page background",
+              value: settings.pageBackgroundColor,
+              fallback: "#f4f5f7",
+              onChange: (value) => update("pageBackgroundColor", value)
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            ColorSetting,
+            {
+              label: "Global label background",
+              value: settings.labelBackgroundColor,
+              fallback: "#f5efdc",
+              onChange: (value) => update("labelBackgroundColor", value),
+              allowDefault: true
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#64748b", margin: 0 }, children: "The global label color applies unless a label has its own override. Resetting it preserves each template’s original color." })
         ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
@@ -13076,6 +13237,40 @@ function Settings() {
     ] })
   ] }) });
 }
+function ColorSetting({
+  label,
+  value,
+  fallback,
+  onChange,
+  allowDefault = false
+}) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          type: "color",
+          value: value || fallback,
+          onChange: (e) => onChange(e.target.value),
+          style: { width: 44, height: 36, padding: 2, border: "1px solid #e2e8f0", borderRadius: 6, background: "#fff", cursor: "pointer" }
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          className: "input",
+          value,
+          onChange: (e) => onChange(e.target.value),
+          placeholder: allowDefault ? "Template default" : fallback,
+          pattern: "^#[0-9A-Fa-f]{6}$",
+          maxLength: 7
+        }
+      ),
+      allowDefault && value && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline", onClick: () => onChange(""), children: "Reset" })
+    ] })
+  ] });
+}
 const steps = [
   {
     number: "01",
@@ -13164,6 +13359,13 @@ function App() {
   const [screen, setScreen] = reactExports.useState("library");
   const [editingProduct, setEditingProduct] = reactExports.useState(null);
   const [sheetProducts, setSheetProducts] = reactExports.useState([]);
+  reactExports.useEffect(() => {
+    window.api.settings.get().then((result) => {
+      if (result.ok) {
+        document.documentElement.style.setProperty("--page-background", result.data.pageBackgroundColor);
+      }
+    });
+  }, []);
   function openEditor(product) {
     setEditingProduct(product ?? null);
     setScreen("editor");

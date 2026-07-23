@@ -39,7 +39,8 @@ export const VERTICAL_INFO_LABEL_ZONES = {
   contentPanel: { x: 10, y: 10, w: 161, h: 150 },
   title: { x: 20, y: 95, w: 141, h: 44 },
   cookingTitle: { x: 20, y: 66, w: 141, h: 16 },
-  cookingBody: { x: 18, y: 28, w: 145, h: 34 },
+  cookingBody: { x: 18, y: 31, w: 145, h: 31 },
+  customerName: { x: 18, y: 14, w: 145, h: 12 },
 } as const
 
 export const LOGO_ONLY_LABEL_ZONES = {

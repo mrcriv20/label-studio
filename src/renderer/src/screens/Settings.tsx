@@ -17,11 +17,19 @@ export default function Settings(): JSX.Element {
 
   function update(key: keyof AppSettings, value: string): void {
     setSettings((prev) => prev ? { ...prev, [key]: value } : null)
+    if (key === 'pageBackgroundColor') {
+      document.documentElement.style.setProperty('--page-background', value)
+    }
     setSaved(false)
   }
 
   async function handleSave(): Promise<void> {
     if (!settings) return
+    if (!/^#[0-9a-f]{6}$/i.test(settings.pageBackgroundColor) ||
+        (settings.labelBackgroundColor && !/^#[0-9a-f]{6}$/i.test(settings.labelBackgroundColor))) {
+      setError('Background colors must use a 6-digit hex value, such as #f4f5f7.')
+      return
+    }
     setSaving(true)
     setError('')
     const entries = Object.entries(settings) as [string, string][]
@@ -85,6 +93,28 @@ export default function Settings(): JSX.Element {
                   <option value="GBP">GBP — British Pound</option>
                 </select>
               </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: '20px 20px 24px' }}>
+            <h2 style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', margin: '0 0 16px' }}>Background Colors</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <ColorSetting
+                label="App page background"
+                value={settings.pageBackgroundColor}
+                fallback="#f4f5f7"
+                onChange={(value) => update('pageBackgroundColor', value)}
+              />
+              <ColorSetting
+                label="Global label background"
+                value={settings.labelBackgroundColor}
+                fallback="#f5efdc"
+                onChange={(value) => update('labelBackgroundColor', value)}
+                allowDefault
+              />
+              <p style={{ fontSize: 11, color: '#64748b', margin: 0 }}>
+                The global label color applies unless a label has its own override. Resetting it preserves each template’s original color.
+              </p>
             </div>
           </div>
 
@@ -196,6 +226,45 @@ export default function Settings(): JSX.Element {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ColorSetting({
+  label,
+  value,
+  fallback,
+  onChange,
+  allowDefault = false,
+}: {
+  label: string
+  value: string
+  fallback: string
+  onChange: (value: string) => void
+  allowDefault?: boolean
+}): JSX.Element {
+  return (
+    <div>
+      <label className="label-text">{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <input
+          type="color"
+          value={value || fallback}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ width: 44, height: 36, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', cursor: 'pointer' }}
+        />
+        <input
+          className="input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={allowDefault ? 'Template default' : fallback}
+          pattern="^#[0-9A-Fa-f]{6}$"
+          maxLength={7}
+        />
+        {allowDefault && value && (
+          <button type="button" className="btn-outline" onClick={() => onChange('')}>Reset</button>
+        )}
       </div>
     </div>
   )

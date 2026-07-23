@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import JsBarcode from 'jsbarcode'
 import type { Product } from '../types'
@@ -33,6 +33,15 @@ export default function LabelPreview({
 }: Props): JSX.Element {
   const barcodeRef = useRef<SVGSVGElement>(null)
   const template = getLabelTemplate(product.templateId)
+  const [globalLabelBackground, setGlobalLabelBackground] = useState('')
+  const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor
+  const resolvedProduct = { ...product, labelBackgroundColor: labelBackground }
+
+  useEffect(() => {
+    window.api.settings.get().then((result) => {
+      if (result.ok) setGlobalLabelBackground(result.data.labelBackgroundColor)
+    })
+  }, [])
 
   useEffect(() => {
     if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri || product.showBarcode === false) return
@@ -55,7 +64,7 @@ export default function LabelPreview({
   if (template.layout === 'info') {
     return (
       <InfoLabelPreview
-        product={product}
+        product={resolvedProduct}
         template={template}
         barcodeRef={barcodeRef}
         barcodeOverrideDataUri={barcodeOverrideDataUri}
@@ -68,7 +77,7 @@ export default function LabelPreview({
   if (template.layout === 'vertical-info') {
     return (
       <VerticalInfoLabelPreview
-        product={product}
+        product={resolvedProduct}
         template={template}
         logoDataUri={logoDataUri}
         scale={scale}
@@ -82,13 +91,14 @@ export default function LabelPreview({
         template={template}
         logoDataUri={logoDataUri}
         scale={scale}
+        labelBackground={labelBackground}
       />
     )
   }
 
   return (
     <FrontLabelPreview
-      product={product}
+      product={resolvedProduct}
       template={template}
       barcodeRef={barcodeRef}
       barcodeOverrideDataUri={barcodeOverrideDataUri}
@@ -127,7 +137,7 @@ function FrontLabelPreview({
         overflow: 'hidden',
         borderRadius: 18,
         boxShadow: '0 4px 24px rgba(0,0,0,0.16)',
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: 'top center',
         flexShrink: 0,
@@ -264,7 +274,7 @@ function InfoLabelPreview({
         overflow: 'hidden',
         borderRadius: 18,
         boxShadow: '0 4px 24px rgba(0,0,0,0.16)',
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: 'top center',
         flexShrink: 0,
@@ -434,7 +444,7 @@ function VerticalInfoLabelPreview({
         overflow: 'hidden',
         borderRadius: 18,
         boxShadow: '0 4px 24px rgba(0,0,0,0.16)',
-        background: template.shellColor,
+        background: product.labelBackgroundColor || template.shellColor,
         transform: `scale(${scale})`,
         transformOrigin: 'top center',
         flexShrink: 0,
@@ -554,6 +564,36 @@ function VerticalInfoLabelPreview({
           </div>
         </>
       )}
+
+      {product.customerName?.trim() && (
+        <div
+          style={{
+            position: 'absolute',
+            top: toPercentTop(VERTICAL_INFO_LABEL_ZONES.customerName.y, VERTICAL_INFO_LABEL_ZONES.customerName.h, template.height),
+            left: toPercentX(VERTICAL_INFO_LABEL_ZONES.customerName.x, template.width),
+            width: toPercentWidth(VERTICAL_INFO_LABEL_ZONES.customerName.w, template.width),
+            height: toPercentHeight(VERTICAL_INFO_LABEL_ZONES.customerName.h, template.height),
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            overflow: 'hidden',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '2.8cqw',
+              fontFamily: '"Helvetica Neue", Arial, sans-serif',
+              fontWeight: 700,
+              color: template.textColor,
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Order: {product.customerName.trim()}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -562,10 +602,12 @@ function LogoOnlyLabelPreview({
   template,
   logoDataUri,
   scale,
+  labelBackground,
 }: {
   template: ReturnType<typeof getLabelTemplate>
   logoDataUri?: string
   scale: number
+  labelBackground: string
 }): JSX.Element {
   return (
     <div
@@ -576,7 +618,7 @@ function LogoOnlyLabelPreview({
         overflow: 'hidden',
         borderRadius: 18,
         boxShadow: '0 4px 24px rgba(0,0,0,0.16)',
-        background: template.shellColor,
+        background: labelBackground,
         transform: `scale(${scale})`,
         transformOrigin: 'top center',
         flexShrink: 0,

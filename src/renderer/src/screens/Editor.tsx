@@ -24,6 +24,8 @@ const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   servingInfo: '',
   nutritionInfo: '',
   cookingInstructions: '',
+  customerName: '',
+  labelBackgroundColor: '',
   ingredients: '',
   allergenStatement: '',
   barcodeValue: generateBarcodeValue(),
@@ -45,6 +47,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const [barcodeOverrideDataUri, setBarcodeOverrideDataUri] = useState('')
   const [logoDataUri, setLogoDataUri] = useState('')
   const [templates, setTemplates] = useState<LabelTemplate[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [globalLabelBackground, setGlobalLabelBackground] = useState('')
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveError, setSaveError] = useState('')
   const [exporting, setExporting] = useState(false)
@@ -54,6 +58,27 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   useEffect(() => {
     window.api.file.listTemplates().then((r) => {
       if (r.ok) setTemplates(r.data)
+    })
+
+    window.api.product.list().then((r) => {
+      if (!r.ok) return
+
+      const categoryByNormalizedName = new Map<string, string>()
+      r.data.forEach(({ category }) => {
+        const trimmedCategory = category?.trim()
+        if (trimmedCategory) {
+          categoryByNormalizedName.set(trimmedCategory.toLocaleLowerCase(), trimmedCategory)
+        }
+      })
+      setCategories(
+        Array.from(categoryByNormalizedName.values()).sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base' })
+        )
+      )
+    })
+
+    window.api.settings.get().then((r) => {
+      if (r.ok) setGlobalLabelBackground(r.data.labelBackgroundColor)
     })
   }, [])
 
@@ -136,6 +161,11 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   }
 
   async function persistProduct(): Promise<Product | null> {
+    if (product.labelBackgroundColor && !/^#[0-9a-f]{6}$/i.test(product.labelBackgroundColor)) {
+      setSaveError('Label background must be a 6-digit hex color, such as #f5efdc.')
+      setSaveStatus('error')
+      return null
+    }
     if (requiresName && !product.name?.trim()) {
       setSaveError('Product name is required.')
       setSaveStatus('error')
@@ -163,6 +193,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
         servingInfo: product.servingInfo ?? '',
         nutritionInfo: product.nutritionInfo ?? '',
         cookingInstructions: product.cookingInstructions ?? '',
+        customerName: product.customerName ?? '',
+        labelBackgroundColor: product.labelBackgroundColor ?? '',
         ingredients: product.ingredients ?? '',
         allergenStatement: product.allergenStatement ?? '',
         barcodeValue: (product.barcodeValue ?? '').trim(),
@@ -181,6 +213,17 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     }
     if (result.ok) {
       setProduct(result.data)
+      const savedCategory = result.data.category.trim()
+      if (savedCategory) {
+        setCategories((current) => {
+          if (current.some((category) => category.localeCompare(savedCategory, undefined, { sensitivity: 'base' }) === 0)) {
+            return current
+          }
+          return [...current, savedCategory].sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: 'base' })
+          )
+        })
+      }
       setSaveStatus('saved')
       return result.data
     } else {
@@ -367,6 +410,35 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
               </p>
             </div>
 
+            <div>
+              <label className="label-text">Label Background</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="color"
+                  value={product.labelBackgroundColor || globalLabelBackground || activeTemplate.shellColor}
+                  onChange={(e) => update('labelBackgroundColor', e.target.value)}
+                  aria-label="Label background color"
+                  style={{ width: 44, height: 36, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', cursor: 'pointer' }}
+                />
+                <input
+                  className="input"
+                  value={product.labelBackgroundColor || ''}
+                  onChange={(e) => update('labelBackgroundColor', e.target.value)}
+                  placeholder="Using global default"
+                  pattern="^#[0-9A-Fa-f]{6}$"
+                  maxLength={7}
+                />
+                {product.labelBackgroundColor && (
+                  <button type="button" className="btn-outline" onClick={() => update('labelBackgroundColor', '')}>
+                    Use Global
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                Leave blank to use the global label color from Settings.
+              </p>
+            </div>
+
             {/* Price */}
             <div>
               <label className="label-text">Price {usesPrice && product.showPrice !== false ? '*' : '(optional)'}</label>
@@ -390,9 +462,31 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
                 placeholder="e.g. Grab & Go, Sauces, Cheese…"
                 value={product.category ?? ''}
                 onChange={(e) => update('category', e.target.value)}
+                list="product-categories"
                 maxLength={60}
               />
+              <datalist id="product-categories">
+                {categories.map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
             </div>
+
+            {activeTemplate.layout === 'vertical-info' && (
+              <div>
+                <label className="label-text">Customer / Order Name</label>
+                <input
+                  className="input"
+                  placeholder="e.g. The Smith Family"
+                  value={product.customerName ?? ''}
+                  onChange={(e) => update('customerName', e.target.value)}
+                  maxLength={60}
+                />
+                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                  Shown at the bottom of the catering instruction label.
+                </p>
+              </div>
+            )}
 
             {/* Extra label info */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>

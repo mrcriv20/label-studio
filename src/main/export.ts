@@ -31,6 +31,11 @@ type EmbeddedImage =
   | Awaited<ReturnType<PDFDocument['embedPng']>>
   | Awaited<ReturnType<PDFDocument['embedJpg']>>
 
+function resolveLabelBackground(product: Product, templateColor: string): string {
+  const candidate = product.labelBackgroundColor || getSettings().labelBackgroundColor
+  return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : templateColor
+}
+
 function readFontBytes(...paths: string[]): Buffer | null {
   for (const p of paths) {
     if (existsSync(p)) {
@@ -309,7 +314,7 @@ async function drawLabel(
   fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
 ): Promise<void> {
   const template = getLabelTemplate(product.templateId)
-  const shell = hexToRgb(template.shellColor)
+  const shell = hexToRgb(resolveLabelBackground(product, template.shellColor))
   const border = hexToRgb(template.borderColor)
   const panel = hexToRgb(template.panelColor)
   const text = hexToRgb(template.textColor)
@@ -508,6 +513,21 @@ function drawVerticalInfoLabel(
       text
     )
   })
+
+  const customerName = product.customerName.trim()
+  if (customerName) {
+    const orderText = `Order: ${customerName}`
+    const orderSize = orderText.length > 34 ? 7 : 8
+    drawCenteredText(
+      page,
+      orderText,
+      VERTICAL_INFO_LABEL_ZONES.customerName.x + VERTICAL_INFO_LABEL_ZONES.customerName.w / 2,
+      VERTICAL_INFO_LABEL_ZONES.customerName.y + 2,
+      orderSize,
+      fonts.bodyBold,
+      text
+    )
+  }
 
   if (product.showCookingInstructions === false) return
 
@@ -714,7 +734,7 @@ export async function exportSingleLabelSVG(product: Product): Promise<string> {
     return buildVerticalInfoSvg(product, template, topImageUri, avenirFontUri)
   }
   if (template.layout === 'logo-only') {
-    return buildLogoOnlySvg(template, topImageUri)
+    return buildLogoOnlySvg(template, topImageUri, resolveLabelBackground(product, template.shellColor))
   }
   return buildFrontSvg(product, template, topImageUri, barcodeUri)
 }
@@ -725,6 +745,7 @@ function buildFrontSvg(
   topImageUri: string,
   barcodeUri: string,
 ): string {
+  const labelBackground = resolveLabelBackground(product, template.shellColor)
   const name = product.name || 'Product Name'
   const price = product.price || '$13.99'
   const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
@@ -742,7 +763,7 @@ function buildFrontSvg(
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${LABEL_ZONES.topImage.x}" y="${imageY}" width="${LABEL_ZONES.topImage.w}" height="${LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
   ${nameEls}
@@ -758,6 +779,7 @@ function buildInfoSvg(
   barcodeUri: string,
   avenirFontUri: string,
 ): string {
+  const labelBackground = resolveLabelBackground(product, template.shellColor)
   const name = product.name || 'Product Name'
   const price = product.price || '$8.99'
   const nameSize = 12
@@ -784,7 +806,7 @@ function buildInfoSvg(
       font-style: normal;
     }
   </style>` : ''}
-  <rect x="0" y="0" width="${template.width}" height="${template.height}" rx="12" fill="${template.shellColor}" stroke="none"/>
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" rx="12" fill="${labelBackground}" stroke="none"/>
   <image x="${INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${INFO_LABEL_ZONES.topImage.w}" height="${INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${INFO_LABEL_ZONES.infoPanel.x}" y="${panelY}" width="${INFO_LABEL_ZONES.infoPanel.w}" height="${INFO_LABEL_ZONES.infoPanel.h}" rx="10" fill="${template.infoPanelColor ?? '#ffffff'}"/>
   ${nameEls}
@@ -800,6 +822,7 @@ function buildVerticalInfoSvg(
   topImageUri: string,
   avenirFontUri: string,
 ): string {
+  const labelBackground = resolveLabelBackground(product, template.shellColor)
   const name = product.name || 'Product Title'
   const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24
   const nameLines = splitLines(name, nameSize >= 24 ? 13 : nameSize >= 20 ? 16 : 19, 3)
@@ -810,6 +833,10 @@ function buildVerticalInfoSvg(
   const headingY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingTitle.y + 2, 0, template.height)
   const bodyStartY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.cookingBody.y + VERTICAL_INFO_LABEL_ZONES.cookingBody.h - 8, 0, template.height)
   const bodyLineHeight = 8 * 1.18
+  const customerName = product.customerName.trim()
+  const orderText = customerName ? `Order: ${customerName}` : ''
+  const orderSize = orderText.length > 34 ? 7 : 8
+  const orderY = svgYFromBottom(VERTICAL_INFO_LABEL_ZONES.customerName.y + 2, 0, template.height)
   const nameEls = nameLines.map((line, index) =>
     `<text x="${VERTICAL_INFO_LABEL_ZONES.title.x + VERTICAL_INFO_LABEL_ZONES.title.w / 2}" y="${titleStartY + index * titleLineHeight}" text-anchor="middle" font-family="Lora,Georgia,serif" font-weight="700" font-size="${nameSize}" fill="${template.textColor}">${xml(line)}</text>`
   ).join('\n  ')
@@ -831,25 +858,27 @@ function buildVerticalInfoSvg(
       font-style: normal;
     }
   </style>` : ''}
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${template.shellColor}" stroke="${template.borderColor}" stroke-width="1"/>
+  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${VERTICAL_INFO_LABEL_ZONES.topImage.x}" y="${imageY}" width="${VERTICAL_INFO_LABEL_ZONES.topImage.w}" height="${VERTICAL_INFO_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
   <rect x="${VERTICAL_INFO_LABEL_ZONES.contentPanel.x}" y="${panelY}" width="${VERTICAL_INFO_LABEL_ZONES.contentPanel.w}" height="${VERTICAL_INFO_LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
   ${nameEls}
   ${product.showCookingInstructions === false ? '' : `<text x="${VERTICAL_INFO_LABEL_ZONES.cookingTitle.x + VERTICAL_INFO_LABEL_ZONES.cookingTitle.w / 2}" y="${headingY}" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="10" fill="${template.textColor}">Cooking Instructions</text>`}
   ${cookingEls}
+  ${orderText ? `<text x="${VERTICAL_INFO_LABEL_ZONES.customerName.x + VERTICAL_INFO_LABEL_ZONES.customerName.w / 2}" y="${orderY}" text-anchor="middle" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="700" font-size="${orderSize}" fill="${template.textColor}">${xml(orderText)}</text>` : ''}
 </svg>`
 }
 
 function buildLogoOnlySvg(
   template: ReturnType<typeof getLabelTemplate>,
   topImageUri: string,
+  labelBackground = template.shellColor,
 ): string {
   const imageY = svgYFromBottom(LOGO_ONLY_LABEL_ZONES.topImage.y, LOGO_ONLY_LABEL_ZONES.topImage.h, template.height)
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0" y="0" width="${template.width}" height="${template.height}" fill="${template.shellColor}"/>
+  <rect x="0" y="0" width="${template.width}" height="${template.height}" fill="${labelBackground}"/>
   <image x="${LOGO_ONLY_LABEL_ZONES.topImage.x}" y="${imageY}" width="${LOGO_ONLY_LABEL_ZONES.topImage.w}" height="${LOGO_ONLY_LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
 </svg>`
 }

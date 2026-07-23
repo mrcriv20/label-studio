@@ -9,6 +9,8 @@ export interface Product {
   servingInfo: string
   nutritionInfo: string
   cookingInstructions: string
+  customerName: string
+  labelBackgroundColor: string
   ingredients: string
   allergenStatement: string
   barcodeValue: string
@@ -31,6 +33,8 @@ export interface AppSettings {
   pricePrefix: string
   sheetOffsetXIn: string
   sheetOffsetYIn: string
+  pageBackgroundColor: string
+  labelBackgroundColor: string
 }
 
 export interface LabelTemplate {
