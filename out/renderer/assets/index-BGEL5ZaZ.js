@@ -12006,6 +12006,7 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
   const [saveError, setSaveError] = reactExports.useState("");
   const [exporting, setExporting] = reactExports.useState(false);
   const [regenConfirm, setRegenConfirm] = reactExports.useState(false);
+  const saveInFlight = reactExports.useRef(null);
   reactExports.useEffect(() => {
     window.api.file.listTemplates().then((r2) => {
       if (r2.ok) setTemplates(r2.data);
@@ -12060,7 +12061,21 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     setProduct((prev) => ({ ...prev, [field]: value }));
     if (saveStatus === "saved") setSaveStatus("idle");
   }
-  async function handleSave() {
+  function handleSave() {
+    if (saveInFlight.current) return saveInFlight.current;
+    const request = persistProduct();
+    saveInFlight.current = request;
+    request.then(
+      () => {
+        if (saveInFlight.current === request) saveInFlight.current = null;
+      },
+      () => {
+        if (saveInFlight.current === request) saveInFlight.current = null;
+      }
+    );
+    return request;
+  }
+  async function persistProduct() {
     if (requiresName && !product.name?.trim()) {
       setSaveError("Product name is required.");
       setSaveStatus("error");
@@ -12079,7 +12094,7 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     setSaveStatus("saving");
     setSaveError("");
     let result;
-    if (isNew || !product.id) {
+    if (!product.id) {
       result = await window.api.product.create({
         name: product.name,
         price: product.price ?? "",

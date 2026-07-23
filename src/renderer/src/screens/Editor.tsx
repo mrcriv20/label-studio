@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ArrowLeft, Save, FileText, FileCode2,
   RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers
@@ -49,6 +49,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const [saveError, setSaveError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [regenConfirm, setRegenConfirm] = useState(false)
+  const saveInFlight = useRef<Promise<Product | null> | null>(null)
 
   useEffect(() => {
     window.api.file.listTemplates().then((r) => {
@@ -118,7 +119,23 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     if (saveStatus === 'saved') setSaveStatus('idle')
   }
 
-  async function handleSave(): Promise<Product | null> {
+  function handleSave(): Promise<Product | null> {
+    if (saveInFlight.current) return saveInFlight.current
+
+    const request = persistProduct()
+    saveInFlight.current = request
+    request.then(
+      () => {
+        if (saveInFlight.current === request) saveInFlight.current = null
+      },
+      () => {
+        if (saveInFlight.current === request) saveInFlight.current = null
+      }
+    )
+    return request
+  }
+
+  async function persistProduct(): Promise<Product | null> {
     if (requiresName && !product.name?.trim()) {
       setSaveError('Product name is required.')
       setSaveStatus('error')
@@ -137,7 +154,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     setSaveStatus('saving')
     setSaveError('')
     let result
-    if (isNew || !product.id) {
+    if (!product.id) {
       result = await window.api.product.create({
         name: product.name!,
         price: product.price ?? '',
