@@ -1,6 +1,6 @@
 {
   "name": "label-studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Retail product label designer and printer for Grazia's Italian Market",
   "main": "./out/main/index.js",
   "author": "Tillie POS, LLC",
@@ -10,9 +10,9 @@
     "build": "electron-vite build",
     "build:icon:mac": "bash scripts/generate-mac-icon.sh",
     "preview": "electron-vite preview",
-    "package": "npm run build:icon:mac && electron-vite build && electron-builder",
-    "package:mac": "npm run build:icon:mac && electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
-    "package:mac:signed": "npm run build:icon:mac && electron-vite build && electron-builder --mac --publish never",
+    "package": "electron-vite build && electron-builder",
+    "package:mac": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "package:mac:signed": "electron-vite build && electron-builder --mac --publish never",
     "convert-template": "node scripts/convert-template.js"
   },
   "dependencies": {
@@ -49,6 +49,7 @@
   "build": {
     "appId": "com.grazias.labelstudio",
     "productName": "Label Studio",
+    "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "dist"
     },

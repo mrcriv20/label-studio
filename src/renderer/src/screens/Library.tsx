@@ -266,7 +266,16 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                     onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <td style={{ padding: '11px 16px', fontWeight: 600, color: '#1a2332' }}>{p.name}</td>
+                    <td style={{ padding: '11px 16px' }}>
+                      <button
+                        type="button"
+                        className="product-name-button"
+                        onClick={() => onEdit(p)}
+                        title={`Open ${p.name}`}
+                      >
+                        {p.name}
+                      </button>
+                    </td>
                     <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
                     <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
                     <td style={{ padding: '11px 16px', color: '#94a3b8', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>

@@ -171,6 +171,28 @@
 }
 select.input { cursor: pointer; }
 
+.product-name-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1a2332;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.product-name-button:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.product-name-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 .label-text {
   display: block;
   font-size: 11px;

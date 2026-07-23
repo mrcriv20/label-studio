@@ -7649,7 +7649,16 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
           onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
           onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", fontWeight: 600, color: "#1a2332" }, children: p2.name }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                type: "button",
+                className: "product-name-button",
+                onClick: () => onEdit(p2),
+                title: `Open ${p2.name}`,
+                children: p2.name
+              }
+            ) }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
