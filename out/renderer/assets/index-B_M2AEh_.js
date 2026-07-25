@@ -7542,11 +7542,12 @@ function Library({ onEdit, onOpenSheet }) {
       if (!cfg.data.lastSyncAt && !cfg.data.connectedUserName) return;
       const result = await window.api.tillie.sync();
       if (cancelled || !result.ok) return;
-      const { created, updated } = result.data;
-      if (created + updated === 0) return;
+      const { created, updated, pushed } = result.data;
+      if (created + updated + pushed === 0) return;
       const parts = [
         updated ? `${updated} price/name update${updated !== 1 ? "s" : ""}` : "",
-        created ? `${created} new label${created !== 1 ? "s" : ""}` : ""
+        created ? `${created} new label${created !== 1 ? "s" : ""}` : "",
+        pushed ? `${pushed} label${pushed !== 1 ? "s" : ""} added to Tillie` : ""
       ].filter(Boolean);
       setTillieNotice(`Synced from Tillie: ${parts.join(", ")}.`);
       load();
@@ -13330,8 +13331,14 @@ function TillieSyncCard() {
       setError(result.error);
       return;
     }
-    const { created, updated, unchanged, duplicateBarcodes } = result.data;
+    const { created, updated, unchanged, pushed, pushSkipped, duplicateBarcodes } = result.data;
     let msg = `Sync complete — ${created} new label${created !== 1 ? "s" : ""}, ${updated} updated, ${unchanged} already up to date.`;
+    if (pushed) {
+      msg += ` Added ${pushed} label${pushed !== 1 ? "s" : ""} to Tillie's inventory.`;
+    }
+    if (pushSkipped.length) {
+      msg += ` Couldn't add ${pushSkipped.length} label${pushSkipped.length !== 1 ? "s" : ""} (no readable price): ${pushSkipped.slice(0, 5).join(", ")}${pushSkipped.length > 5 ? "…" : ""}.`;
+    }
     if (duplicateBarcodes.length) {
       msg += ` Skipped ${duplicateBarcodes.length} duplicate barcode${duplicateBarcodes.length !== 1 ? "s" : ""} in Tillie: ${duplicateBarcodes.join(", ")}.`;
     }

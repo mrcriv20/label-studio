@@ -41,11 +41,12 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
       if (!cfg.data.lastSyncAt && !cfg.data.connectedUserName) return
       const result = await window.api.tillie.sync()
       if (cancelled || !result.ok) return
-      const { created, updated } = result.data
-      if (created + updated === 0) return
+      const { created, updated, pushed } = result.data
+      if (created + updated + pushed === 0) return
       const parts = [
         updated ? `${updated} price/name update${updated !== 1 ? 's' : ''}` : '',
         created ? `${created} new label${created !== 1 ? 's' : ''}` : '',
+        pushed ? `${pushed} label${pushed !== 1 ? 's' : ''} added to Tillie` : '',
       ].filter(Boolean)
       setTillieNotice(`Synced from Tillie: ${parts.join(', ')}.`)
       load()

@@ -224,6 +224,14 @@ function formatPrice(price: number): string {
   return `${prefix}${price.toFixed(2)}`
 }
 
+/** "$4.99/lb" → 4.99; null if no number can be found. */
+function parsePrice(price: string): number | null {
+  const match = price.match(/\d+(?:\.\d+)?/)
+  if (!match) return null
+  const n = Number.parseFloat(match[0])
+  return Number.isFinite(n) ? n : null
+}
+
 function generateBarcode(): string {
   const num = Math.floor(Math.random() * 900000000000) + 100000000000
   return String(num)
@@ -326,6 +334,8 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
     created: 0,
     updated: 0,
     unchanged: 0,
+    pushed: 0,
+    pushSkipped: [],
     duplicateBarcodes: [],
   }
 
@@ -400,6 +410,68 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
       })
       summary.created++
     }
+  }
+
+  // ── Push: labels not yet in Tillie become new POS products ────────────────
+  // Re-list after the pull phase so freshly linked labels aren't re-pushed.
+  const remoteByBarcode = new Map<string, TillieRemoteProduct>()
+  for (const p of remote) {
+    if (p.isActive === false) continue
+    const code = p.barcode || p.sku
+    if (code && !remoteByBarcode.has(code)) remoteByBarcode.set(code, p)
+  }
+  const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]))
+
+  for (const local of listProducts()) {
+    if (local.tillieProductId) continue
+    if (!local.name.trim()) continue
+
+    // Tillie already has this barcode — link instead of creating a duplicate.
+    const existing = local.barcodeValue ? remoteByBarcode.get(local.barcodeValue) : undefined
+    if (existing) {
+      updateProduct({
+        ...local,
+        name: existing.name,
+        price: formatPrice(Number(existing.price) || 0),
+        category: categoryName(existing, scope),
+        tillieProductId: existing.id,
+        updatedAt: new Date().toISOString(),
+      })
+      summary.updated++
+      continue
+    }
+
+    const price = parsePrice(local.price)
+    if (price === null) {
+      summary.pushSkipped.push(local.name)
+      continue
+    }
+
+    // Tillie's product data references categories by id, so resolve the
+    // label's category name to its id when one exists.
+    const created = await fetchTillie<TillieRemoteProduct>(
+      '/api/products',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: local.name,
+          price,
+          category: categoryIdByName.get(local.category) ?? local.category,
+          barcode: local.barcodeValue,
+          sku: local.barcodeValue,
+          imageUrl: '',
+          taxable: false,
+          isActive: true,
+          sortOrder: 0,
+          stock: 0,
+          allowAddWhenOutOfStock: true,
+          lastModified: new Date().toISOString(),
+        }),
+      },
+      Boolean(cfg.token)
+    )
+    updateProduct({ ...local, tillieProductId: created.id, updatedAt: new Date().toISOString() })
+    summary.pushed++
   }
 
   cfg.lastSyncAt = new Date().toISOString()

@@ -57,6 +57,8 @@ export interface TillieSyncSummary {
   created: number
   updated: number
   unchanged: number
+  pushed: number
+  pushSkipped: string[]
   duplicateBarcodes: string[]
 }
 

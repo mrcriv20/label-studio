@@ -95,5 +95,7 @@ export interface TillieSyncSummary {
   created: number
   updated: number
   unchanged: number
+  pushed: number // labels created as new Tillie products
+  pushSkipped: string[] // label names that couldn't be pushed (e.g. unparseable price)
   duplicateBarcodes: string[]
 }

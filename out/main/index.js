@@ -1451,6 +1451,12 @@ function formatPrice(price) {
   const prefix = getSettings().pricePrefix;
   return `${prefix}${price.toFixed(2)}`;
 }
+function parsePrice(price) {
+  const match = price.match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const n = Number.parseFloat(match[0]);
+  return Number.isFinite(n) ? n : null;
+}
 function generateBarcode$1() {
   const num = Math.floor(Math.random() * 9e11) + 1e11;
   return String(num);
@@ -1518,6 +1524,8 @@ async function tillieSync() {
     created: 0,
     updated: 0,
     unchanged: 0,
+    pushed: 0,
+    pushSkipped: [],
     duplicateBarcodes: []
   };
   const seenBarcodes = /* @__PURE__ */ new Set();
@@ -1579,6 +1587,58 @@ async function tillieSync() {
       });
       summary.created++;
     }
+  }
+  const remoteByBarcode = /* @__PURE__ */ new Map();
+  for (const p of remote) {
+    if (p.isActive === false) continue;
+    const code = p.barcode || p.sku;
+    if (code && !remoteByBarcode.has(code)) remoteByBarcode.set(code, p);
+  }
+  const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]));
+  for (const local of listProducts()) {
+    if (local.tillieProductId) continue;
+    if (!local.name.trim()) continue;
+    const existing = local.barcodeValue ? remoteByBarcode.get(local.barcodeValue) : void 0;
+    if (existing) {
+      updateProduct({
+        ...local,
+        name: existing.name,
+        price: formatPrice(Number(existing.price) || 0),
+        category: categoryName(existing, scope),
+        tillieProductId: existing.id,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      summary.updated++;
+      continue;
+    }
+    const price = parsePrice(local.price);
+    if (price === null) {
+      summary.pushSkipped.push(local.name);
+      continue;
+    }
+    const created = await fetchTillie(
+      "/api/products",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: local.name,
+          price,
+          category: categoryIdByName.get(local.category) ?? local.category,
+          barcode: local.barcodeValue,
+          sku: local.barcodeValue,
+          imageUrl: "",
+          taxable: false,
+          isActive: true,
+          sortOrder: 0,
+          stock: 0,
+          allowAddWhenOutOfStock: true,
+          lastModified: (/* @__PURE__ */ new Date()).toISOString()
+        })
+      },
+      Boolean(cfg.token)
+    );
+    updateProduct({ ...local, tillieProductId: created.id, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    summary.pushed++;
   }
   cfg.lastSyncAt = (/* @__PURE__ */ new Date()).toISOString();
   saveConfig();

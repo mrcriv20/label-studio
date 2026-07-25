@@ -110,8 +110,14 @@ export default function TillieSyncCard(): JSX.Element {
     const result = await window.api.tillie.sync()
     setSyncing(false)
     if (!result.ok) { setError(result.error); return }
-    const { created, updated, unchanged, duplicateBarcodes } = result.data
+    const { created, updated, unchanged, pushed, pushSkipped, duplicateBarcodes } = result.data
     let msg = `Sync complete — ${created} new label${created !== 1 ? 's' : ''}, ${updated} updated, ${unchanged} already up to date.`
+    if (pushed) {
+      msg += ` Added ${pushed} label${pushed !== 1 ? 's' : ''} to Tillie's inventory.`
+    }
+    if (pushSkipped.length) {
+      msg += ` Couldn't add ${pushSkipped.length} label${pushSkipped.length !== 1 ? 's' : ''} (no readable price): ${pushSkipped.slice(0, 5).join(', ')}${pushSkipped.length > 5 ? '…' : ''}.`
+    }
     if (duplicateBarcodes.length) {
       msg += ` Skipped ${duplicateBarcodes.length} duplicate barcode${duplicateBarcodes.length !== 1 ? 's' : ''} in Tillie: ${duplicateBarcodes.join(', ')}.`
     }
