@@ -237,6 +237,19 @@ select.input { cursor: pointer; }
 .sidebar-brand {
   padding: 2px 16px 14px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.sidebar-brand-logo {
+  display: block;
+  width: 85px;
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
 }
 
 .sidebar-brand-name {
@@ -247,9 +260,10 @@ select.input { cursor: pointer; }
 }
 
 .sidebar-brand-sub {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-  margin-top: 2px;
+  font-size: 13px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.02em;
 }
 
 .sidebar-sep {
@@ -335,4 +349,14 @@ canvas.barcode-canvas {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+/* Tillie sync */
+.spin {
+  animation: tillie-spin 1s linear infinite;
+}
+
+@keyframes tillie-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

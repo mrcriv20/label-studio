@@ -36,6 +36,7 @@ const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   showPrice: true,
   showBarcode: true,
   showCookingInstructions: true,
+  tillieProductId: null,
 })
 
 export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): JSX.Element {
@@ -53,6 +54,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const [saveError, setSaveError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [regenConfirm, setRegenConfirm] = useState(false)
+  const [importingTemplate, setImportingTemplate] = useState(false)
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
 
   useEffect(() => {
@@ -204,6 +206,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
         logoImagePath: product.logoImagePath ?? null,
         templateId: product.templateId ?? 'avery5821',
         showCookingInstructions: product.showCookingInstructions ?? true,
+        tillieProductId: product.tillieProductId ?? null,
       })
     } else {
       result = await window.api.product.update({
@@ -269,6 +272,30 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     const b64Result = await window.api.file.readImageAsBase64(storedPath)
     if (b64Result.ok && b64Result.data) setBarcodeOverrideDataUri(b64Result.data)
     setSaveStatus('idle')
+  }
+
+  async function handleImportTemplate(): Promise<void> {
+    setImportingTemplate(true)
+    const picked = await window.api.file.pickTemplateImage()
+    if (!picked.ok) {
+      setSaveError(picked.error)
+      setSaveStatus('error')
+      setImportingTemplate(false)
+      return
+    }
+    if (!picked.data) {
+      setImportingTemplate(false)
+      return
+    }
+    const saved = await window.api.file.saveTemplateImage(picked.data)
+    setImportingTemplate(false)
+    if (!saved.ok) {
+      setSaveError(saved.error)
+      setSaveStatus('error')
+      return
+    }
+    setTemplates((current) => [...current, saved.data])
+    update('templateId', saved.data.id)
   }
 
   async function handleUploadLogo(): Promise<void> {
@@ -405,8 +432,13 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
                   <option key={template.id} value={template.id}>{template.name}</option>
                 ))}
               </select>
+              <button type="button" className="btn-outline" onClick={handleImportTemplate} disabled={importingTemplate}>
+                <Upload size={13} /> {importingTemplate ? 'Creating template…' : 'Import label design'}
+              </button>
               <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
-                {templateNote}
+                {product.templateId?.startsWith('custom-')
+                  ? 'Your artwork is used as the full-label background. Product name, price, and barcode remain editable above it.'
+                  : templateNote}
               </p>
             </div>
 
@@ -452,6 +484,12 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
               <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
                 Include symbol and unit — e.g. $9.99/lb or $4.50 each
               </p>
+              {product.tillieProductId && (
+                <p style={{ fontSize: 11, color: '#b45309', marginTop: 5 }}>
+                  This label is linked to Tillie — name, price, and category are overwritten by the
+                  register on each sync. Change the price in Tillie to keep them in step.
+                </p>
+              )}
             </div>
 
             {/* Category */}

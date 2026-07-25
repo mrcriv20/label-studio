@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Save, FolderOpen, FileCheck, Info, Upload, Download } from 'lucide-react'
 import type { AppSettings, FontAsset } from '../types'
 import { applyFontSettings, installFonts } from '../lib/fonts'
+import TillieSyncCard from '../components/TillieSyncCard'
 
 export default function Settings(): JSX.Element {
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -91,6 +92,9 @@ export default function Settings(): JSX.Element {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1a2332', margin: '0 0 24px' }}>Settings</h1>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Tillie POS sync */}
+          <TillieSyncCard />
 
           {/* Label formatting */}
           <div className="card" style={{ padding: '20px 20px 24px' }}>

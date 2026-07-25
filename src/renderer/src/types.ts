@@ -21,8 +21,43 @@ export interface Product {
   showPrice: boolean
   showBarcode: boolean
   showCookingInstructions: boolean
+  tillieProductId: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface TillieCategory {
+  id: string
+  name: string
+  color: string
+  sortOrder: number
+}
+
+export interface TillieConfig {
+  baseUrl: string
+  subscribedCategories: Array<{ id: string; name: string }>
+  includedProductIds: string[]
+  excludedProductIds: string[]
+  autoSyncOnLaunch: boolean
+  lastSyncAt: string | null
+  connectedUserName: string | null
+}
+
+export interface TillieProductSummary {
+  id: string
+  name: string
+  price: number
+  barcode: string
+  category: string
+  linked: boolean
+  inScope: boolean
+}
+
+export interface TillieSyncSummary {
+  created: number
+  updated: number
+  unchanged: number
+  duplicateBarcodes: string[]
 }
 
 export interface AppSettings {
@@ -96,6 +131,15 @@ declare global {
       }
       print: {
         sheet(products: Product[], startSlot: number): Promise<IpcResult<boolean>>
+      }
+      tillie: {
+        getConfig(): Promise<IpcResult<TillieConfig>>
+        setConfig(patch: Partial<TillieConfig>): Promise<IpcResult<TillieConfig>>
+        login(pin: string): Promise<IpcResult<TillieConfig>>
+        disconnect(): Promise<IpcResult<TillieConfig>>
+        getCategories(): Promise<IpcResult<TillieCategory[]>>
+        listProducts(): Promise<IpcResult<TillieProductSummary[]>>
+        sync(): Promise<IpcResult<TillieSyncSummary>>
       }
     }
   }

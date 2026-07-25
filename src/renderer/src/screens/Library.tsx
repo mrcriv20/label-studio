@@ -20,6 +20,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [activeCategory, setActiveCategory] = useState<string>('__all__')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [tillieNotice, setTillieNotice] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -30,6 +31,27 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Quietly pull fresh prices from Tillie whenever the library opens.
+  useEffect(() => {
+    let cancelled = false
+    window.api.tillie.getConfig().then(async (cfg) => {
+      if (!cfg.ok || !cfg.data.autoSyncOnLaunch) return
+      // Skip until Tillie sync has been set up at least once.
+      if (!cfg.data.lastSyncAt && !cfg.data.connectedUserName) return
+      const result = await window.api.tillie.sync()
+      if (cancelled || !result.ok) return
+      const { created, updated } = result.data
+      if (created + updated === 0) return
+      const parts = [
+        updated ? `${updated} price/name update${updated !== 1 ? 's' : ''}` : '',
+        created ? `${created} new label${created !== 1 ? 's' : ''}` : '',
+      ].filter(Boolean)
+      setTillieNotice(`Synced from Tillie: ${parts.join(', ')}.`)
+      load()
+    })
+    return () => { cancelled = true }
+  }, [load])
 
   const filtered = products.filter(
     (p) =>
@@ -198,6 +220,19 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
         </div>
       )}
 
+      {/* Tillie sync notice */}
+      {tillieNotice && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#166534' }}>
+          <span style={{ flex: 1 }}>{tillieNotice}</span>
+          <button
+            onClick={() => setTillieNotice('')}
+            style={{ border: 'none', background: 'transparent', color: '#166534', cursor: 'pointer', fontSize: 12, padding: 0 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#dc2626' }}>
@@ -275,6 +310,14 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                       >
                         {p.name}
                       </button>
+                      {p.tillieProductId && (
+                        <span
+                          title="Linked to Tillie — name, price, and category sync from the register"
+                          style={{ marginLeft: 8, fontSize: 10, color: '#16a34a', border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 10, padding: '1px 7px', verticalAlign: 'middle' }}
+                        >
+                          Tillie
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
                     <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>

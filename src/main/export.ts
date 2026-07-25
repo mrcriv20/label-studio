@@ -12,6 +12,8 @@ import {
   getDefaultTopLogoPath,
   getGentyRegularFontPath,
   getLoraBoldFontPath,
+  getTemplatePNGPath,
+  isCustomTemplate,
   readImageAsBase64,
 } from './fileManager'
 import {
@@ -324,6 +326,7 @@ async function drawLabel(
   product: Product,
   topImage: EmbeddedImage | null,
   barcodeImage: EmbeddedImage | null,
+  customBackground: EmbeddedImage | null,
   fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
 ): Promise<void> {
   const template = getLabelTemplate(product.templateId)
@@ -332,6 +335,17 @@ async function drawLabel(
   const panel = hexToRgb(template.panelColor)
   const text = hexToRgb(template.textColor)
   const borderWidth = template.layout === 'info' || template.layout === 'logo-only' ? 0 : 1
+
+  if (customBackground) {
+    page.drawImage(customBackground, {
+      x: 0,
+      y: 0,
+      width: template.width,
+      height: template.height,
+    })
+    drawCustomTemplateFields(page, product, barcodeImage, fonts, text)
+    return
+  }
 
   page.drawRectangle({
     x: 0,
@@ -397,6 +411,34 @@ async function drawLabel(
     drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, priceSize, fonts.price, text)
   }
 
+  if (product.showBarcode && barcodeImage) {
+    page.drawImage(barcodeImage, {
+      x: LABEL_ZONES.barcode.x,
+      y: LABEL_ZONES.barcode.y,
+      width: LABEL_ZONES.barcode.w,
+      height: LABEL_ZONES.barcode.h,
+    })
+  }
+}
+
+function drawCustomTemplateFields(
+  page: PDFPage,
+  product: Product,
+  barcodeImage: EmbeddedImage | null,
+  fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
+  text: ReturnType<typeof rgb>,
+): void {
+  const name = product.name || 'Product Name'
+  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
+  const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w)
+  const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize
+  nameLines.slice(0, 3).forEach((line, index) => {
+    drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text)
+  })
+  if (product.showPrice) {
+    const price = product.price || '$13.99'
+    drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, price.length > 10 ? 22 : 28, fonts.price, text)
+  }
   if (product.showBarcode && barcodeImage) {
     page.drawImage(barcodeImage, {
       x: LABEL_ZONES.barcode.x,
@@ -633,9 +675,13 @@ async function buildLabelPDF(product: Product, topImageBytes: Buffer | null, bar
     ? await embedImageAsset(doc, topImageBytes, product.logoImagePath ?? getDefaultTopLogoPath())
     : null
   const barcodeImage = barcodeBytes ? await embedImageAsset(doc, barcodeBytes, product.barcodeImagePath) : null
+  const customPreviewPath = isCustomTemplate(product.templateId) ? getTemplatePNGPath(product.templateId) : null
+  const customBackground = customPreviewPath && existsSync(customPreviewPath)
+    ? await embedImageAsset(doc, readFileSync(customPreviewPath), customPreviewPath)
+    : null
 
   const page = doc.addPage([template.width, template.height])
-  await drawLabel(page, product, topImage, barcodeImage, fonts)
+  await drawLabel(page, product, topImage, barcodeImage, customBackground, fonts)
   return doc.save()
 }
 
@@ -731,6 +777,9 @@ export async function exportSingleLabelSVG(product: Product): Promise<string> {
     ? readImageAsBase64(product.logoImagePath)
     : readImageAsBase64(getDefaultTopLogoPath())
   const avenirFontUri = readFontDataUri(getAvenirNextCondensedFontPath())
+  const customBackgroundUri = isCustomTemplate(product.templateId)
+    ? readImageAsBase64(getTemplatePNGPath(product.templateId))
+    : ''
 
   let barcodeUri = ''
   try {
@@ -749,7 +798,7 @@ export async function exportSingleLabelSVG(product: Product): Promise<string> {
   if (template.layout === 'logo-only') {
     return buildLogoOnlySvg(template, topImageUri, resolveLabelBackground(product, template.shellColor))
   }
-  return buildFrontSvg(product, template, topImageUri, barcodeUri)
+  return buildFrontSvg(product, template, topImageUri, barcodeUri, customBackgroundUri)
 }
 
 function buildFrontSvg(
@@ -757,6 +806,7 @@ function buildFrontSvg(
   template: ReturnType<typeof getLabelTemplate>,
   topImageUri: string,
   barcodeUri: string,
+  customBackgroundUri = '',
 ): string {
   const labelBackground = resolveLabelBackground(product, template.shellColor)
   const name = product.name || 'Product Name'
@@ -776,9 +826,11 @@ function buildFrontSvg(
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
+  ${customBackgroundUri
+    ? `<image x="0" y="0" width="${template.width}" height="${template.height}" xlink:href="${customBackgroundUri}" preserveAspectRatio="xMidYMid slice"/>`
+    : `<rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${LABEL_ZONES.topImage.x}" y="${imageY}" width="${LABEL_ZONES.topImage.w}" height="${LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
-  <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
+  <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>`}
   ${nameEls}
   ${product.showPrice ? `<text x="${LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2}" y="${priceY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${price.length > 10 ? 22 : 28}" fill="${template.textColor}">${xml(price)}</text>` : ''}
   ${product.showBarcode && barcodeUri ? `<image x="${LABEL_ZONES.barcode.x}" y="${barcodeY}" width="${LABEL_ZONES.barcode.w}" height="${LABEL_ZONES.barcode.h}" xlink:href="${barcodeUri}"/>` : ''}

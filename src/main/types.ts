@@ -20,6 +20,7 @@ export interface Product {
   showPrice: boolean
   showBarcode: boolean
   showCookingInstructions: boolean
+  tillieProductId: string | null // linked Tillie POS product; Tillie owns name/price/category when set
   createdAt: string
   updatedAt: string
 }
@@ -58,3 +59,41 @@ export interface ExportOptions {
 export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string }
+
+// ── Tillie POS sync ──────────────────────────────────────────────────────────
+
+export interface TillieCategory {
+  id: string
+  name: string
+  color: string
+  sortOrder: number
+}
+
+export interface TillieConfig {
+  baseUrl: string
+  // Stored as {id, name} pairs; names are re-resolved by id on each sync so
+  // category renames in Tillie don't break the subscription.
+  subscribedCategories: Array<{ id: string; name: string }>
+  includedProductIds: string[] // cherry-picked products outside subscribed categories
+  excludedProductIds: string[] // opted-out products inside subscribed categories
+  autoSyncOnLaunch: boolean
+  lastSyncAt: string | null
+  connectedUserName: string | null
+}
+
+export interface TillieProductSummary {
+  id: string
+  name: string
+  price: number
+  barcode: string
+  category: string
+  linked: boolean // already linked to a local label
+  inScope: boolean // would be pulled in by the next sync
+}
+
+export interface TillieSyncSummary {
+  created: number
+  updated: number
+  unchanged: number
+  duplicateBarcodes: string[]
+}

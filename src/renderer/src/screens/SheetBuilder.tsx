@@ -23,11 +23,10 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
     Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
   )
   const [allProducts, setAllProducts] = useState<Product[]>([])
-  const [templateDataUri, setTemplateDataUri] = useState('')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [startSlot, setStartSlot] = useState(1)
   const [fillProduct, setFillProduct] = useState<Product | null>(null)
-  const [fillCount, setFillCount] = useState(PLS_780.labelsPerSheet)
+  const [fillCount, setFillCount] = useState<number>(PLS_780.labelsPerSheet)
   const [exporting, setExporting] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [activeSlot, setActiveSlot] = useState<number | null>(null)
@@ -35,7 +34,6 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
 
   useEffect(() => {
     window.api.product.list().then((r) => { if (r.ok) setAllProducts(r.data) })
-    window.api.file.getTemplatePNG().then((r) => { if (r.ok && r.data) setTemplateDataUri(r.data) })
     window.api.settings.get().then((r) => { if (r.ok) setSettings(r.data) })
   }, [])
 
@@ -257,7 +255,6 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
                   key={i}
                   index={i}
                   product={product}
-                  templateDataUri={templateDataUri}
                   offsetXIn={toInches(settings?.sheetOffsetXIn)}
                   offsetYIn={toInches(settings?.sheetOffsetYIn)}
                   isActive={activeSlot === i}
@@ -276,11 +273,10 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
 }
 
 function SheetSlotPreview({
-  index, product, templateDataUri, offsetXIn, offsetYIn, isActive, onClick,
+  index, product, offsetXIn, offsetYIn, isActive, onClick,
 }: {
   index: number
   product: Product | null
-  templateDataUri: string
   offsetXIn: number
   offsetYIn: number
   isActive: boolean
@@ -336,7 +332,7 @@ function SheetSlotPreview({
               flexShrink: 0,
             }}
           >
-            <LabelPreview product={product} templateDataUri={templateDataUri} scale={1} />
+            <LabelPreview product={product} scale={1} />
           </div>
         </div>
       ) : (

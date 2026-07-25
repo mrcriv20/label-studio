@@ -7105,6 +7105,24 @@ const ArrowUp = createLucideIcon("ArrowUp", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const ChevronDown = createLucideIcon("ChevronDown", [
+  ["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const ChevronRight = createLucideIcon("ChevronRight", [
+  ["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const CircleAlert = createLucideIcon("CircleAlert", [
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
   ["line", { x1: "12", x2: "12", y1: "8", y2: "12", key: "1pkeuh" }],
@@ -7140,6 +7158,17 @@ const CircleHelp = createLucideIcon("CircleHelp", [
 const Copy = createLucideIcon("Copy", [
   ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
   ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const Download = createLucideIcon("Download", [
+  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
+  ["polyline", { points: "7 10 12 15 17 10", key: "2ggqvy" }],
+  ["line", { x1: "12", x2: "12", y1: "15", y2: "3", key: "1vk2je" }]
 ]);
 /**
  * @license lucide-react v0.390.0 - ISC
@@ -7278,6 +7307,18 @@ const Pen = createLucideIcon("Pen", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Plug = createLucideIcon("Plug", [
+  ["path", { d: "M12 22v-5", key: "1ega77" }],
+  ["path", { d: "M9 8V2", key: "14iosj" }],
+  ["path", { d: "M15 8V2", key: "18g5xt" }],
+  ["path", { d: "M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z", key: "osxo6l" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Plus = createLucideIcon("Plus", [
   ["path", { d: "M5 12h14", key: "1ays0h" }],
   ["path", { d: "M12 5v14", key: "s699le" }]
@@ -7360,6 +7401,25 @@ const Settings$1 = createLucideIcon("Settings", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Store = createLucideIcon("Store", [
+  ["path", { d: "m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", key: "ztvudi" }],
+  ["path", { d: "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", key: "1b2hhj" }],
+  ["path", { d: "M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4", key: "2ebpfo" }],
+  ["path", { d: "M2 7h20", key: "1fcdvo" }],
+  [
+    "path",
+    {
+      d: "M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7",
+      key: "jon5kx"
+    }
+  ]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Tag = createLucideIcon("Tag", [
   [
     "path",
@@ -7389,6 +7449,26 @@ const Trash2 = createLucideIcon("Trash2", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Unplug = createLucideIcon("Unplug", [
+  ["path", { d: "m19 5 3-3", key: "yk6iyv" }],
+  ["path", { d: "m2 22 3-3", key: "19mgm9" }],
+  [
+    "path",
+    { d: "M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z", key: "goz73y" }
+  ],
+  ["path", { d: "M7.5 13.5 10 11", key: "7xgeeb" }],
+  ["path", { d: "M10.5 16.5 13 14", key: "10btkg" }],
+  [
+    "path",
+    { d: "m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z", key: "1snsnr" }
+  ]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Upload = createLucideIcon("Upload", [
   ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
   ["polyline", { points: "17 8 12 3 7 8", key: "t8dd8p" }],
@@ -7404,6 +7484,7 @@ const X = createLucideIcon("X", [
   ["path", { d: "M18 6 6 18", key: "1bl5f8" }],
   ["path", { d: "m6 6 12 12", key: "d8bk6v" }]
 ]);
+const logo = "" + new URL("logo-D8TDAhyi.png", import.meta.url).href;
 const items = [
   { id: "library", label: "Products", Icon: LayoutGrid },
   { id: "editor", label: "New Label", Icon: Tag },
@@ -7414,10 +7495,7 @@ const items = [
 function Nav({ current, onNavigate }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("aside", { className: "sidebar", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sidebar-traffic" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "sidebar-brand", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sidebar-brand-name", children: "GRAZIA'S" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sidebar-brand-sub", children: "Label Studio" })
-    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sidebar-brand", children: /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: logo, alt: "Label Studio logo", className: "sidebar-brand-logo" }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sidebar-sep" }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("nav", { className: "sidebar-nav", children: items.map(({ id: id2, label, Icon: Icon2 }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "button",
@@ -7425,7 +7503,7 @@ function Nav({ current, onNavigate }) {
         onClick: () => onNavigate(id2),
         className: `nav-item${current === id2 ? " active" : ""}`,
         children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Icon2, { size: 15 }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Icon2, { size: 20 }),
           label
         ]
       },
@@ -7444,6 +7522,7 @@ function Library({ onEdit, onOpenSheet }) {
   const [activeCategory, setActiveCategory] = reactExports.useState("__all__");
   const [sortKey, setSortKey] = reactExports.useState("name");
   const [sortDirection, setSortDirection] = reactExports.useState("asc");
+  const [tillieNotice, setTillieNotice] = reactExports.useState("");
   const load = reactExports.useCallback(async () => {
     setLoading(true);
     const result = await window.api.product.list();
@@ -7455,6 +7534,26 @@ function Library({ onEdit, onOpenSheet }) {
   }, []);
   reactExports.useEffect(() => {
     load();
+  }, [load]);
+  reactExports.useEffect(() => {
+    let cancelled = false;
+    window.api.tillie.getConfig().then(async (cfg) => {
+      if (!cfg.ok || !cfg.data.autoSyncOnLaunch) return;
+      if (!cfg.data.lastSyncAt && !cfg.data.connectedUserName) return;
+      const result = await window.api.tillie.sync();
+      if (cancelled || !result.ok) return;
+      const { created, updated } = result.data;
+      if (created + updated === 0) return;
+      const parts = [
+        updated ? `${updated} price/name update${updated !== 1 ? "s" : ""}` : "",
+        created ? `${created} new label${created !== 1 ? "s" : ""}` : ""
+      ].filter(Boolean);
+      setTillieNotice(`Synced from Tillie: ${parts.join(", ")}.`);
+      load();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
   const filtered = products.filter(
     (p2) => p2.name.toLowerCase().includes(query.toLowerCase()) || p2.barcodeValue.includes(query) || p2.price.toLowerCase().includes(query.toLowerCase())
@@ -7605,6 +7704,17 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
         id2
       ))
     ] }),
+    tillieNotice && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#166534" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { flex: 1 }, children: tillieNotice }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          onClick: () => setTillieNotice(""),
+          style: { border: "none", background: "transparent", color: "#166534", cursor: "pointer", fontSize: 12, padding: 0 },
+          children: "Dismiss"
+        }
+      )
+    ] }),
     error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#dc2626" }, children: error }),
     loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13, paddingTop: 60 }, children: "Loading products…" }) : sortedProducts.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 8 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 40 }, children: "🏪" }),
@@ -7649,16 +7759,26 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
           onMouseEnter: (e) => e.currentTarget.style.background = "#fafafa",
           onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "button",
-              {
-                type: "button",
-                className: "product-name-button",
-                onClick: () => onEdit(p2),
-                title: `Open ${p2.name}`,
-                children: p2.name
-              }
-            ) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "11px 16px" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  className: "product-name-button",
+                  onClick: () => onEdit(p2),
+                  title: `Open ${p2.name}`,
+                  children: p2.name
+                }
+              ),
+              p2.tillieProductId && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  title: "Linked to Tillie — name, price, and category sync from the register",
+                  style: { marginLeft: 8, fontSize: 10, color: "#16a34a", border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 10, padding: "1px 7px", verticalAlign: "middle" },
+                  children: "Tillie"
+                }
+              )
+            ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
@@ -11329,6 +11449,7 @@ function LabelPreview({
   const barcodeRef = reactExports.useRef(null);
   const template = getLabelTemplate(product.templateId);
   const [globalLabelBackground, setGlobalLabelBackground] = reactExports.useState("");
+  const [customTemplateDataUri, setCustomTemplateDataUri] = reactExports.useState("");
   const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor;
   const resolvedProduct = { ...product, labelBackgroundColor: labelBackground };
   reactExports.useEffect(() => {
@@ -11336,6 +11457,15 @@ function LabelPreview({
       if (result.ok) setGlobalLabelBackground(result.data.labelBackgroundColor);
     });
   }, []);
+  reactExports.useEffect(() => {
+    if (!product.templateId?.startsWith("custom-")) {
+      setCustomTemplateDataUri("");
+      return;
+    }
+    window.api.file.getTemplatePNG(product.templateId).then((result) => {
+      setCustomTemplateDataUri(result.ok ? result.data : "");
+    });
+  }, [product.templateId]);
   reactExports.useEffect(() => {
     if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri || product.showBarcode === false) return;
     try {
@@ -11395,6 +11525,7 @@ function LabelPreview({
       barcodeRef,
       barcodeOverrideDataUri,
       logoDataUri,
+      customTemplateDataUri,
       scale
     }
   );
@@ -11405,6 +11536,7 @@ function FrontLabelPreview({
   barcodeRef,
   barcodeOverrideDataUri,
   logoDataUri,
+  customTemplateDataUri,
   scale
 }) {
   const name = product.name || "Product Name";
@@ -11428,8 +11560,9 @@ function FrontLabelPreview({
         containerType: "inline-size"
       },
       children: [
+        customTemplateDataUri && /* @__PURE__ */ jsxRuntimeExports.jsx("img", { src: customTemplateDataUri, alt: "", style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" } }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, border: `1px solid ${template.borderColor}`, borderRadius: 18, pointerEvents: "none" } }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
+        !customTemplateDataUri && /* @__PURE__ */ jsxRuntimeExports.jsx(
           TopImage,
           {
             logoDataUri,
@@ -11441,7 +11574,7 @@ function FrontLabelPreview({
             canvasHeight: template.height
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
+        !customTemplateDataUri && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
             style: {
@@ -11475,7 +11608,7 @@ function FrontLabelPreview({
               {
                 style: {
                   fontSize: nameFontSize,
-                  fontFamily: '"Lora", Georgia, serif',
+                  fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
                   fontWeight: 700,
                   color: template.textColor,
                   textAlign: "center",
@@ -11507,7 +11640,7 @@ function FrontLabelPreview({
               {
                 style: {
                   fontSize: priceFontSize,
-                  fontFamily: '"Genty Demo", Georgia, serif',
+                  fontFamily: 'var(--label-price-font, "Genty Demo", Georgia, serif)',
                   fontWeight: 400,
                   color: template.textColor,
                   textAlign: "center",
@@ -11616,7 +11749,7 @@ function InfoLabelPreview({
               {
                 style: {
                   fontSize: infoNameSize,
-                  fontFamily: '"Lora", Georgia, serif',
+                  fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
                   fontWeight: 700,
                   color: template.textColor,
                   lineHeight: 1.05
@@ -11645,7 +11778,7 @@ function InfoLabelPreview({
               {
                 style: {
                   fontSize: infoPriceSize,
-                  fontFamily: '"Genty Demo", Georgia, serif',
+                  fontFamily: 'var(--label-price-font, "Genty Demo", Georgia, serif)',
                   fontWeight: 400,
                   color: template.textColor,
                   lineHeight: 1
@@ -11665,7 +11798,7 @@ function InfoLabelPreview({
               width: toPercentWidth(INFO_LABEL_ZONES.infoText.w, template.width),
               height: toPercentHeight(INFO_LABEL_ZONES.infoText.h, template.height),
               color: template.textColor,
-              fontFamily: '"Helvetica Neue", Arial, sans-serif',
+              fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
               pointerEvents: "none",
               overflow: "hidden"
             },
@@ -11796,7 +11929,7 @@ function VerticalInfoLabelPreview({
               {
                 style: {
                   fontSize: titleSize,
-                  fontFamily: '"Lora", Georgia, serif',
+                  fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
                   fontWeight: 700,
                   color: template.textColor,
                   textAlign: "center",
@@ -11829,7 +11962,7 @@ function VerticalInfoLabelPreview({
                 {
                   style: {
                     fontSize: "3.6cqw",
-                    fontFamily: '"Helvetica Neue", Arial, sans-serif',
+                    fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
                     fontWeight: 700,
                     color: template.textColor,
                     textAlign: "center",
@@ -11860,7 +11993,7 @@ function VerticalInfoLabelPreview({
                 {
                   style: {
                     fontSize: "2.8cqw",
-                    fontFamily: '"Avenir Next Condensed Asset", "Avenir Next Condensed", "Avenir Next", "Arial Narrow", Arial, sans-serif',
+                    fontFamily: 'var(--label-body-font, "Avenir Next Condensed Asset", Arial, sans-serif)',
                     fontWeight: 400,
                     color: template.textColor,
                     textAlign: "center",
@@ -11893,7 +12026,7 @@ function VerticalInfoLabelPreview({
               {
                 style: {
                   fontSize: "2.8cqw",
-                  fontFamily: '"Helvetica Neue", Arial, sans-serif',
+                  fontFamily: 'var(--label-body-font, "Helvetica Neue", Arial, sans-serif)',
                   fontWeight: 700,
                   color: template.textColor,
                   textAlign: "center",
@@ -12048,7 +12181,8 @@ const EMPTY_PRODUCT = () => ({
   templateId: "avery5821",
   showPrice: true,
   showBarcode: true,
-  showCookingInstructions: true
+  showCookingInstructions: true,
+  tillieProductId: null
 });
 function Editor({ initialProduct, onBack, onOpenSheet }) {
   const isNew = !initialProduct;
@@ -12064,6 +12198,7 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
   const [saveError, setSaveError] = reactExports.useState("");
   const [exporting, setExporting] = reactExports.useState(false);
   const [regenConfirm, setRegenConfirm] = reactExports.useState(false);
+  const [importingTemplate, setImportingTemplate] = reactExports.useState(false);
   const saveInFlight = reactExports.useRef(null);
   reactExports.useEffect(() => {
     window.api.file.listTemplates().then((r2) => {
@@ -12194,7 +12329,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
         barcodeImagePath: product.barcodeImagePath ?? null,
         logoImagePath: product.logoImagePath ?? null,
         templateId: product.templateId ?? "avery5821",
-        showCookingInstructions: product.showCookingInstructions ?? true
+        showCookingInstructions: product.showCookingInstructions ?? true,
+        tillieProductId: product.tillieProductId ?? null
       });
     } else {
       result = await window.api.product.update({
@@ -12259,6 +12395,29 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     const b64Result = await window.api.file.readImageAsBase64(storedPath);
     if (b64Result.ok && b64Result.data) setBarcodeOverrideDataUri(b64Result.data);
     setSaveStatus("idle");
+  }
+  async function handleImportTemplate() {
+    setImportingTemplate(true);
+    const picked = await window.api.file.pickTemplateImage();
+    if (!picked.ok) {
+      setSaveError(picked.error);
+      setSaveStatus("error");
+      setImportingTemplate(false);
+      return;
+    }
+    if (!picked.data) {
+      setImportingTemplate(false);
+      return;
+    }
+    const saved = await window.api.file.saveTemplateImage(picked.data);
+    setImportingTemplate(false);
+    if (!saved.ok) {
+      setSaveError(saved.error);
+      setSaveStatus("error");
+      return;
+    }
+    setTemplates((current) => [...current, saved.data]);
+    update("templateId", saved.data.id);
   }
   async function handleUploadLogo() {
     const pickedResult = await window.api.file.pickLogoImage();
@@ -12396,7 +12555,12 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               children: templates.map((template) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: template.id, children: template.name }, template.id))
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: templateNote })
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", className: "btn-outline", onClick: handleImportTemplate, disabled: importingTemplate, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 13 }),
+            " ",
+            importingTemplate ? "Creating template…" : "Import label design"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", margin: 0 }, children: product.templateId?.startsWith("custom-") ? "Your artwork is used as the full-label background. Product name, price, and barcode remain editable above it." : templateNote })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Label Background" }),
@@ -12441,7 +12605,8 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
               maxLength: 30
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Include symbol and unit — e.g. $9.99/lb or $4.50 each" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Include symbol and unit — e.g. $9.99/lb or $4.50 each" }),
+          product.tillieProductId && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#b45309", marginTop: 5 }, children: "This label is linked to Tillie — name, price, and category are overwritten by the register on each sync. Change the price in Tillie to keep them in step." })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Category" }),
@@ -12710,7 +12875,6 @@ function SheetBuilder({ initialProducts, onBack }) {
     Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
   );
   const [allProducts, setAllProducts] = reactExports.useState([]);
-  const [templateDataUri, setTemplateDataUri] = reactExports.useState("");
   const [settings, setSettings] = reactExports.useState(null);
   const [startSlot, setStartSlot] = reactExports.useState(1);
   const [fillProduct, setFillProduct] = reactExports.useState(null);
@@ -12722,9 +12886,6 @@ function SheetBuilder({ initialProducts, onBack }) {
   reactExports.useEffect(() => {
     window.api.product.list().then((r2) => {
       if (r2.ok) setAllProducts(r2.data);
-    });
-    window.api.file.getTemplatePNG().then((r2) => {
-      if (r2.ok && r2.data) setTemplateDataUri(r2.data);
     });
     window.api.settings.get().then((r2) => {
       if (r2.ok) setSettings(r2.data);
@@ -12956,7 +13117,6 @@ function SheetBuilder({ initialProducts, onBack }) {
           {
             index: i,
             product,
-            templateDataUri,
             offsetXIn: toInches(settings?.sheetOffsetXIn),
             offsetYIn: toInches(settings?.sheetOffsetYIn),
             isActive: activeSlot === i,
@@ -12977,7 +13137,6 @@ function SheetBuilder({ initialProducts, onBack }) {
 function SheetSlotPreview({
   index,
   product,
-  templateDataUri,
   offsetXIn,
   offsetYIn,
   isActive,
@@ -13035,7 +13194,7 @@ function SheetSlotPreview({
                 transformOrigin: "center",
                 flexShrink: 0
               },
-              children: /* @__PURE__ */ jsxRuntimeExports.jsx(LabelPreview, { product, templateDataUri, scale: 1 })
+              children: /* @__PURE__ */ jsxRuntimeExports.jsx(LabelPreview, { product, scale: 1 })
             }
           )
         }
@@ -13043,21 +13202,338 @@ function SheetSlotPreview({
     }
   );
 }
+function installFonts(fonts) {
+  document.querySelectorAll("style[data-label-font]").forEach((node) => node.remove());
+  for (const font of fonts) {
+    const style = document.createElement("style");
+    style.dataset.labelFont = font.id;
+    style.textContent = `@font-face{font-family:"LabelFont-${css(font.id)}";src:url("${font.dataUri}");font-style:normal;font-weight:100 900;font-display:swap}`;
+    document.head.appendChild(style);
+  }
+}
+function applyFontSettings(settings) {
+  document.documentElement.style.setProperty("--label-title-font", `"LabelFont-${css(settings.titleFontId)}", Georgia, serif`);
+  document.documentElement.style.setProperty("--label-price-font", `"LabelFont-${css(settings.priceFontId)}", Georgia, serif`);
+  document.documentElement.style.setProperty("--label-body-font", `"LabelFont-${css(settings.bodyFontId)}", Arial, sans-serif`);
+}
+function css(value) {
+  return value.replace(/[^a-z0-9_-]/gi, "-");
+}
+function TillieSyncCard() {
+  const [config, setConfig] = reactExports.useState(null);
+  const [categories, setCategories] = reactExports.useState(null);
+  const [products, setProducts] = reactExports.useState(null);
+  const [baseUrlDraft, setBaseUrlDraft] = reactExports.useState("");
+  const [pin, setPin] = reactExports.useState("");
+  const [busy, setBusy] = reactExports.useState(false);
+  const [syncing, setSyncing] = reactExports.useState(false);
+  const [error, setError] = reactExports.useState("");
+  const [notice, setNotice] = reactExports.useState("");
+  const [showPicker, setShowPicker] = reactExports.useState(false);
+  const refreshCategories = reactExports.useCallback(async () => {
+    const result = await window.api.tillie.getCategories();
+    if (result.ok) {
+      setCategories(result.data);
+      setError("");
+    } else {
+      setCategories(null);
+      setError(result.error);
+    }
+  }, []);
+  const refreshProducts = reactExports.useCallback(async () => {
+    const result = await window.api.tillie.listProducts();
+    if (result.ok) setProducts(result.data);
+    else setProducts(null);
+  }, []);
+  reactExports.useEffect(() => {
+    window.api.tillie.getConfig().then((result) => {
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setConfig(result.data);
+      setBaseUrlDraft(result.data.baseUrl);
+    });
+    refreshCategories();
+  }, [refreshCategories]);
+  reactExports.useEffect(() => {
+    if (config?.connectedUserName && !products) refreshProducts();
+  }, [config?.connectedUserName, products, refreshProducts]);
+  async function saveBaseUrl() {
+    const result = await window.api.tillie.setConfig({ baseUrl: baseUrlDraft });
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setConfig(result.data);
+    setBaseUrlDraft(result.data.baseUrl);
+    refreshCategories();
+  }
+  async function connect() {
+    setBusy(true);
+    setError("");
+    const result = await window.api.tillie.login(pin);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setConfig(result.data);
+    setPin("");
+    refreshCategories();
+    refreshProducts();
+  }
+  async function disconnect() {
+    const result = await window.api.tillie.disconnect();
+    if (result.ok) setConfig(result.data);
+    setProducts(null);
+  }
+  async function applyConfig(patch) {
+    const result = await window.api.tillie.setConfig(patch);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setConfig(result.data);
+    if (products) refreshProducts();
+  }
+  function toggleCategory(cat) {
+    if (!config) return;
+    const subscribed = config.subscribedCategories.some((c) => c.id === cat.id);
+    const next = subscribed ? config.subscribedCategories.filter((c) => c.id !== cat.id) : [...config.subscribedCategories, { id: cat.id, name: cat.name }];
+    applyConfig({ subscribedCategories: next });
+  }
+  function toggleProduct(p2) {
+    if (!config) return;
+    const inSubscribedCategory = config.subscribedCategories.some((c) => c.name === p2.category);
+    if (inSubscribedCategory) {
+      const excluded = config.excludedProductIds.includes(p2.id);
+      applyConfig({
+        excludedProductIds: excluded ? config.excludedProductIds.filter((id2) => id2 !== p2.id) : [...config.excludedProductIds, p2.id]
+      });
+    } else {
+      const included = config.includedProductIds.includes(p2.id);
+      applyConfig({
+        includedProductIds: included ? config.includedProductIds.filter((id2) => id2 !== p2.id) : [...config.includedProductIds, p2.id],
+        // Re-adding a previously deleted label should work again.
+        excludedProductIds: config.excludedProductIds.filter((id2) => id2 !== p2.id)
+      });
+    }
+  }
+  async function syncNow() {
+    setSyncing(true);
+    setError("");
+    setNotice("");
+    const result = await window.api.tillie.sync();
+    setSyncing(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    const { created, updated, unchanged, duplicateBarcodes } = result.data;
+    let msg = `Sync complete — ${created} new label${created !== 1 ? "s" : ""}, ${updated} updated, ${unchanged} already up to date.`;
+    if (duplicateBarcodes.length) {
+      msg += ` Skipped ${duplicateBarcodes.length} duplicate barcode${duplicateBarcodes.length !== 1 ? "s" : ""} in Tillie: ${duplicateBarcodes.join(", ")}.`;
+    }
+    setNotice(msg);
+    const cfg = await window.api.tillie.getConfig();
+    if (cfg.ok) setConfig(cfg.data);
+    refreshProducts();
+  }
+  const connected = Boolean(config?.connectedUserName);
+  const productCountFor = (name) => products ? products.filter((p2) => p2.category === name).length : null;
+  const pickerGroups = (() => {
+    if (!products) return [];
+    const groups = /* @__PURE__ */ new Map();
+    for (const p2 of products) {
+      const key = p2.category || "Uncategorized";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p2);
+    }
+    return Array.from(groups.entries());
+  })();
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(Store, { size: 14 }),
+      " Tillie POS Sync"
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#64748b", margin: "0 0 16px", lineHeight: 1.5 }, children: "Pull products from your Tillie register. Labels linked to Tillie get their name, price, and category updated automatically — Tillie is the source of truth for those fields." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie address" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "input",
+              value: baseUrlDraft,
+              onChange: (e) => setBaseUrlDraft(e.target.value),
+              placeholder: "http://127.0.0.1:3000"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              className: "btn-outline",
+              style: { flexShrink: 0 },
+              onClick: saveBaseUrl,
+              disabled: !config || baseUrlDraft === config.baseUrl,
+              children: "Save"
+            }
+          )
+        ] })
+      ] }),
+      connected ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#16a34a" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 14 }),
+        "Connected as ",
+        config?.connectedUserName,
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline btn-sm", onClick: disconnect, style: { marginLeft: "auto" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Unplug, { size: 13 }),
+          " Disconnect"
+        ] })
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie PIN" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              className: "input",
+              style: { maxWidth: 160 },
+              type: "password",
+              inputMode: "numeric",
+              value: pin,
+              onChange: (e) => setPin(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter" && pin.trim()) connect();
+              },
+              placeholder: "Enter register PIN"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: connect, disabled: busy || !pin.trim(), style: { flexShrink: 0 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 13 }),
+            " ",
+            busy ? "Connecting…" : "Connect"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Use the same PIN you sign in with at the register. The PIN itself is never stored." })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Categories to sync" }),
+        categories === null ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 12, color: "#94a3b8", margin: 0 }, children: "Waiting for Tillie — check the address above and make sure the register app is running." }) : categories.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 12, color: "#94a3b8", margin: 0 }, children: "No categories found in Tillie." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }, children: categories.map((cat) => {
+          const subscribed = config?.subscribedCategories.some((c) => c.id === cat.id) ?? false;
+          const count = productCountFor(cat.name);
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "label",
+            {
+              style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#334155", cursor: "pointer" },
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: subscribed, onChange: () => toggleCategory(cat) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { width: 10, height: 10, borderRadius: 3, background: cat.color || "#cbd5e1", flexShrink: 0 } }),
+                cat.name,
+                count !== null && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: "#94a3b8" }, children: [
+                  count,
+                  " product",
+                  count !== 1 ? "s" : ""
+                ] })
+              ]
+            },
+            cat.id
+          );
+        }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 6 }, children: "All products in checked categories are pulled in on each sync. Labels you already linked keep syncing even if their category is unchecked." })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            type: "button",
+            onClick: () => {
+              setShowPicker((v2) => !v2);
+              if (!products) refreshProducts();
+            },
+            style: { display: "inline-flex", alignItems: "center", gap: 4, border: "none", background: "transparent", padding: 0, fontSize: 12, fontWeight: 500, color: "#2563eb", cursor: "pointer" },
+            children: [
+              showPicker ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 13 }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronRight, { size: 13 }),
+              "Choose individual products"
+            ]
+          }
+        ),
+        showPicker && (products === null ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 12, color: "#94a3b8", marginTop: 6 }, children: connected ? "Loading products…" : "Connect with your PIN to browse Tillie products." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { maxHeight: 260, overflow: "auto", border: "1px solid #f1f5f9", borderRadius: 8, marginTop: 8, padding: "6px 10px" }, children: pickerGroups.map(([category, items2]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 8 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", margin: "6px 0 4px" }, children: category }),
+          items2.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "label",
+            {
+              style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#334155", padding: "3px 0", cursor: "pointer" },
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: p2.inScope, onChange: () => toggleProduct(p2) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { flex: 1 }, children: p2.name }),
+                p2.linked && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, color: "#16a34a", border: "1px solid #bbf7d0", background: "#f0fdf4", borderRadius: 10, padding: "1px 7px" }, children: "linked" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: "monospace", fontSize: 11, color: "#94a3b8" }, children: [
+                  "$",
+                  p2.price.toFixed(2)
+                ] })
+              ]
+            },
+            p2.id
+          ))
+        ] }, category)) }))
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#334155", cursor: "pointer" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "input",
+          {
+            type: "checkbox",
+            checked: config?.autoSyncOnLaunch ?? true,
+            onChange: (e) => applyConfig({ autoSyncOnLaunch: e.target.checked })
+          }
+        ),
+        "Sync automatically when the app opens"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-primary", onClick: syncNow, disabled: syncing, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(RefreshCw, { size: 14, className: syncing ? "spin" : void 0 }),
+          syncing ? "Syncing…" : "Sync Now"
+        ] }),
+        config?.lastSyncAt && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: "#94a3b8" }, children: [
+          "Last synced ",
+          new Date(config.lastSyncAt).toLocaleString()
+        ] })
+      ] }),
+      notice && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, color: "#166534" }, children: notice }),
+      error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, color: "#dc2626" }, children: error })
+    ] })
+  ] });
+}
 function Settings() {
   const [settings, setSettings] = reactExports.useState(null);
   const [saving, setSaving] = reactExports.useState(false);
   const [saved, setSaved] = reactExports.useState(false);
   const [error, setError] = reactExports.useState("");
+  const [fonts, setFonts] = reactExports.useState([]);
+  const [googleFamily, setGoogleFamily] = reactExports.useState("");
+  const [addingFont, setAddingFont] = reactExports.useState(false);
   reactExports.useEffect(() => {
     window.api.settings.get().then((r2) => {
       if (r2.ok) setSettings(r2.data);
       else setError(r2.error);
     });
   }, []);
+  reactExports.useEffect(() => {
+    window.api.font.list().then((result) => {
+      if (result.ok) {
+        setFonts(result.data);
+        installFonts(result.data);
+      }
+    });
+  }, []);
   function update(key, value) {
     setSettings((prev) => prev ? { ...prev, [key]: value } : null);
     if (key === "pageBackgroundColor") {
       document.documentElement.style.setProperty("--page-background", value);
+    }
+    if (key === "titleFontId" || key === "priceFontId" || key === "bodyFontId") {
+      const next = settings ? { ...settings, [key]: value } : null;
+      if (next) applyFontSettings(next);
     }
     setSaved(false);
   }
@@ -13086,12 +13562,28 @@ function Settings() {
     const result = await window.api.file.pickExportFolder();
     if (result.ok && result.data) update("exportFolder", result.data);
   }
+  async function addFont(kind) {
+    setAddingFont(true);
+    setError("");
+    const result = kind === "google" ? await window.api.font.addGoogle(googleFamily) : kind === "local" ? await window.api.font.importLocal() : await window.api.font.upload();
+    setAddingFont(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (!result.data) return;
+    const next = [...fonts, result.data];
+    setFonts(next);
+    installFonts(next);
+    if (kind === "google") setGoogleFamily("");
+  }
   if (!settings) {
     return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "screen", style: { display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: 13 }, children: error || "Loading settings…" });
   }
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "screen", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { maxWidth: 560 }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { style: { fontSize: 22, fontWeight: 700, color: "#1a2332", margin: "0 0 24px" }, children: "Settings" }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 16 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(TillieSyncCard, {}),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 16px" }, children: "Label Formatting" }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
@@ -13126,6 +13618,33 @@ function Settings() {
                 ]
               }
             )
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "#1a2332", margin: "0 0 6px" }, children: "Label Fonts" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#64748b", margin: "0 0 16px", lineHeight: 1.5 }, children: "Fonts are stored with the app and embedded in PDFs, so preview, export, and printing stay consistent." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(FontSelect, { label: "Product title", value: settings.titleFontId, fonts, onChange: (v2) => update("titleFontId", v2) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(FontSelect, { label: "Price", value: settings.priceFontId, fonts, onChange: (v2) => update("priceFontId", v2) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(FontSelect, { label: "Details and instructions", value: settings.bodyFontId, fonts, onChange: (v2) => update("bodyFontId", v2) })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 16 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: () => addFont("local"), disabled: addingFont, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(FolderOpen, { size: 13 }),
+            " Local font"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: () => addFont("upload"), disabled: addingFont, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Upload, { size: 13 }),
+            " Upload file"
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 10 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", value: googleFamily, onChange: (e) => setGoogleFamily(e.target.value), placeholder: "Google Fonts family, e.g. Roboto" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: () => addFont("google"), disabled: addingFont || !googleFamily.trim(), style: { flexShrink: 0 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { size: 13 }),
+            " ",
+            addingFont ? "Adding…" : "Add Google font"
           ] })
         ] })
       ] }),
@@ -13245,6 +13764,17 @@ function Settings() {
       ] }) })
     ] })
   ] }) });
+}
+function FontSelect({ label, value, fonts, onChange }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("select", { className: "input", value, onChange: (e) => onChange(e.target.value), children: fonts.map((font) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: font.id, children: [
+      font.family,
+      " · ",
+      font.source
+    ] }, font.id)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: 5, fontSize: 18, lineHeight: 1.2, fontFamily: `LabelFont-${value.replace(/[^a-z0-9_-]/gi, "-")}` }, children: "Grazia’s Aa" })
+  ] });
 }
 function ColorSetting({
   label,
@@ -13369,10 +13899,11 @@ function App() {
   const [editingProduct, setEditingProduct] = reactExports.useState(null);
   const [sheetProducts, setSheetProducts] = reactExports.useState([]);
   reactExports.useEffect(() => {
-    window.api.settings.get().then((result) => {
-      if (result.ok) {
-        document.documentElement.style.setProperty("--page-background", result.data.pageBackgroundColor);
-      }
+    Promise.all([window.api.settings.get(), window.api.font.list()]).then(([settings, fonts]) => {
+      if (fonts.ok) installFonts(fonts.data);
+      if (!settings.ok) return;
+      document.documentElement.style.setProperty("--page-background", settings.data.pageBackgroundColor);
+      applyFontSettings(settings.data);
     });
   }, []);
   function openEditor(product) {

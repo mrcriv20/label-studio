@@ -6,8 +6,6 @@ import {
   getLabelTemplate,
   LOGO_ONLY_LABEL_ZONES,
   INFO_LABEL_ZONES,
-  LABEL_HEIGHT,
-  LABEL_WIDTH,
   LABEL_ZONES,
   VERTICAL_INFO_LABEL_ZONES,
   toPercentHeight,
@@ -34,6 +32,7 @@ export default function LabelPreview({
   const barcodeRef = useRef<SVGSVGElement>(null)
   const template = getLabelTemplate(product.templateId)
   const [globalLabelBackground, setGlobalLabelBackground] = useState('')
+  const [customTemplateDataUri, setCustomTemplateDataUri] = useState('')
   const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor
   const resolvedProduct = { ...product, labelBackgroundColor: labelBackground }
 
@@ -42,6 +41,16 @@ export default function LabelPreview({
       if (result.ok) setGlobalLabelBackground(result.data.labelBackgroundColor)
     })
   }, [])
+
+  useEffect(() => {
+    if (!product.templateId?.startsWith('custom-')) {
+      setCustomTemplateDataUri('')
+      return
+    }
+    window.api.file.getTemplatePNG(product.templateId).then((result) => {
+      setCustomTemplateDataUri(result.ok ? result.data : '')
+    })
+  }, [product.templateId])
 
   useEffect(() => {
     if (!barcodeRef.current || !product.barcodeValue || barcodeOverrideDataUri || product.showBarcode === false) return
@@ -103,6 +112,7 @@ export default function LabelPreview({
       barcodeRef={barcodeRef}
       barcodeOverrideDataUri={barcodeOverrideDataUri}
       logoDataUri={logoDataUri}
+      customTemplateDataUri={customTemplateDataUri}
       scale={scale}
     />
   )
@@ -114,13 +124,15 @@ function FrontLabelPreview({
   barcodeRef,
   barcodeOverrideDataUri,
   logoDataUri,
+  customTemplateDataUri,
   scale,
 }: {
   product: Partial<Product>
   template: ReturnType<typeof getLabelTemplate>
-  barcodeRef: RefObject<SVGSVGElement | null>
+  barcodeRef: RefObject<SVGSVGElement>
   barcodeOverrideDataUri?: string
   logoDataUri?: string
+  customTemplateDataUri?: string
   scale: number
 }): JSX.Element {
   const name = product.name || 'Product Name'
@@ -144,9 +156,10 @@ function FrontLabelPreview({
         containerType: 'inline-size',
       }}
     >
+      {customTemplateDataUri && <img src={customTemplateDataUri} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
       <div style={{ position: 'absolute', inset: 0, border: `1px solid ${template.borderColor}`, borderRadius: 18, pointerEvents: 'none' }} />
 
-      <TopImage
+      {!customTemplateDataUri && <TopImage
         logoDataUri={logoDataUri}
         x={LABEL_ZONES.topImage.x}
         y={LABEL_ZONES.topImage.y}
@@ -154,9 +167,9 @@ function FrontLabelPreview({
         h={LABEL_ZONES.topImage.h}
         canvasWidth={template.width}
         canvasHeight={template.height}
-      />
+      />}
 
-      <div
+      {!customTemplateDataUri && <div
         style={{
           position: 'absolute',
           top: toPercentTop(LABEL_ZONES.contentPanel.y, LABEL_ZONES.contentPanel.h, template.height),
@@ -166,7 +179,7 @@ function FrontLabelPreview({
           background: template.panelColor,
           borderRadius: 12,
         }}
-      />
+      />}
 
       <div
         style={{
@@ -252,7 +265,7 @@ function InfoLabelPreview({
 }: {
   product: Partial<Product>
   template: ReturnType<typeof getLabelTemplate>
-  barcodeRef: RefObject<SVGSVGElement | null>
+  barcodeRef: RefObject<SVGSVGElement>
   barcodeOverrideDataUri?: string
   logoDataUri?: string
   scale: number
@@ -689,7 +702,7 @@ function BarcodeBlock({
   canvasHeight,
 }: {
   visible: boolean
-  barcodeRef: RefObject<SVGSVGElement | null>
+  barcodeRef: RefObject<SVGSVGElement>
   barcodeOverrideDataUri?: string
   x: number
   y: number

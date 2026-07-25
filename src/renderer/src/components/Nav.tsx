@@ -1,5 +1,6 @@
 import { LayoutGrid, Tag, Layers, Settings, CircleHelp } from 'lucide-react'
 import type { Screen } from '../App'
+import logo from '../assets/logo.png'
 
 const items: { id: Screen; label: string; Icon: typeof LayoutGrid }[] = [
   { id: 'library', label: 'Products', Icon: LayoutGrid },
@@ -21,8 +22,7 @@ export default function Nav({ current, onNavigate }: Props): JSX.Element {
       <div className="sidebar-traffic" />
 
       <div className="sidebar-brand">
-        <div className="sidebar-brand-name">GRAZIA'S</div>
-        <div className="sidebar-brand-sub">Label Studio</div>
+        <img src={logo} alt="Label Studio logo" className="sidebar-brand-logo"/>
       </div>
 
       <div className="sidebar-sep" />
@@ -34,7 +34,7 @@ export default function Nav({ current, onNavigate }: Props): JSX.Element {
             onClick={() => onNavigate(id)}
             className={`nav-item${current === id ? ' active' : ''}`}
           >
-            <Icon size={15} />
+            <Icon size={20} />
             {label}
           </button>
         ))}

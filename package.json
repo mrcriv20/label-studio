@@ -1,7 +1,8 @@
 {
-  "name": "label-studio",
+  "name": "tillie-print",
+  "productName": "Tillie Print",
   "version": "1.3.0",
-  "description": "Retail product label designer and printer for Grazia's Italian Market",
+  "description": "Retail product label designer for small Markets",
   "main": "./out/main/index.js",
   "author": "Tillie POS, LLC",
   "private": true,
@@ -47,8 +48,8 @@
     "vite": "^5.3.1"
   },
   "build": {
-    "appId": "com.grazias.labelstudio",
-    "productName": "Label Studio",
+    "appId": "com.grazias.tillieprint",
+    "productName": "Tillie Print",
     "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "dist"

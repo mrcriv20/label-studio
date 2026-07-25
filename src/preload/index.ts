@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Product, AppSettings, LabelTemplate } from '../main/types'
+import type {
+  Product,
+  AppSettings,
+  LabelTemplate,
+  TillieCategory,
+  TillieConfig,
+  TillieProductSummary,
+  TillieSyncSummary,
+} from '../main/types'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -76,6 +84,20 @@ const api = {
   print: {
     sheet: (products: Product[], startSlot: number): Promise<IpcResult<boolean>> =>
       ipcRenderer.invoke('print:sheet', products, startSlot),
+  },
+
+  // Tillie POS sync
+  tillie: {
+    getConfig: (): Promise<IpcResult<TillieConfig>> => ipcRenderer.invoke('tillie:getConfig'),
+    setConfig: (patch: Partial<TillieConfig>): Promise<IpcResult<TillieConfig>> =>
+      ipcRenderer.invoke('tillie:setConfig', patch),
+    login: (pin: string): Promise<IpcResult<TillieConfig>> => ipcRenderer.invoke('tillie:login', pin),
+    disconnect: (): Promise<IpcResult<TillieConfig>> => ipcRenderer.invoke('tillie:disconnect'),
+    getCategories: (): Promise<IpcResult<TillieCategory[]>> =>
+      ipcRenderer.invoke('tillie:getCategories'),
+    listProducts: (): Promise<IpcResult<TillieProductSummary[]>> =>
+      ipcRenderer.invoke('tillie:listProducts'),
+    sync: (): Promise<IpcResult<TillieSyncSummary>> => ipcRenderer.invoke('tillie:sync'),
   },
 }
 

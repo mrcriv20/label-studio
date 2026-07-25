@@ -3,6 +3,7 @@ const electron = require("electron");
 const path = require("path");
 const utils = require("@electron-toolkit/utils");
 const fs = require("fs");
+const child_process = require("child_process");
 const url = require("url");
 const nanoid = require("nanoid");
 const XLSX = require("xlsx");
@@ -138,6 +139,7 @@ function normalizeProduct(product) {
     showPrice: product.showPrice ?? true,
     showBarcode: product.showBarcode ?? true,
     showCookingInstructions: product.showCookingInstructions ?? true,
+    tillieProductId: product.tillieProductId ?? null,
     createdAt: product.createdAt ?? now,
     updatedAt: product.updatedAt ?? now
   };
@@ -251,6 +253,7 @@ const TEMPLATE_DIR = path.join(ASSETS_DIR, "templates");
 const TEMPLATE_PNG = path.join(ASSETS_DIR, "label-template-300dpi.png");
 const TEMPLATE_EPS = path.join(ASSETS_DIR, "label-template.eps");
 const DEFAULT_TEMPLATE_ID = "avery5821";
+const TEMPLATE_CATALOG = path.join(TEMPLATE_DIR, "catalog.json");
 function initFileManager() {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
   fs.mkdirSync(BARCODE_DIR, { recursive: true });
@@ -279,11 +282,16 @@ function copyBundledAssets() {
   }
 }
 function listTemplates() {
-  return getLabelTemplates();
+  return [...getLabelTemplates(), ...readCustomTemplates().map(({ id, name }) => ({ id, name }))];
 }
 function getTemplatePNGPath(templateId = DEFAULT_TEMPLATE_ID) {
+  const custom = readCustomTemplates().find((template) => template.id === templateId);
+  if (custom) return custom.previewPath;
   if (templateId === DEFAULT_TEMPLATE_ID) return TEMPLATE_PNG;
   return path.join(TEMPLATE_DIR, `${templateId}.png`);
+}
+function isCustomTemplate(templateId) {
+  return Boolean(templateId && readCustomTemplates().some((template) => template.id === templateId));
 }
 function getDefaultTopLogoPath() {
   return path.join(getBundledAssetsDir(), "default-label-logo.png");
@@ -303,11 +311,86 @@ function readTemplatePNGBase64(templateId = DEFAULT_TEMPLATE_ID) {
   const buf = fs.readFileSync(templatePath);
   return `data:image/png;base64,${buf.toString("base64")}`;
 }
-function saveTemplateImage(sourcePath) {
-  const id = slugify(path.basename(sourcePath, path.extname(sourcePath))) || `template-${Date.now()}`;
-  const destPath = path.join(TEMPLATE_DIR, `${id}.png`);
-  fs.copyFileSync(sourcePath, destPath);
-  return { id, name: prettifyTemplateName(id) };
+async function saveTemplateImage(sourcePath) {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (![".pdf", ".svg", ".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
+    throw new Error("Choose a PDF, SVG, PNG, JPEG, or WebP label design.");
+  }
+  const baseId = slugify(path.basename(sourcePath, extension)) || "custom-label";
+  const id = `custom-${baseId}-${Date.now()}`;
+  const storedSource = path.join(TEMPLATE_DIR, `${id}${extension}`);
+  const previewPath = path.join(TEMPLATE_DIR, `${id}.png`);
+  fs.copyFileSync(sourcePath, storedSource);
+  await createTemplatePreview(storedSource, previewPath, extension);
+  const record = {
+    id,
+    name: prettifyTemplateName(baseId),
+    sourcePath: storedSource,
+    previewPath
+  };
+  fs.writeFileSync(TEMPLATE_CATALOG, JSON.stringify([...readCustomTemplates(), record], null, 2), "utf8");
+  return { id: record.id, name: record.name };
+}
+function readCustomTemplates() {
+  try {
+    const records = JSON.parse(fs.readFileSync(TEMPLATE_CATALOG, "utf8"));
+    return records.filter((record) => fs.existsSync(record.sourcePath) && fs.existsSync(record.previewPath));
+  } catch {
+    return [];
+  }
+}
+async function createTemplatePreview(sourcePath, previewPath, extension) {
+  if (extension === ".png") {
+    fs.copyFileSync(sourcePath, previewPath);
+    return;
+  }
+  if (extension === ".svg") {
+    const svg = fs.readFileSync(sourcePath);
+    const dimensions = svgDimensions(svg.toString("utf8"));
+    const width = 1200;
+    const height = Math.max(1, Math.round(width * dimensions.height / dimensions.width));
+    const renderWindow = new electron.BrowserWindow({
+      show: false,
+      width,
+      height,
+      useContentSize: true,
+      webPreferences: { sandbox: true }
+    });
+    try {
+      await renderWindow.loadURL(`data:image/svg+xml;base64,${svg.toString("base64")}`);
+      const image = await renderWindow.webContents.capturePage();
+      if (!image.isEmpty()) {
+        fs.writeFileSync(previewPath, image.toPNG());
+        return;
+      }
+    } finally {
+      if (!renderWindow.isDestroyed()) renderWindow.destroy();
+    }
+  }
+  if ([".jpg", ".jpeg", ".webp"].includes(extension)) {
+    const image = electron.nativeImage.createFromPath(sourcePath);
+    if (!image.isEmpty()) {
+      const size = image.getSize();
+      const resized = size.width > 1200 ? image.resize({ width: 1200 }) : image;
+      fs.writeFileSync(previewPath, resized.toPNG());
+      return;
+    }
+  }
+  if (process.platform === "darwin") {
+    try {
+      child_process.execFileSync("/usr/bin/sips", ["-s", "format", "png", "--resampleWidth", "1200", sourcePath, "--out", previewPath]);
+      if (fs.existsSync(previewPath)) return;
+    } catch {
+    }
+  }
+  throw new Error("This file could not be converted into a label preview. Try exporting the design as PNG.");
+}
+function svgDimensions(svg) {
+  const viewBox = svg.match(/\bviewBox\s*=\s*["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
+  if (viewBox) return { width: Number(viewBox[1]) || 400, height: Number(viewBox[2]) || 640 };
+  const width = Number(svg.match(/\bwidth\s*=\s*["']([\d.]+)/i)?.[1]);
+  const height = Number(svg.match(/\bheight\s*=\s*["']([\d.]+)/i)?.[1]);
+  return { width: width || 400, height: height || 640 };
 }
 function saveBarcodeImage(sourcePath, productId) {
   const ext = path.extname(sourcePath) || ".png";
@@ -666,13 +749,23 @@ function splitLines(text, maxChars, maxLines) {
   if (current) lines.push(current);
   return lines.slice(0, maxLines);
 }
-async function drawLabel(page, product, topImage, barcodeImage, fonts) {
+async function drawLabel(page, product, topImage, barcodeImage, customBackground, fonts) {
   const template = getLabelTemplate(product.templateId);
   const shell = hexToRgb(resolveLabelBackground(product, template.shellColor));
   const border = hexToRgb(template.borderColor);
   const panel = hexToRgb(template.panelColor);
   const text = hexToRgb(template.textColor);
   const borderWidth = template.layout === "info" || template.layout === "logo-only" ? 0 : 1;
+  if (customBackground) {
+    page.drawImage(customBackground, {
+      x: 0,
+      y: 0,
+      width: template.width,
+      height: template.height
+    });
+    drawCustomTemplateFields(page, product, barcodeImage, fonts, text);
+    return;
+  }
   page.drawRectangle({
     x: 0,
     y: 0,
@@ -727,6 +820,27 @@ async function drawLabel(page, product, topImage, barcodeImage, fonts) {
     const price = product.price || "$13.99";
     const priceSize = price.length > 10 ? 22 : 28;
     drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, priceSize, fonts.price, text);
+  }
+  if (product.showBarcode && barcodeImage) {
+    page.drawImage(barcodeImage, {
+      x: LABEL_ZONES.barcode.x,
+      y: LABEL_ZONES.barcode.y,
+      width: LABEL_ZONES.barcode.w,
+      height: LABEL_ZONES.barcode.h
+    });
+  }
+}
+function drawCustomTemplateFields(page, product, barcodeImage, fonts, text) {
+  const name = product.name || "Product Name";
+  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22;
+  const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w);
+  const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize;
+  nameLines.slice(0, 3).forEach((line, index) => {
+    drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text);
+  });
+  if (product.showPrice) {
+    const price = product.price || "$13.99";
+    drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, price.length > 10 ? 22 : 28, fonts.price, text);
   }
   if (product.showBarcode && barcodeImage) {
     page.drawImage(barcodeImage, {
@@ -920,8 +1034,10 @@ async function buildLabelPDF(product, topImageBytes, barcodeBytes) {
   const fonts = await embedFonts(doc);
   const topImage = topImageBytes ? await embedImageAsset(doc, topImageBytes, product.logoImagePath ?? getDefaultTopLogoPath()) : null;
   const barcodeImage = barcodeBytes ? await embedImageAsset(doc, barcodeBytes, product.barcodeImagePath) : null;
+  const customPreviewPath = isCustomTemplate(product.templateId) ? getTemplatePNGPath(product.templateId) : null;
+  const customBackground = customPreviewPath && fs.existsSync(customPreviewPath) ? await embedImageAsset(doc, fs.readFileSync(customPreviewPath), customPreviewPath) : null;
   const page = doc.addPage([template.width, template.height]);
-  await drawLabel(page, product, topImage, barcodeImage, fonts);
+  await drawLabel(page, product, topImage, barcodeImage, customBackground, fonts);
   return doc.save();
 }
 async function exportSingleLabelPDF(product, outputPath) {
@@ -999,6 +1115,7 @@ async function exportSingleLabelSVG(product) {
   const template = getLabelTemplate(product.templateId);
   const topImageUri = product.logoImagePath ? readImageAsBase64(product.logoImagePath) : readImageAsBase64(getDefaultTopLogoPath());
   const avenirFontUri = readFontDataUri(getAvenirNextCondensedFontPath());
+  const customBackgroundUri = isCustomTemplate(product.templateId) ? readImageAsBase64(getTemplatePNGPath(product.templateId)) : "";
   let barcodeUri = "";
   try {
     const barcode = await getBarcodePNG(product);
@@ -1014,9 +1131,9 @@ async function exportSingleLabelSVG(product) {
   if (template.layout === "logo-only") {
     return buildLogoOnlySvg(template, topImageUri, resolveLabelBackground(product, template.shellColor));
   }
-  return buildFrontSvg(product, template, topImageUri, barcodeUri);
+  return buildFrontSvg(product, template, topImageUri, barcodeUri, customBackgroundUri);
 }
-function buildFrontSvg(product, template, topImageUri, barcodeUri) {
+function buildFrontSvg(product, template, topImageUri, barcodeUri, customBackgroundUri = "") {
   const labelBackground = resolveLabelBackground(product, template.shellColor);
   const name = product.name || "Product Name";
   const price = product.price || "$13.99";
@@ -1034,9 +1151,9 @@ function buildFrontSvg(product, template, topImageUri, barcodeUri) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
      viewBox="0 0 ${template.width} ${template.height}" width="${template.width}pt" height="${template.height}pt" version="1.1">
-  <rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
+  ${customBackgroundUri ? `<image x="0" y="0" width="${template.width}" height="${template.height}" xlink:href="${customBackgroundUri}" preserveAspectRatio="xMidYMid slice"/>` : `<rect x="0.5" y="0.5" width="${template.width - 1}" height="${template.height - 1}" rx="12" fill="${labelBackground}" stroke="${template.borderColor}" stroke-width="1"/>
   <image x="${LABEL_ZONES.topImage.x}" y="${imageY}" width="${LABEL_ZONES.topImage.w}" height="${LABEL_ZONES.topImage.h}" xlink:href="${topImageUri}" preserveAspectRatio="xMidYMid meet"/>
-  <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>
+  <rect x="${LABEL_ZONES.contentPanel.x}" y="${contentY}" width="${LABEL_ZONES.contentPanel.w}" height="${LABEL_ZONES.contentPanel.h}" rx="10" fill="${template.panelColor}"/>`}
   ${nameEls}
   ${product.showPrice ? `<text x="${LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2}" y="${priceY}" text-anchor="middle" font-family="'Genty Demo',Georgia,serif" font-size="${price.length > 10 ? 22 : 28}" fill="${template.textColor}">${xml(price)}</text>` : ""}
   ${product.showBarcode && barcodeUri ? `<image x="${LABEL_ZONES.barcode.x}" y="${barcodeY}" width="${LABEL_ZONES.barcode.w}" height="${LABEL_ZONES.barcode.h}" xlink:href="${barcodeUri}"/>` : ""}
@@ -1183,6 +1300,290 @@ function hexToRgb(hex) {
     (intValue & 255) / 255
   );
 }
+const TOKEN_TTL_MS = 11.5 * 60 * 60 * 1e3;
+const FETCH_TIMEOUT_MS = 6e3;
+const DEFAULTS = {
+  baseUrl: "http://127.0.0.1:3000",
+  subscribedCategories: [],
+  includedProductIds: [],
+  excludedProductIds: [],
+  autoSyncOnLaunch: true,
+  lastSyncAt: null,
+  connectedUserName: null,
+  token: null,
+  tokenExpiresAt: null
+};
+let _config = null;
+function configPath() {
+  return path.join(electron.app.getPath("userData"), "tillie.json");
+}
+function loadConfig() {
+  if (_config) return _config;
+  if (fs.existsSync(configPath())) {
+    try {
+      _config = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(configPath(), "utf8")) };
+    } catch {
+      _config = { ...DEFAULTS };
+    }
+  } else {
+    _config = { ...DEFAULTS };
+  }
+  return _config;
+}
+function saveConfig() {
+  fs.writeFileSync(configPath(), JSON.stringify(_config, null, 2), "utf8");
+}
+function publicConfig() {
+  const { token: _t, tokenExpiresAt: _e, ...rest } = loadConfig();
+  return rest;
+}
+function getTillieConfig() {
+  return publicConfig();
+}
+function setTillieConfig(patch) {
+  const cfg = loadConfig();
+  const allowed = [
+    "baseUrl",
+    "subscribedCategories",
+    "includedProductIds",
+    "excludedProductIds",
+    "autoSyncOnLaunch"
+  ];
+  for (const key of allowed) {
+    if (key in patch) cfg[key] = patch[key];
+  }
+  cfg.baseUrl = cfg.baseUrl.trim().replace(/\/+$/, "") || DEFAULTS.baseUrl;
+  saveConfig();
+  return publicConfig();
+}
+function excludeTillieProduct(tillieProductId) {
+  const cfg = loadConfig();
+  if (!cfg.excludedProductIds.includes(tillieProductId)) {
+    cfg.excludedProductIds.push(tillieProductId);
+  }
+  cfg.includedProductIds = cfg.includedProductIds.filter((id) => id !== tillieProductId);
+  saveConfig();
+}
+async function fetchTillie(path2, init = {}, auth = false) {
+  const cfg = loadConfig();
+  if (auth) {
+    if (!cfg.token || !cfg.tokenExpiresAt || Date.now() > cfg.tokenExpiresAt) {
+      throw new Error("Not connected to Tillie. Enter your Tillie PIN in Settings to connect.");
+    }
+    init.headers = { ...init.headers, Authorization: `Bearer ${cfg.token}` };
+  }
+  if (init.body) {
+    init.headers = { "Content-Type": "application/json", ...init.headers };
+  }
+  let res;
+  try {
+    res = await fetch(`${cfg.baseUrl}${path2}`, {
+      ...init,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
+  } catch {
+    throw new Error(`Tillie isn't reachable at ${cfg.baseUrl}. Is the register app running?`);
+  }
+  if (res.status === 401 || res.status === 403) {
+    cfg.token = null;
+    cfg.tokenExpiresAt = null;
+    cfg.connectedUserName = null;
+    saveConfig();
+    throw new Error("Tillie session expired. Reconnect with your PIN in Settings.");
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error(`Tillie returned an unexpected response (HTTP ${res.status}).`);
+  }
+  if (!res.ok || body.success === false) {
+    throw new Error(body.error || body.message || `Tillie request failed (HTTP ${res.status}).`);
+  }
+  return body.data ?? body;
+}
+async function tillieLogin(pin) {
+  const cfg = loadConfig();
+  let res;
+  try {
+    res = await fetch(`${cfg.baseUrl}/api/auth/pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
+  } catch {
+    throw new Error(`Tillie isn't reachable at ${cfg.baseUrl}. Is the register app running?`);
+  }
+  const body = await res.json().catch(() => null);
+  if (!body || !body.success) {
+    throw new Error(body?.error || "Tillie login failed.");
+  }
+  if (!body.token) {
+    cfg.token = null;
+    cfg.tokenExpiresAt = null;
+  } else {
+    cfg.token = body.token;
+    cfg.tokenExpiresAt = Date.now() + TOKEN_TTL_MS;
+  }
+  cfg.connectedUserName = body.user?.name || "Tillie user";
+  saveConfig();
+  return publicConfig();
+}
+function tillieDisconnect() {
+  const cfg = loadConfig();
+  cfg.token = null;
+  cfg.tokenExpiresAt = null;
+  cfg.connectedUserName = null;
+  saveConfig();
+  return publicConfig();
+}
+async function tillieCategories() {
+  const cats = await fetchTillie("/api/categories");
+  return [...cats].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+async function tillieProducts() {
+  const cfg = loadConfig();
+  const needsAuth = Boolean(cfg.token);
+  return fetchTillie("/api/products", {}, needsAuth);
+}
+function formatPrice(price) {
+  const prefix = getSettings().pricePrefix;
+  return `${prefix}${price.toFixed(2)}`;
+}
+function generateBarcode$1() {
+  const num = Math.floor(Math.random() * 9e11) + 1e11;
+  return String(num);
+}
+function categoryName(p, scope) {
+  return scope.categoryNameById.get(p.category) ?? p.category ?? "";
+}
+function buildScope(categories) {
+  const cfg = loadConfig();
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  let renamed = false;
+  cfg.subscribedCategories = cfg.subscribedCategories.map((sub) => {
+    const current = byId.get(sub.id);
+    if (current && current.name !== sub.name) {
+      renamed = true;
+      return { id: sub.id, name: current.name };
+    }
+    return sub;
+  });
+  if (renamed) saveConfig();
+  const locals = listProducts();
+  const linkedByTillieId = /* @__PURE__ */ new Map();
+  const localByBarcode = /* @__PURE__ */ new Map();
+  for (const p of locals) {
+    if (p.tillieProductId) linkedByTillieId.set(p.tillieProductId, p);
+    if (p.barcodeValue && !localByBarcode.has(p.barcodeValue)) {
+      localByBarcode.set(p.barcodeValue, p);
+    }
+  }
+  return {
+    subscribedKeys: new Set(
+      cfg.subscribedCategories.flatMap((c) => [c.id, c.name])
+    ),
+    categoryNameById: new Map(categories.map((c) => [c.id, c.name])),
+    included: new Set(cfg.includedProductIds),
+    excluded: new Set(cfg.excludedProductIds),
+    linkedByTillieId,
+    localByBarcode
+  };
+}
+function isInScope(p, scope) {
+  if (p.isActive === false) return false;
+  if (scope.excluded.has(p.id)) return false;
+  return scope.subscribedKeys.has(p.category) || scope.included.has(p.id) || scope.linkedByTillieId.has(p.id);
+}
+async function tillieListProducts() {
+  const [categories, remote] = await Promise.all([tillieCategories(), tillieProducts()]);
+  const scope = buildScope(categories);
+  return remote.filter((p) => p.isActive !== false).map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: Number(p.price) || 0,
+    barcode: p.barcode || p.sku || "",
+    category: categoryName(p, scope),
+    linked: scope.linkedByTillieId.has(p.id),
+    inScope: isInScope(p, scope)
+  })).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+}
+async function tillieSync() {
+  const [categories, remote] = await Promise.all([tillieCategories(), tillieProducts()]);
+  const scope = buildScope(categories);
+  const cfg = loadConfig();
+  const settings = getSettings();
+  const summary = {
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    duplicateBarcodes: []
+  };
+  const seenBarcodes = /* @__PURE__ */ new Set();
+  for (const p of remote) {
+    if (!isInScope(p, scope)) continue;
+    if (p.barcode) {
+      if (seenBarcodes.has(p.barcode)) {
+        if (!summary.duplicateBarcodes.includes(p.barcode)) {
+          summary.duplicateBarcodes.push(p.barcode);
+        }
+        continue;
+      }
+      seenBarcodes.add(p.barcode);
+    }
+    const price = formatPrice(Number(p.price) || 0);
+    const barcode = p.barcode || p.sku || "";
+    const catName = categoryName(p, scope);
+    const local = scope.linkedByTillieId.get(p.id) ?? (barcode ? scope.localByBarcode.get(barcode) : void 0);
+    if (local) {
+      const needsLink = local.tillieProductId !== p.id;
+      const changed = needsLink || local.name !== p.name || local.price !== price || local.category !== catName;
+      if (!changed) {
+        summary.unchanged++;
+        continue;
+      }
+      updateProduct({
+        ...local,
+        name: p.name,
+        price,
+        category: catName,
+        tillieProductId: p.id,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      summary.updated++;
+    } else {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      createProduct({
+        id: nanoid.nanoid(),
+        name: p.name,
+        price,
+        category: catName,
+        servingInfo: "",
+        nutritionInfo: "",
+        cookingInstructions: "",
+        customerName: "",
+        labelBackgroundColor: "",
+        ingredients: "",
+        allergenStatement: "",
+        barcodeValue: barcode || generateBarcode$1(),
+        barcodeImagePath: null,
+        logoImagePath: null,
+        templateId: settings.templateId,
+        showPrice: true,
+        showBarcode: true,
+        showCookingInstructions: true,
+        tillieProductId: p.id,
+        createdAt: now,
+        updatedAt: now
+      });
+      summary.created++;
+    }
+  }
+  cfg.lastSyncAt = (/* @__PURE__ */ new Date()).toISOString();
+  saveConfig();
+  return summary;
+}
 function ok(data) {
   return { ok: true, data };
 }
@@ -1226,6 +1627,8 @@ function registerIpcHandlers() {
   });
   electron.ipcMain.handle("product:delete", (_e, id) => {
     try {
+      const product = getProduct(id);
+      if (product?.tillieProductId) excludeTillieProduct(product.tillieProductId);
       deleteProduct(id);
       return ok(true);
     } catch (e) {
@@ -1243,6 +1646,7 @@ function registerIpcHandlers() {
         name: `${source.name} (copy)`,
         barcodeValue: generateBarcode(),
         barcodeImagePath: null,
+        tillieProductId: null,
         createdAt: now,
         updatedAt: now
       };
@@ -1322,6 +1726,7 @@ function registerIpcHandlers() {
           showPrice: true,
           showBarcode: true,
           showCookingInstructions: true,
+          tillieProductId: null,
           createdAt: now,
           updatedAt: now
         };
@@ -1446,8 +1851,8 @@ function registerIpcHandlers() {
   electron.ipcMain.handle("file:pickTemplateImage", async () => {
     try {
       const result = await electron.dialog.showOpenDialog({
-        title: "Select Template Image",
-        filters: [{ name: "PNG Images", extensions: ["png"] }],
+        title: "Import Label Design",
+        filters: [{ name: "Label Designs", extensions: ["pdf", "svg", "png", "jpg", "jpeg", "webp"] }],
         properties: ["openFile"]
       });
       if (result.canceled || !result.filePaths.length) return ok(null);
@@ -1456,9 +1861,9 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
-  electron.ipcMain.handle("file:saveTemplateImage", (_e, sourcePath) => {
+  electron.ipcMain.handle("file:saveTemplateImage", async (_e, sourcePath) => {
     try {
-      return ok(saveTemplateImage(sourcePath));
+      return ok(await saveTemplateImage(sourcePath));
     } catch (e) {
       return fail(String(e));
     }
@@ -1539,6 +1944,55 @@ function registerIpcHandlers() {
       return ok(readTemplatePNGBase64());
     } catch (e) {
       return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:getConfig", () => {
+    try {
+      return ok(getTillieConfig());
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:setConfig", (_e, patch) => {
+    try {
+      return ok(setTillieConfig(patch));
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:login", async (_e, pin) => {
+    try {
+      return ok(await tillieLogin(pin));
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:disconnect", () => {
+    try {
+      return ok(tillieDisconnect());
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:getCategories", async () => {
+    try {
+      return ok(await tillieCategories());
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:listProducts", async () => {
+    try {
+      return ok(await tillieListProducts());
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("tillie:sync", async () => {
+    try {
+      return ok(await tillieSync());
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
     }
   });
 }

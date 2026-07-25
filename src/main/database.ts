@@ -144,6 +144,7 @@ function normalizeProduct(product: Product): Product {
     showPrice: product.showPrice ?? true,
     showBarcode: product.showBarcode ?? true,
     showCookingInstructions: product.showCookingInstructions ?? true,
+    tillieProductId: product.tillieProductId ?? null,
     createdAt: product.createdAt ?? now,
     updatedAt: product.updatedAt ?? now,
   }

@@ -25,6 +25,17 @@ import {
 import { buildSheetPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import { getLabelTemplate } from '../shared/labelTemplates'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
+import {
+  getTillieConfig,
+  setTillieConfig,
+  tillieLogin,
+  tillieDisconnect,
+  tillieCategories,
+  tillieListProducts,
+  tillieSync,
+  excludeTillieProduct,
+} from './tillie'
+import type { TillieConfig } from './types'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -68,7 +79,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('product:delete', (_e, id: string) => {
-    try { deleteProduct(id); return ok(true) }
+    try {
+      // Exclude linked Tillie products so the next sync doesn't recreate them.
+      const product = getProduct(id)
+      if (product?.tillieProductId) excludeTillieProduct(product.tillieProductId)
+      deleteProduct(id)
+      return ok(true)
+    }
     catch (e) { return fail(String(e)) }
   })
 
@@ -83,6 +100,7 @@ export function registerIpcHandlers(): void {
         name: `${source.name} (copy)`,
         barcodeValue: generateBarcode(),
         barcodeImagePath: null,
+        tillieProductId: null,
         createdAt: now,
         updatedAt: now,
       }
@@ -171,6 +189,7 @@ export function registerIpcHandlers(): void {
           showPrice: true,
           showBarcode: true,
           showCookingInstructions: true,
+          tillieProductId: null,
           createdAt: now,
           updatedAt: now,
         }
@@ -279,8 +298,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:pickTemplateImage', async () => {
     try {
       const result = await dialog.showOpenDialog({
-        title: 'Select Template Image',
-        filters: [{ name: 'PNG Images', extensions: ['png'] }],
+        title: 'Import Label Design',
+        filters: [{ name: 'Label Designs', extensions: ['pdf', 'svg', 'png', 'jpg', 'jpeg', 'webp'] }],
         properties: ['openFile'],
       })
       if (result.canceled || !result.filePaths.length) return ok(null)
@@ -288,8 +307,8 @@ export function registerIpcHandlers(): void {
     } catch (e) { return fail(String(e)) }
   })
 
-  ipcMain.handle('file:saveTemplateImage', (_e, sourcePath: string) => {
-    try { return ok(saveTemplateImage(sourcePath)) }
+  ipcMain.handle('file:saveTemplateImage', async (_e, sourcePath: string) => {
+    try { return ok(await saveTemplateImage(sourcePath)) }
     catch (e) { return fail(String(e)) }
   })
 
@@ -368,6 +387,43 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:getTemplatePNG', () => {
     try { return ok(readTemplatePNGBase64()) }
     catch (e) { return fail(String(e)) }
+  })
+
+  // ── Tillie POS sync ───────────────────────────────────────────────────────
+
+  ipcMain.handle('tillie:getConfig', () => {
+    try { return ok(getTillieConfig()) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('tillie:setConfig', (_e, patch: Partial<TillieConfig>) => {
+    try { return ok(setTillieConfig(patch)) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('tillie:login', async (_e, pin: string) => {
+    try { return ok(await tillieLogin(pin)) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('tillie:disconnect', () => {
+    try { return ok(tillieDisconnect()) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('tillie:getCategories', async () => {
+    try { return ok(await tillieCategories()) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('tillie:listProducts', async () => {
+    try { return ok(await tillieListProducts()) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('tillie:sync', async () => {
+    try { return ok(await tillieSync()) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
   })
 }
 

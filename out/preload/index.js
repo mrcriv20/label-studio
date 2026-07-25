@@ -44,6 +44,16 @@ const api = {
   // Print
   print: {
     sheet: (products, startSlot) => electron.ipcRenderer.invoke("print:sheet", products, startSlot)
+  },
+  // Tillie POS sync
+  tillie: {
+    getConfig: () => electron.ipcRenderer.invoke("tillie:getConfig"),
+    setConfig: (patch) => electron.ipcRenderer.invoke("tillie:setConfig", patch),
+    login: (pin) => electron.ipcRenderer.invoke("tillie:login", pin),
+    disconnect: () => electron.ipcRenderer.invoke("tillie:disconnect"),
+    getCategories: () => electron.ipcRenderer.invoke("tillie:getCategories"),
+    listProducts: () => electron.ipcRenderer.invoke("tillie:listProducts"),
+    sync: () => electron.ipcRenderer.invoke("tillie:sync")
   }
 };
 electron.contextBridge.exposeInMainWorld("api", api);
