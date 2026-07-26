@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
-  type SortKey = 'name' | 'price' | 'barcodeValue' | 'updatedAt'
+  type SortKey = 'name' | 'category' | 'price' | 'barcodeValue' | 'updatedAt'
 
   const [products, setProducts] = useState<Product[]>([])
   const [query, setQuery] = useState('')
@@ -277,6 +277,11 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                     </button>
                   </th>
                   <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <button type="button" onClick={() => toggleSort('category')} style={sortButtonStyle}>
+                      Category {renderSortIcon('category')}
+                    </button>
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('price')} style={sortButtonStyle}>
                       Price {renderSortIcon('price')}
                     </button>
@@ -320,6 +325,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                         </span>
                       )}
                     </td>
+                    <td style={{ padding: '11px 16px', color: '#334155' }}>{p.category || 'Uncategorized'}</td>
                     <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
                     <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
                     <td style={{ padding: '11px 16px', color: '#94a3b8', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>
