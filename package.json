@@ -1,7 +1,7 @@
 {
   "name": "tillie-print",
   "productName": "Tillie Print",
-  "version": "1.3.1",
+  "version": "1.3.3",
   "description": "Retail product label designer for small Markets",
   "main": "./out/main/index.js",
   "author": "Tillie POS, LLC",

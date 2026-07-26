@@ -7739,6 +7739,10 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
           "Product ",
           renderSortIcon("name")
         ] }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("category"), style: sortButtonStyle, children: [
+          "Category ",
+          renderSortIcon("category")
+        ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: () => toggleSort("price"), style: sortButtonStyle, children: [
           "Price ",
           renderSortIcon("price")
@@ -7780,6 +7784,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
                 }
               )
             ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155" }, children: p2.category || "Uncategorized" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#334155", fontFamily: "monospace" }, children: p2.price }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontFamily: "monospace", fontSize: 11 }, children: p2.barcodeValue }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "11px 16px", color: "#94a3b8", fontSize: 12 }, children: fmtDate(p2.updatedAt) }),
