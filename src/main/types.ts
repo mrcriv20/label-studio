@@ -71,6 +71,10 @@ export interface TillieCategory {
 
 export interface TillieConfig {
   baseUrl: string
+  // When set, connect straight to Tillie's MongoDB Atlas database instead of
+  // the register's HTTP API — works from any computer with internet access.
+  mongoUri: string
+  mongoDb: string
   // Stored as {id, name} pairs; names are re-resolved by id on each sync so
   // category renames in Tillie don't break the subscription.
   subscribedCategories: Array<{ id: string; name: string }>

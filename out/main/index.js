@@ -11,6 +11,7 @@ const pdfLib = require("pdf-lib");
 const fontkit = require("@pdf-lib/fontkit");
 const os = require("os");
 const bwipjs = require("bwip-js");
+const mongodb = require("mongodb");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -1304,6 +1305,8 @@ const TOKEN_TTL_MS = 11.5 * 60 * 60 * 1e3;
 const FETCH_TIMEOUT_MS = 6e3;
 const DEFAULTS = {
   baseUrl: "http://127.0.0.1:3000",
+  mongoUri: "",
+  mongoDb: "pos",
   subscribedCategories: [],
   includedProductIds: [],
   excludedProductIds: [],
@@ -1344,6 +1347,8 @@ function setTillieConfig(patch) {
   const cfg = loadConfig();
   const allowed = [
     "baseUrl",
+    "mongoUri",
+    "mongoDb",
     "subscribedCategories",
     "includedProductIds",
     "excludedProductIds",
@@ -1353,6 +1358,8 @@ function setTillieConfig(patch) {
     if (key in patch) cfg[key] = patch[key];
   }
   cfg.baseUrl = cfg.baseUrl.trim().replace(/\/+$/, "") || DEFAULTS.baseUrl;
+  cfg.mongoUri = cfg.mongoUri.trim();
+  cfg.mongoDb = cfg.mongoDb.trim() || DEFAULTS.mongoDb;
   saveConfig();
   return publicConfig();
 }
@@ -1402,6 +1409,37 @@ async function fetchTillie(path2, init = {}, auth = false) {
   }
   return body.data ?? body;
 }
+let _mongo = null;
+let _mongoKey = "";
+function usesDb() {
+  return Boolean(loadConfig().mongoUri);
+}
+async function tillieDb() {
+  const cfg = loadConfig();
+  const key = `${cfg.mongoUri}|${cfg.mongoDb}`;
+  if (_mongo && _mongoKey !== key) {
+    await _mongo.close().catch(() => {
+    });
+    _mongo = null;
+  }
+  if (!_mongo) {
+    try {
+      const client = new mongodb.MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8e3 });
+      await client.connect();
+      _mongo = client;
+      _mongoKey = key;
+    } catch {
+      throw new Error(
+        "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
+      );
+    }
+  }
+  return _mongo.db(cfg.mongoDb || "pos");
+}
+function toApp(doc) {
+  const { _id, ...rest } = doc;
+  return { id: String(_id), ...rest };
+}
 async function tillieLogin(pin) {
   const cfg = loadConfig();
   let res;
@@ -1439,13 +1477,39 @@ function tillieDisconnect() {
   return publicConfig();
 }
 async function tillieCategories() {
-  const cats = await fetchTillie("/api/categories");
+  let cats;
+  if (usesDb()) {
+    const db = await tillieDb();
+    const docs = await db.collection("categories").find({}).toArray();
+    cats = docs.map((d) => toApp(d));
+  } else {
+    cats = await fetchTillie("/api/categories");
+  }
   return [...cats].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 async function tillieProducts() {
+  if (usesDb()) {
+    const db = await tillieDb();
+    const docs = await db.collection("products").find({}).toArray();
+    return docs.map((d) => toApp(d));
+  }
   const cfg = loadConfig();
   const needsAuth = Boolean(cfg.token);
   return fetchTillie("/api/products", {}, needsAuth);
+}
+async function createTillieProduct(doc) {
+  if (usesDb()) {
+    const db = await tillieDb();
+    const result = await db.collection("products").insertOne({ ...doc });
+    return String(result.insertedId);
+  }
+  const cfg = loadConfig();
+  const created = await fetchTillie(
+    "/api/products",
+    { method: "POST", body: JSON.stringify(doc) },
+    Boolean(cfg.token)
+  );
+  return created.id;
 }
 function formatPrice(price) {
   const prefix = getSettings().pricePrefix;
@@ -1616,28 +1680,21 @@ async function tillieSync() {
       summary.pushSkipped.push(local.name);
       continue;
     }
-    const created = await fetchTillie(
-      "/api/products",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name: local.name,
-          price,
-          category: categoryIdByName.get(local.category) ?? local.category,
-          barcode: local.barcodeValue,
-          sku: local.barcodeValue,
-          imageUrl: "",
-          taxable: false,
-          isActive: true,
-          sortOrder: 0,
-          stock: 0,
-          allowAddWhenOutOfStock: true,
-          lastModified: (/* @__PURE__ */ new Date()).toISOString()
-        })
-      },
-      Boolean(cfg.token)
-    );
-    updateProduct({ ...local, tillieProductId: created.id, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    const createdId = await createTillieProduct({
+      name: local.name,
+      price,
+      category: categoryIdByName.get(local.category) ?? local.category,
+      barcode: local.barcodeValue,
+      sku: local.barcodeValue,
+      imageUrl: "",
+      taxable: false,
+      isActive: true,
+      sortOrder: 0,
+      stock: 0,
+      allowAddWhenOutOfStock: true,
+      lastModified: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    updateProduct({ ...local, tillieProductId: createdId, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
     summary.pushed++;
   }
   cfg.lastSyncAt = (/* @__PURE__ */ new Date()).toISOString();

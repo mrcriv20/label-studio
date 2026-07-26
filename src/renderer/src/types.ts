@@ -35,6 +35,8 @@ export interface TillieCategory {
 
 export interface TillieConfig {
   baseUrl: string
+  mongoUri: string
+  mongoDb: string
   subscribedCategories: Array<{ id: string; name: string }>
   includedProductIds: string[]
   excludedProductIds: string[]

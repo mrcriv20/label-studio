@@ -1,7 +1,7 @@
 {
   "name": "tillie-print",
   "productName": "Tillie Print",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Retail product label designer for small Markets",
   "main": "./out/main/index.js",
   "author": "Tillie POS, LLC",
@@ -24,6 +24,7 @@
     "electron-store": "^8.2.0",
     "jsbarcode": "^3.11.6",
     "lucide-react": "^0.390.0",
+    "mongodb": "^7.5.0",
     "nanoid": "^3.3.7",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",

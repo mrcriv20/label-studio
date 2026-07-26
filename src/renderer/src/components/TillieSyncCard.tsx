@@ -7,6 +7,8 @@ export default function TillieSyncCard(): JSX.Element {
   const [categories, setCategories] = useState<TillieCategory[] | null>(null)
   const [products, setProducts] = useState<TillieProductSummary[] | null>(null)
   const [baseUrlDraft, setBaseUrlDraft] = useState('')
+  const [mongoUriDraft, setMongoUriDraft] = useState('')
+  const [showDbSetup, setShowDbSetup] = useState(false)
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -127,7 +129,19 @@ export default function TillieSyncCard(): JSX.Element {
     refreshProducts()
   }
 
-  const connected = Boolean(config?.connectedUserName)
+  const dbMode = Boolean(config?.mongoUri)
+  const connected = dbMode || Boolean(config?.connectedUserName)
+
+  async function saveMongoUri(uri: string): Promise<void> {
+    const result = await window.api.tillie.setConfig({ mongoUri: uri })
+    if (!result.ok) { setError(result.error); return }
+    setConfig(result.data)
+    setMongoUriDraft('')
+    setShowDbSetup(false)
+    setError('')
+    setProducts(null)
+    refreshCategories()
+  }
   const productCountFor = (name: string): number | null =>
     products ? products.filter((p) => p.category === name).length : null
 
@@ -153,57 +167,111 @@ export default function TillieSyncCard(): JSX.Element {
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* Connection */}
-        <div>
-          <label className="label-text">Tillie address</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="input"
-              value={baseUrlDraft}
-              onChange={(e) => setBaseUrlDraft(e.target.value)}
-              placeholder="http://127.0.0.1:3000"
-            />
-            <button
-              className="btn-outline"
-              style={{ flexShrink: 0 }}
-              onClick={saveBaseUrl}
-              disabled={!config || baseUrlDraft === config.baseUrl}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-
-        {connected ? (
+        {dbMode ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#16a34a' }}>
             <Plug size={14} />
-            Connected as {config?.connectedUserName}
-            <button className="btn-outline btn-sm" onClick={disconnect} style={{ marginLeft: 'auto' }}>
+            Connected directly to Tillie&apos;s database
+            <button
+              className="btn-outline btn-sm"
+              onClick={() => saveMongoUri('')}
+              style={{ marginLeft: 'auto' }}
+            >
               <Unplug size={13} /> Disconnect
             </button>
           </div>
         ) : (
-          <div>
-            <label className="label-text">Tillie PIN</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                style={{ maxWidth: 160 }}
-                type="password"
-                inputMode="numeric"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && pin.trim()) connect() }}
-                placeholder="Enter register PIN"
-              />
-              <button className="btn-outline" onClick={connect} disabled={busy || !pin.trim()} style={{ flexShrink: 0 }}>
-                <Plug size={13} /> {busy ? 'Connecting…' : 'Connect'}
-              </button>
+          <>
+            {/* Register (HTTP) connection */}
+            <div>
+              <label className="label-text">Tillie address</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="input"
+                  value={baseUrlDraft}
+                  onChange={(e) => setBaseUrlDraft(e.target.value)}
+                  placeholder="http://127.0.0.1:3000"
+                />
+                <button
+                  className="btn-outline"
+                  style={{ flexShrink: 0 }}
+                  onClick={saveBaseUrl}
+                  disabled={!config || baseUrlDraft === config.baseUrl}
+                >
+                  Save
+                </button>
+              </div>
             </div>
-            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
-              Use the same PIN you sign in with at the register. The PIN itself is never stored.
-            </p>
-          </div>
+
+            {connected ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#16a34a' }}>
+                <Plug size={14} />
+                Connected as {config?.connectedUserName}
+                <button className="btn-outline btn-sm" onClick={disconnect} style={{ marginLeft: 'auto' }}>
+                  <Unplug size={13} /> Disconnect
+                </button>
+              </div>
+            ) : (
+              <div>
+                <label className="label-text">Tillie PIN</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="input"
+                    style={{ maxWidth: 160 }}
+                    type="password"
+                    inputMode="numeric"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && pin.trim()) connect() }}
+                    placeholder="Enter register PIN"
+                  />
+                  <button className="btn-outline" onClick={connect} disabled={busy || !pin.trim()} style={{ flexShrink: 0 }}>
+                    <Plug size={13} /> {busy ? 'Connecting…' : 'Connect'}
+                  </button>
+                </div>
+                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                  Use the same PIN you sign in with at the register. The PIN itself is never stored.
+                </p>
+              </div>
+            )}
+
+            {/* Direct database connection (works from anywhere with internet) */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowDbSetup((v) => !v)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', padding: 0, fontSize: 12, fontWeight: 500, color: '#2563eb', cursor: 'pointer' }}
+              >
+                {showDbSetup ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                Connect directly to the database instead
+              </button>
+              {showDbSetup && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      className="input"
+                      type="password"
+                      value={mongoUriDraft}
+                      onChange={(e) => setMongoUriDraft(e.target.value)}
+                      placeholder="mongodb+srv://…  (Atlas connection string)"
+                    />
+                    <button
+                      className="btn-outline"
+                      style={{ flexShrink: 0 }}
+                      onClick={() => saveMongoUri(mongoUriDraft.trim())}
+                      disabled={!mongoUriDraft.trim()}
+                    >
+                      Connect
+                    </button>
+                  </div>
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                    Uses the same MongoDB Atlas connection string as the register (in its tillie.env
+                    file). Works from any computer with internet — no PIN or register connection
+                    needed. Keep this string private; it grants full access to store data.
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {/* Category subscriptions */}

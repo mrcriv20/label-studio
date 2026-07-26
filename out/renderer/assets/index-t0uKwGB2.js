@@ -13225,6 +13225,8 @@ function TillieSyncCard() {
   const [categories, setCategories] = reactExports.useState(null);
   const [products, setProducts] = reactExports.useState(null);
   const [baseUrlDraft, setBaseUrlDraft] = reactExports.useState("");
+  const [mongoUriDraft, setMongoUriDraft] = reactExports.useState("");
+  const [showDbSetup, setShowDbSetup] = reactExports.useState(false);
   const [pin, setPin] = reactExports.useState("");
   const [busy, setBusy] = reactExports.useState(false);
   const [syncing, setSyncing] = reactExports.useState(false);
@@ -13347,7 +13349,21 @@ function TillieSyncCard() {
     if (cfg.ok) setConfig(cfg.data);
     refreshProducts();
   }
-  const connected = Boolean(config?.connectedUserName);
+  const dbMode = Boolean(config?.mongoUri);
+  const connected = dbMode || Boolean(config?.connectedUserName);
+  async function saveMongoUri(uri) {
+    const result = await window.api.tillie.setConfig({ mongoUri: uri });
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setConfig(result.data);
+    setMongoUriDraft("");
+    setShowDbSetup(false);
+    setError("");
+    setProducts(null);
+    refreshCategories();
+  }
   const productCountFor = (name) => products ? products.filter((p2) => p2.category === name).length : null;
   const pickerGroups = (() => {
     if (!products) return [];
@@ -13366,63 +13382,119 @@ function TillieSyncCard() {
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#64748b", margin: "0 0 16px", lineHeight: 1.5 }, children: "Pull products from your Tillie register. Labels linked to Tillie get their name, price, and category updated automatically — Tillie is the source of truth for those fields." }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie address" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "input",
-            {
-              className: "input",
-              value: baseUrlDraft,
-              onChange: (e) => setBaseUrlDraft(e.target.value),
-              placeholder: "http://127.0.0.1:3000"
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "button",
-            {
-              className: "btn-outline",
-              style: { flexShrink: 0 },
-              onClick: saveBaseUrl,
-              disabled: !config || baseUrlDraft === config.baseUrl,
-              children: "Save"
-            }
-          )
-        ] })
-      ] }),
-      connected ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#16a34a" }, children: [
+      dbMode ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#16a34a" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 14 }),
-        "Connected as ",
-        config?.connectedUserName,
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline btn-sm", onClick: disconnect, style: { marginLeft: "auto" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(Unplug, { size: 13 }),
-          " Disconnect"
-        ] })
-      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie PIN" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "input",
-            {
-              className: "input",
-              style: { maxWidth: 160 },
-              type: "password",
-              inputMode: "numeric",
-              value: pin,
-              onChange: (e) => setPin(e.target.value),
-              onKeyDown: (e) => {
-                if (e.key === "Enter" && pin.trim()) connect();
-              },
-              placeholder: "Enter register PIN"
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: connect, disabled: busy || !pin.trim(), style: { flexShrink: 0 }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 13 }),
-            " ",
-            busy ? "Connecting…" : "Connect"
+        "Connected directly to Tillie's database",
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            className: "btn-outline btn-sm",
+            onClick: () => saveMongoUri(""),
+            style: { marginLeft: "auto" },
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Unplug, { size: 13 }),
+              " Disconnect"
+            ]
+          }
+        )
+      ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie address" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "input",
+                value: baseUrlDraft,
+                onChange: (e) => setBaseUrlDraft(e.target.value),
+                placeholder: "http://127.0.0.1:3000"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                className: "btn-outline",
+                style: { flexShrink: 0 },
+                onClick: saveBaseUrl,
+                disabled: !config || baseUrlDraft === config.baseUrl,
+                children: "Save"
+              }
+            )
           ] })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Use the same PIN you sign in with at the register. The PIN itself is never stored." })
+        connected ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#16a34a" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 14 }),
+          "Connected as ",
+          config?.connectedUserName,
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline btn-sm", onClick: disconnect, style: { marginLeft: "auto" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Unplug, { size: 13 }),
+            " Disconnect"
+          ] })
+        ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Tillie PIN" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                className: "input",
+                style: { maxWidth: 160 },
+                type: "password",
+                inputMode: "numeric",
+                value: pin,
+                onChange: (e) => setPin(e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === "Enter" && pin.trim()) connect();
+                },
+                placeholder: "Enter register PIN"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-outline", onClick: connect, disabled: busy || !pin.trim(), style: { flexShrink: 0 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(Plug, { size: 13 }),
+              " ",
+              busy ? "Connecting…" : "Connect"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Use the same PIN you sign in with at the register. The PIN itself is never stored." })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              onClick: () => setShowDbSetup((v2) => !v2),
+              style: { display: "inline-flex", alignItems: "center", gap: 4, border: "none", background: "transparent", padding: 0, fontSize: 12, fontWeight: 500, color: "#2563eb", cursor: "pointer" },
+              children: [
+                showDbSetup ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 13 }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronRight, { size: 13 }),
+                "Connect directly to the database instead"
+              ]
+            }
+          ),
+          showDbSetup && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 8 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  className: "input",
+                  type: "password",
+                  value: mongoUriDraft,
+                  onChange: (e) => setMongoUriDraft(e.target.value),
+                  placeholder: "mongodb+srv://…  (Atlas connection string)"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  className: "btn-outline",
+                  style: { flexShrink: 0 },
+                  onClick: () => saveMongoUri(mongoUriDraft.trim()),
+                  disabled: !mongoUriDraft.trim(),
+                  children: "Connect"
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Uses the same MongoDB Atlas connection string as the register (in its tillie.env file). Works from any computer with internet — no PIN or register connection needed. Keep this string private; it grants full access to store data." })
+          ] })
+        ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Categories to sync" }),

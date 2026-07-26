@@ -10,6 +10,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { nanoid } from 'nanoid'
+import { MongoClient } from 'mongodb'
 import type {
   Product,
   TillieCategory,
@@ -30,6 +31,8 @@ interface StoredConfig extends TillieConfig {
 
 const DEFAULTS: StoredConfig = {
   baseUrl: 'http://127.0.0.1:3000',
+  mongoUri: '',
+  mongoDb: 'pos',
   subscribedCategories: [],
   includedProductIds: [],
   excludedProductIds: [],
@@ -78,6 +81,8 @@ export function setTillieConfig(patch: Partial<TillieConfig>): TillieConfig {
   const cfg = loadConfig()
   const allowed: Array<keyof TillieConfig> = [
     'baseUrl',
+    'mongoUri',
+    'mongoDb',
     'subscribedCategories',
     'includedProductIds',
     'excludedProductIds',
@@ -87,6 +92,8 @@ export function setTillieConfig(patch: Partial<TillieConfig>): TillieConfig {
     if (key in patch) (cfg as unknown as Record<string, unknown>)[key] = patch[key]
   }
   cfg.baseUrl = cfg.baseUrl.trim().replace(/\/+$/, '') || DEFAULTS.baseUrl
+  cfg.mongoUri = cfg.mongoUri.trim()
+  cfg.mongoDb = cfg.mongoDb.trim() || DEFAULTS.mongoDb
   saveConfig()
   return publicConfig()
 }
@@ -152,6 +159,46 @@ async function fetchTillie<T>(path: string, init: RequestInit = {}, auth = false
   return (body.data ?? body) as T
 }
 
+// ── Direct database mode ─────────────────────────────────────────────────────
+// Tillie's data lives in MongoDB Atlas (cloud), so this app can read/write it
+// directly over the internet without reaching the register machine. Active
+// whenever a connection string is configured; otherwise HTTP mode is used.
+
+let _mongo: MongoClient | null = null
+let _mongoKey = ''
+
+function usesDb(): boolean {
+  return Boolean(loadConfig().mongoUri)
+}
+
+async function tillieDb() {
+  const cfg = loadConfig()
+  const key = `${cfg.mongoUri}|${cfg.mongoDb}`
+  if (_mongo && _mongoKey !== key) {
+    await _mongo.close().catch(() => {})
+    _mongo = null
+  }
+  if (!_mongo) {
+    try {
+      const client = new MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8000 })
+      await client.connect()
+      _mongo = client
+      _mongoKey = key
+    } catch {
+      throw new Error(
+        "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
+      )
+    }
+  }
+  return _mongo.db(cfg.mongoDb || 'pos')
+}
+
+// Mirror of Tillie's db mapper: Mongo's _id becomes the app-level string id.
+function toApp<T>(doc: Record<string, unknown>): T {
+  const { _id, ...rest } = doc
+  return { id: String(_id), ...rest } as T
+}
+
 // ── API calls ────────────────────────────────────────────────────────────────
 
 interface TillieRemoteProduct {
@@ -207,14 +254,42 @@ export function tillieDisconnect(): TillieConfig {
 }
 
 export async function tillieCategories(): Promise<TillieCategory[]> {
-  const cats = await fetchTillie<TillieCategory[]>('/api/categories')
+  let cats: TillieCategory[]
+  if (usesDb()) {
+    const db = await tillieDb()
+    const docs = await db.collection('categories').find({}).toArray()
+    cats = docs.map((d) => toApp<TillieCategory>(d))
+  } else {
+    cats = await fetchTillie<TillieCategory[]>('/api/categories')
+  }
   return [...cats].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
 }
 
 async function tillieProducts(): Promise<TillieRemoteProduct[]> {
+  if (usesDb()) {
+    const db = await tillieDb()
+    const docs = await db.collection('products').find({}).toArray()
+    return docs.map((d) => toApp<TillieRemoteProduct>(d))
+  }
   const cfg = loadConfig()
   const needsAuth = Boolean(cfg.token)
   return fetchTillie<TillieRemoteProduct[]>('/api/products', {}, needsAuth)
+}
+
+/** Create a product in Tillie; returns its new id. */
+async function createTillieProduct(doc: Record<string, unknown>): Promise<string> {
+  if (usesDb()) {
+    const db = await tillieDb()
+    const result = await db.collection('products').insertOne({ ...doc })
+    return String(result.insertedId)
+  }
+  const cfg = loadConfig()
+  const created = await fetchTillie<TillieRemoteProduct>(
+    '/api/products',
+    { method: 'POST', body: JSON.stringify(doc) },
+    Boolean(cfg.token)
+  )
+  return created.id
 }
 
 // ── Scope + sync ─────────────────────────────────────────────────────────────
@@ -449,28 +524,21 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
 
     // Tillie's product data references categories by id, so resolve the
     // label's category name to its id when one exists.
-    const created = await fetchTillie<TillieRemoteProduct>(
-      '/api/products',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          name: local.name,
-          price,
-          category: categoryIdByName.get(local.category) ?? local.category,
-          barcode: local.barcodeValue,
-          sku: local.barcodeValue,
-          imageUrl: '',
-          taxable: false,
-          isActive: true,
-          sortOrder: 0,
-          stock: 0,
-          allowAddWhenOutOfStock: true,
-          lastModified: new Date().toISOString(),
-        }),
-      },
-      Boolean(cfg.token)
-    )
-    updateProduct({ ...local, tillieProductId: created.id, updatedAt: new Date().toISOString() })
+    const createdId = await createTillieProduct({
+      name: local.name,
+      price,
+      category: categoryIdByName.get(local.category) ?? local.category,
+      barcode: local.barcodeValue,
+      sku: local.barcodeValue,
+      imageUrl: '',
+      taxable: false,
+      isActive: true,
+      sortOrder: 0,
+      stock: 0,
+      allowAddWhenOutOfStock: true,
+      lastModified: new Date().toISOString(),
+    })
+    updateProduct({ ...local, tillieProductId: createdId, updatedAt: new Date().toISOString() })
     summary.pushed++
   }
 
