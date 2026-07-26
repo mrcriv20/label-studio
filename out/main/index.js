@@ -1433,8 +1433,18 @@ async function tillieDb() {
         "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
       );
     }
+    try {
+      const listing = await _mongo.db().admin().listDatabases({ nameOnly: true });
+      const names = listing.databases.map((d) => d.name).filter((n) => !["admin", "local", "config"].includes(n));
+      const configured = cfg.mongoDb || "pos";
+      if (!names.includes(configured) && names.length === 1) {
+        cfg.mongoDb = names[0];
+        saveConfig();
+      }
+    } catch {
+    }
   }
-  return _mongo.db(cfg.mongoDb || "pos");
+  return _mongo.db(loadConfig().mongoDb || "pos");
 }
 function toApp(doc) {
   const { _id, ...rest } = doc;

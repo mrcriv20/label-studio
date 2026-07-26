@@ -189,8 +189,26 @@ async function tillieDb() {
         "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
       )
     }
+    // The database name isn't in the connection string, and the Atlas user is
+    // often scoped to a single database whose name we can't guess (e.g.
+    // "pos-dev" rather than the default "pos"). If the configured name isn't
+    // among the databases this user can see and there is exactly one
+    // candidate, adopt it.
+    try {
+      const listing = await _mongo.db().admin().listDatabases({ nameOnly: true })
+      const names = listing.databases
+        .map((d) => d.name)
+        .filter((n) => !['admin', 'local', 'config'].includes(n))
+      const configured = cfg.mongoDb || 'pos'
+      if (!names.includes(configured) && names.length === 1) {
+        cfg.mongoDb = names[0]
+        saveConfig()
+      }
+    } catch {
+      // Listing may be denied; stick with the configured name.
+    }
   }
-  return _mongo.db(cfg.mongoDb || 'pos')
+  return _mongo.db(loadConfig().mongoDb || 'pos')
 }
 
 // Mirror of Tillie's db mapper: Mongo's _id becomes the app-level string id.
