@@ -70,7 +70,10 @@ function loadSettings() {
     labelBackgroundColor: "",
     titleFontId: "bundled:lora",
     priceFontId: "bundled:genty",
-    bodyFontId: "bundled:avenir"
+    bodyFontId: "bundled:avenir",
+    rollPrinterName: "",
+    rollLabelWidthIn: "4",
+    rollLabelHeightIn: "2.5"
   };
   if (fs.existsSync(p)) {
     try {
@@ -1039,6 +1042,39 @@ async function buildLabelPDF(product, topImageBytes, barcodeBytes) {
   const customBackground = customPreviewPath && fs.existsSync(customPreviewPath) ? await embedImageAsset(doc, fs.readFileSync(customPreviewPath), customPreviewPath) : null;
   const page = doc.addPage([template.width, template.height]);
   await drawLabel(page, product, topImage, barcodeImage, customBackground, fonts);
+  return doc.save();
+}
+async function buildRollLabelPDF(product, widthIn, heightIn) {
+  const topImageBytes = getTopImageBytes(product);
+  const barcodeBytes = await getBarcodePNG(product);
+  const labelBytes = await buildLabelPDF(product, topImageBytes, barcodeBytes);
+  const pageW = widthIn * 72;
+  const pageH = heightIn * 72;
+  const doc = await pdfLib.PDFDocument.create();
+  const [label] = await doc.embedPdf(labelBytes);
+  const rotate = label.width >= label.height !== pageW >= pageH;
+  const effW = rotate ? label.height : label.width;
+  const effH = rotate ? label.width : label.height;
+  const scale = Math.min(pageW / effW, pageH / effH);
+  const drawW = label.width * scale;
+  const drawH = label.height * scale;
+  const page = doc.addPage([pageW, pageH]);
+  if (rotate) {
+    page.drawPage(label, {
+      x: (pageW + drawH) / 2,
+      y: (pageH - drawW) / 2,
+      xScale: scale,
+      yScale: scale,
+      rotate: pdfLib.degrees(90)
+    });
+  } else {
+    page.drawPage(label, {
+      x: (pageW - drawW) / 2,
+      y: (pageH - drawH) / 2,
+      xScale: scale,
+      yScale: scale
+    });
+  }
   return doc.save();
 }
 async function exportSingleLabelPDF(product, outputPath) {
@@ -2073,6 +2109,38 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
+  electron.ipcMain.handle("print:listPrinters", async () => {
+    try {
+      const win = electron.BrowserWindow.getAllWindows()[0];
+      if (!win) return fail("No window available to query printers");
+      const printers = await win.webContents.getPrintersAsync();
+      return ok(printers.map((p) => ({
+        name: p.name,
+        displayName: p.displayName,
+        // Not in Electron's current typings but still present at runtime on
+        // platforms that report a default printer.
+        isDefault: Boolean(p.isDefault)
+      })));
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle(
+    "print:rollLabel",
+    async (_e, product, opts) => {
+      const tempPath = path.join(electron.app.getPath("temp"), `roll-label-print-${Date.now()}-${nanoid.nanoid(8)}.pdf`);
+      try {
+        if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail("Label size must be positive numbers.");
+        const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn);
+        fs.writeFileSync(tempPath, pdfBytes);
+        const printed = await printPdfToRoll(tempPath, opts);
+        scheduleTempFileCleanup(tempPath);
+        return ok(printed);
+      } catch (e) {
+        return fail(String(e));
+      }
+    }
+  );
   electron.ipcMain.handle("tillie:getConfig", () => {
     try {
       return ok(getTillieConfig());
@@ -2126,6 +2194,68 @@ function registerIpcHandlers() {
 function generateBarcode() {
   const num = Math.floor(Math.random() * 9e11) + 1e11;
   return String(num);
+}
+async function printPdfToRoll(pdfPath, opts) {
+  const silent = Boolean(opts.printerName);
+  return new Promise((resolve, reject) => {
+    const printWin = new electron.BrowserWindow({
+      width: 700,
+      height: 500,
+      show: !silent,
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: false }
+    });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (!printWin.isDestroyed()) printWin.close();
+      resolve(result);
+    };
+    printWin.webContents.once("did-finish-load", () => {
+      setTimeout(() => {
+        if (settled || printWin.isDestroyed()) return;
+        const options = {
+          silent,
+          deviceName: opts.printerName || void 0,
+          printBackground: true,
+          // Exact roll media size, in microns.
+          pageSize: {
+            width: Math.round(opts.widthIn * 25400),
+            height: Math.round(opts.heightIn * 25400)
+          },
+          landscape: false,
+          margins: { marginType: "none" },
+          copies: Math.max(1, Math.floor(opts.copies) || 1)
+        };
+        printWin.webContents.print(options, (success, failureReason) => {
+          if (!success && failureReason && failureReason !== "cancelled") {
+            if (!settled) {
+              settled = true;
+              if (!printWin.isDestroyed()) printWin.close();
+              reject(new Error(`Print failed: ${failureReason}`));
+            }
+            return;
+          }
+          finish(success);
+        });
+      }, 400);
+    });
+    printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
+      if (!settled) {
+        settled = true;
+        if (!printWin.isDestroyed()) printWin.destroy();
+        reject(new Error(`Failed to load printable PDF: ${desc}`));
+      }
+    });
+    printWin.loadURL(url.pathToFileURL(pdfPath).toString()).catch((err) => {
+      if (!settled) {
+        settled = true;
+        if (!printWin.isDestroyed()) printWin.destroy();
+        reject(err);
+      }
+    });
+  });
 }
 async function printPdfWithDialog(pdfPath) {
   return new Promise((resolve, reject) => {

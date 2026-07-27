@@ -7401,6 +7401,22 @@ const Settings$1 = createLucideIcon("Settings", [
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
+const Sticker = createLucideIcon("Sticker", [
+  [
+    "path",
+    { d: "M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z", key: "1wis1t" }
+  ],
+  ["path", { d: "M14 3v4a2 2 0 0 0 2 2h4", key: "36rjfy" }],
+  ["path", { d: "M8 13h0", key: "jdup5h" }],
+  ["path", { d: "M16 13h0", key: "l4i2ga" }],
+  ["path", { d: "M10 16s.8 1 2 1c1.3 0 2-1 2-1", key: "1vvgv3" }]
+]);
+/**
+ * @license lucide-react v0.390.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
 const Store = createLucideIcon("Store", [
   ["path", { d: "m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", key: "ztvudi" }],
   ["path", { d: "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", key: "1b2hhj" }],
@@ -7511,6 +7527,147 @@ function Nav({ current, onNavigate }) {
     )) })
   ] });
 }
+const PRESETS = [
+  { id: "4x2.5", label: '4" × 2.5" (matches sheet labels)', w: 4, h: 2.5 },
+  { id: "4x3", label: '4" × 3"', w: 4, h: 3 },
+  { id: "4x6", label: '4" × 6"', w: 4, h: 6 },
+  { id: "3x2", label: '3" × 2"', w: 3, h: 2 },
+  { id: "2.25x1.25", label: '2.25" × 1.25"', w: 2.25, h: 1.25 },
+  { id: "2x1", label: '2" × 1"', w: 2, h: 1 }
+];
+function RollPrintDialog({ product, onClose }) {
+  const [printers, setPrinters] = reactExports.useState([]);
+  const [printerName, setPrinterName] = reactExports.useState("");
+  const [presetId, setPresetId] = reactExports.useState("4x2.5");
+  const [customW, setCustomW] = reactExports.useState("4");
+  const [customH, setCustomH] = reactExports.useState("2.5");
+  const [copies, setCopies] = reactExports.useState("1");
+  const [printing, setPrinting] = reactExports.useState(false);
+  const [error, setError] = reactExports.useState("");
+  const [done, setDone] = reactExports.useState(false);
+  reactExports.useEffect(() => {
+    window.api.print.listPrinters().then((r2) => {
+      if (r2.ok) setPrinters(r2.data);
+    });
+    window.api.settings.get().then((r2) => {
+      if (!r2.ok) return;
+      const { rollPrinterName, rollLabelWidthIn, rollLabelHeightIn } = r2.data;
+      setPrinterName(rollPrinterName);
+      const preset2 = PRESETS.find(
+        (p2) => String(p2.w) === rollLabelWidthIn && String(p2.h) === rollLabelHeightIn
+      );
+      if (preset2) setPresetId(preset2.id);
+      else if (rollLabelWidthIn && rollLabelHeightIn) {
+        setPresetId("custom");
+        setCustomW(rollLabelWidthIn);
+        setCustomH(rollLabelHeightIn);
+      }
+    });
+  }, []);
+  const preset = PRESETS.find((p2) => p2.id === presetId);
+  const widthIn = preset ? preset.w : Number.parseFloat(customW);
+  const heightIn = preset ? preset.h : Number.parseFloat(customH);
+  const sizeValid = Number.isFinite(widthIn) && widthIn > 0 && Number.isFinite(heightIn) && heightIn > 0;
+  async function handlePrint() {
+    if (!sizeValid) {
+      setError("Enter a valid width and height in inches.");
+      return;
+    }
+    setPrinting(true);
+    setError("");
+    setDone(false);
+    window.api.settings.set("rollPrinterName", printerName);
+    window.api.settings.set("rollLabelWidthIn", String(widthIn));
+    window.api.settings.set("rollLabelHeightIn", String(heightIn));
+    const result = await window.api.print.rollLabel(product, {
+      printerName,
+      widthIn,
+      heightIn,
+      copies: Number.parseInt(copies, 10) || 1
+    });
+    setPrinting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (result.data) setDone(true);
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      style: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 },
+      onClick: onClose,
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "card",
+          style: { width: 420, padding: "20px 20px 24px", background: "white" },
+          onClick: (e) => e.stopPropagation(),
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("h2", { style: { fontSize: 14, fontWeight: 600, color: "#1a2332", margin: 0, display: "flex", alignItems: "center", gap: 6 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 15 }),
+                " Print to Roll"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: onClose, className: "btn btn-icon", title: "Close", children: /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 14 }) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 12, color: "#64748b", margin: "0 0 16px" }, children: product.name }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Printer" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: "input", value: printerName, onChange: (e) => setPrinterName(e.target.value), children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "Ask each time (system print dialog)" }),
+                  printers.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: p2.name, children: [
+                    p2.displayName || p2.name,
+                    p2.isDefault ? " (default)" : ""
+                  ] }, p2.name))
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "Pick your roll printer (e.g. UniNet iColor) to print directly with no dialog." })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Label size" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { className: "input", value: presetId, onChange: (e) => setPresetId(e.target.value), children: [
+                  PRESETS.map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: p2.id, children: p2.label }, p2.id)),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "custom", children: "Custom…" })
+                ] }),
+                presetId === "custom" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 8, alignItems: "center" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", style: { maxWidth: 90 }, inputMode: "decimal", value: customW, onChange: (e) => setCustomW(e.target.value), placeholder: "W" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, color: "#94a3b8" }, children: "×" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("input", { className: "input", style: { maxWidth: 90 }, inputMode: "decimal", value: customH, onChange: (e) => setCustomH(e.target.value), placeholder: "H" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, color: "#94a3b8" }, children: "inches" })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#94a3b8", marginTop: 5 }, children: "The label design scales to fit and rotates automatically if the media orientation differs. Set the same size as the media loaded in the printer." })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", children: "Copies" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    className: "input",
+                    style: { maxWidth: 90 },
+                    inputMode: "numeric",
+                    value: copies,
+                    onChange: (e) => setCopies(e.target.value)
+                  }
+                )
+              ] }),
+              error && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, color: "#dc2626" }, children: error }),
+              done && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", fontSize: 12.5, color: "#166534" }, children: "Sent to printer." }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-outline", onClick: onClose, children: "Close" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { className: "btn-primary", onClick: handlePrint, disabled: printing || !sizeValid, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 14 }),
+                  " ",
+                  printing ? "Printing…" : "Print"
+                ] })
+              ] })
+            ] })
+          ]
+        }
+      )
+    }
+  );
+}
 function Library({ onEdit, onOpenSheet }) {
   const [products, setProducts] = reactExports.useState([]);
   const [query, setQuery] = reactExports.useState("");
@@ -7523,6 +7680,7 @@ function Library({ onEdit, onOpenSheet }) {
   const [sortKey, setSortKey] = reactExports.useState("name");
   const [sortDirection, setSortDirection] = reactExports.useState("asc");
   const [tillieNotice, setTillieNotice] = reactExports.useState("");
+  const [rollProduct, setRollProduct] = reactExports.useState(null);
   const load = reactExports.useCallback(async () => {
     setLoading(true);
     const result = await window.api.product.list();
@@ -7705,6 +7863,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
         id2
       ))
     ] }),
+    rollProduct && /* @__PURE__ */ jsxRuntimeExports.jsx(RollPrintDialog, { product: rollProduct, onClose: () => setRollProduct(null) }),
     tillieNotice && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: "#166534" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { flex: 1 }, children: tillieNotice }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7792,6 +7951,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onEdit(p2), className: "btn btn-icon", title: "Edit", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Pen, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleDuplicate(p2.id), className: "btn btn-icon", title: "Duplicate", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleExportPDF(p2), disabled: exporting === p2.id, className: "btn btn-icon", title: "Export PDF", children: /* @__PURE__ */ jsxRuntimeExports.jsx(FileText, { size: 13 }) }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setRollProduct(p2), className: "btn btn-icon", title: "Print to Roll", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Sticker, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => onOpenSheet([p2]), className: "btn btn-icon", title: "Print Sheet", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }) }),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "button",
@@ -12205,6 +12365,7 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
   const [exporting, setExporting] = reactExports.useState(false);
   const [regenConfirm, setRegenConfirm] = reactExports.useState(false);
   const [importingTemplate, setImportingTemplate] = reactExports.useState(false);
+  const [rollProduct, setRollProduct] = reactExports.useState(null);
   const saveInFlight = reactExports.useRef(null);
   reactExports.useEffect(() => {
     window.api.file.listTemplates().then((r2) => {
@@ -12386,6 +12547,11 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
     if (!saved) return;
     onOpenSheet(saved);
   }
+  async function handleRollPrint() {
+    const saved = await handleSave();
+    if (!saved) return;
+    setRollProduct(saved);
+  }
   async function handleUploadBarcode() {
     const pickedResult = await window.api.file.pickBarcodeImage();
     if (!pickedResult.ok || !pickedResult.data) return;
@@ -12499,12 +12665,17 @@ function Editor({ initialProduct, onBack, onOpenSheet }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx(FileCode2, { size: 12 }),
           " SVG"
         ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleRollPrint, className: "btn-outline btn-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Sticker, { size: 12 }),
+          " Print Roll"
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handlePrint, className: "btn-green btn-sm", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 12 }),
           " Print Sheet"
         ] })
       ] })
     ] }),
+    rollProduct && /* @__PURE__ */ jsxRuntimeExports.jsx(RollPrintDialog, { product: rollProduct, onClose: () => setRollProduct(null) }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flex: 1, overflow: "hidden" }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: {
         flex: 2,

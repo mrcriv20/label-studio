@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker } from 'lucide-react'
 import type { Product } from '../types'
+import RollPrintDialog from '../components/RollPrintDialog'
 
 interface Props {
   onEdit: (product: Product) => void
@@ -21,6 +22,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [tillieNotice, setTillieNotice] = useState('')
+  const [rollProduct, setRollProduct] = useState<Product | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -221,6 +223,8 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
         </div>
       )}
 
+      {rollProduct && <RollPrintDialog product={rollProduct} onClose={() => setRollProduct(null)} />}
+
       {/* Tillie sync notice */}
       {tillieNotice && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#166534' }}>
@@ -334,6 +338,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                         <button onClick={() => onEdit(p)} className="btn btn-icon" title="Edit"><Edit2 size={13} /></button>
                         <button onClick={() => handleDuplicate(p.id)} className="btn btn-icon" title="Duplicate"><Copy size={13} /></button>
                         <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id} className="btn btn-icon" title="Export PDF"><FileText size={13} /></button>
+                        <button onClick={() => setRollProduct(p)} className="btn btn-icon" title="Print to Roll"><Sticker size={13} /></button>
                         <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Printer size={13} /></button>
                         <button
                           onClick={() => handleDelete(p.id)}

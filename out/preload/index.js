@@ -43,7 +43,9 @@ const api = {
   },
   // Print
   print: {
-    sheet: (products, startSlot) => electron.ipcRenderer.invoke("print:sheet", products, startSlot)
+    sheet: (products, startSlot) => electron.ipcRenderer.invoke("print:sheet", products, startSlot),
+    listPrinters: () => electron.ipcRenderer.invoke("print:listPrinters"),
+    rollLabel: (product, opts) => electron.ipcRenderer.invoke("print:rollLabel", product, opts)
   },
   // Tillie POS sync
   tillie: {

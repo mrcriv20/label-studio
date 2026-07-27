@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ArrowLeft, Save, FileText, FileCode2,
-  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers
+  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers, Sticker
 } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import LabelPreview from '../components/LabelPreview'
+import RollPrintDialog from '../components/RollPrintDialog'
 import { generateBarcodeValue } from '../lib/barcode'
 import type { Product, LabelTemplate } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
@@ -55,6 +56,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const [exporting, setExporting] = useState(false)
   const [regenConfirm, setRegenConfirm] = useState(false)
   const [importingTemplate, setImportingTemplate] = useState(false)
+  const [rollProduct, setRollProduct] = useState<Product | null>(null)
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
 
   useEffect(() => {
@@ -260,6 +262,12 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     onOpenSheet(saved)
   }
 
+  async function handleRollPrint(): Promise<void> {
+    const saved = await handleSave()
+    if (!saved) return
+    setRollProduct(saved)
+  }
+
   async function handleUploadBarcode(): Promise<void> {
     const pickedResult = await window.api.file.pickBarcodeImage()
     if (!pickedResult.ok || !pickedResult.data) return
@@ -368,11 +376,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
           <button onClick={handleExportSVG} disabled={exporting} className="btn-outline btn-sm">
             <FileCode2 size={12} /> SVG
           </button>
+          <button onClick={handleRollPrint} className="btn-outline btn-sm">
+            <Sticker size={12} /> Print Roll
+          </button>
           <button onClick={handlePrint} className="btn-green btn-sm">
             <Layers size={12} /> Print Sheet
           </button>
         </div>
       </div>
+
+      {rollProduct && <RollPrintDialog product={rollProduct} onClose={() => setRollProduct(null)} />}
 
       {/* ── Body ── */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

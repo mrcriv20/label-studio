@@ -685,6 +685,52 @@ async function buildLabelPDF(product: Product, topImageBytes: Buffer | null, bar
   return doc.save()
 }
 
+/**
+ * A single label on a page matching the roll media size exactly. The label
+ * design keeps its aspect ratio, scaled to fit and centered; it is rotated 90°
+ * when its orientation differs from the media's so it uses the roll best.
+ */
+export async function buildRollLabelPDF(
+  product: Product,
+  widthIn: number,
+  heightIn: number
+): Promise<Uint8Array> {
+  const topImageBytes = getTopImageBytes(product)
+  const barcodeBytes = await getBarcodePNG(product)
+  const labelBytes = await buildLabelPDF(product, topImageBytes, barcodeBytes)
+
+  const pageW = widthIn * 72
+  const pageH = heightIn * 72
+  const doc = await PDFDocument.create()
+  const [label] = await doc.embedPdf(labelBytes)
+  const rotate = label.width >= label.height !== pageW >= pageH
+  const effW = rotate ? label.height : label.width
+  const effH = rotate ? label.width : label.height
+  const scale = Math.min(pageW / effW, pageH / effH)
+  const drawW = label.width * scale
+  const drawH = label.height * scale
+
+  const page = doc.addPage([pageW, pageH])
+  if (rotate) {
+    // drawPage rotates around (x, y); place so the rotated bounds are centered.
+    page.drawPage(label, {
+      x: (pageW + drawH) / 2,
+      y: (pageH - drawW) / 2,
+      xScale: scale,
+      yScale: scale,
+      rotate: degrees(90),
+    })
+  } else {
+    page.drawPage(label, {
+      x: (pageW - drawW) / 2,
+      y: (pageH - drawH) / 2,
+      xScale: scale,
+      yScale: scale,
+    })
+  }
+  return doc.save()
+}
+
 export async function exportSingleLabelPDF(product: Product, outputPath: string): Promise<string> {
   const topImageBytes = getTopImageBytes(product)
   const barcodeBytes = await getBarcodePNG(product)

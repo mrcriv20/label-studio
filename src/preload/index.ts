@@ -84,6 +84,12 @@ const api = {
   print: {
     sheet: (products: Product[], startSlot: number): Promise<IpcResult<boolean>> =>
       ipcRenderer.invoke('print:sheet', products, startSlot),
+    listPrinters: (): Promise<IpcResult<Array<{ name: string; displayName: string; isDefault: boolean }>>> =>
+      ipcRenderer.invoke('print:listPrinters'),
+    rollLabel: (
+      product: Product,
+      opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
+    ): Promise<IpcResult<boolean>> => ipcRenderer.invoke('print:rollLabel', product, opts),
   },
 
   // Tillie POS sync

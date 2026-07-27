@@ -77,6 +77,15 @@ export interface AppSettings {
   titleFontId: string
   priceFontId: string
   bodyFontId: string
+  rollPrinterName: string
+  rollLabelWidthIn: string
+  rollLabelHeightIn: string
+}
+
+export interface PrinterInfo {
+  name: string
+  displayName: string
+  isDefault: boolean
 }
 
 export interface FontAsset {
@@ -135,6 +144,11 @@ declare global {
       }
       print: {
         sheet(products: Product[], startSlot: number): Promise<IpcResult<boolean>>
+        listPrinters(): Promise<IpcResult<PrinterInfo[]>>
+        rollLabel(
+          product: Product,
+          opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
+        ): Promise<IpcResult<boolean>>
       }
       tillie: {
         getConfig(): Promise<IpcResult<TillieConfig>>

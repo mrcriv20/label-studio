@@ -22,7 +22,7 @@ import {
   readTemplatePNGBase64,
   listTemplates,
 } from './fileManager'
-import { buildSheetPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import { buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import { getLabelTemplate } from '../shared/labelTemplates'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
 import {
@@ -389,6 +389,42 @@ export function registerIpcHandlers(): void {
     catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle('print:listPrinters', async () => {
+    try {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (!win) return fail('No window available to query printers')
+      const printers = await win.webContents.getPrintersAsync()
+      return ok(printers.map((p) => ({
+        name: p.name,
+        displayName: p.displayName,
+        // Not in Electron's current typings but still present at runtime on
+        // platforms that report a default printer.
+        isDefault: Boolean((p as { isDefault?: boolean }).isDefault),
+      })))
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle(
+    'print:rollLabel',
+    async (
+      _e,
+      product: Product,
+      opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
+    ) => {
+      const tempPath = join(app.getPath('temp'), `roll-label-print-${Date.now()}-${nanoid(8)}.pdf`)
+      try {
+        if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail('Label size must be positive numbers.')
+        const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn)
+        writeFileSync(tempPath, pdfBytes)
+        const printed = await printPdfToRoll(tempPath, opts)
+        scheduleTempFileCleanup(tempPath)
+        return ok(printed)
+      } catch (e) {
+        return fail(String(e))
+      }
+    }
+  )
+
   // ── Tillie POS sync ───────────────────────────────────────────────────────
 
   ipcMain.handle('tillie:getConfig', () => {
@@ -433,6 +469,76 @@ export function generateBarcode(): string {
   // 12-digit random barcode for internal use
   const num = Math.floor(Math.random() * 900000000000) + 100000000000
   return String(num)
+}
+
+async function printPdfToRoll(
+  pdfPath: string,
+  opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
+): Promise<boolean> {
+  const silent = Boolean(opts.printerName)
+  return new Promise((resolve, reject) => {
+    const printWin = new BrowserWindow({
+      width: 700,
+      height: 500,
+      show: !silent,
+      autoHideMenuBar: true,
+      webPreferences: { sandbox: false },
+    })
+
+    let settled = false
+    const finish = (result: boolean): void => {
+      if (settled) return
+      settled = true
+      if (!printWin.isDestroyed()) printWin.close()
+      resolve(result)
+    }
+
+    printWin.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        if (settled || printWin.isDestroyed()) return
+        const options: Electron.WebContentsPrintOptions = {
+          silent,
+          deviceName: opts.printerName || undefined,
+          printBackground: true,
+          // Exact roll media size, in microns.
+          pageSize: {
+            width: Math.round(opts.widthIn * 25400),
+            height: Math.round(opts.heightIn * 25400),
+          },
+          landscape: false,
+          margins: { marginType: 'none' },
+          copies: Math.max(1, Math.floor(opts.copies) || 1),
+        }
+        printWin.webContents.print(options, (success, failureReason) => {
+          if (!success && failureReason && failureReason !== 'cancelled') {
+            if (!settled) {
+              settled = true
+              if (!printWin.isDestroyed()) printWin.close()
+              reject(new Error(`Print failed: ${failureReason}`))
+            }
+            return
+          }
+          finish(success)
+        })
+      }, 400)
+    })
+
+    printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
+      if (!settled) {
+        settled = true
+        if (!printWin.isDestroyed()) printWin.destroy()
+        reject(new Error(`Failed to load printable PDF: ${desc}`))
+      }
+    })
+
+    printWin.loadURL(pathToFileURL(pdfPath).toString()).catch((err) => {
+      if (!settled) {
+        settled = true
+        if (!printWin.isDestroyed()) printWin.destroy()
+        reject(err)
+      }
+    })
+  })
 }
 
 async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
