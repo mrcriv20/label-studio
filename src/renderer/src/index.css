@@ -44,18 +44,28 @@
   }
 }
 
-/* ── Buttons (shadcn-style) ── */
-.btn {
+/* ── Buttons ──
+   Base styles apply to every variant directly, so `btn-outline btn-sm`
+   works without also adding `btn`. */
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-outline,
+.btn-ghost,
+.btn-danger,
+.btn-green,
+.btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 36px;
+  height: 34px;
   padding: 0 16px;
-  border-radius: 6px;
+  border-radius: 9999px;
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
+  letter-spacing: -0.006em;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -64,92 +74,100 @@
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
   text-decoration: none;
   line-height: 1;
 }
-.btn:focus-visible {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #94a3b8;
+.btn:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-outline:focus-visible,
+.btn-ghost:focus-visible,
+.btn-danger:focus-visible,
+.btn-green:focus-visible,
+.btn-icon:focus-visible {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(76, 173, 76, 0.55);
 }
-.btn:disabled {
-  opacity: 0.5;
+.btn:disabled,
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-outline:disabled,
+.btn-ghost:disabled,
+.btn-danger:disabled,
+.btn-green:disabled,
+.btn-icon:disabled {
+  opacity: 0.45;
   pointer-events: none;
 }
 
 .btn-primary {
   background: #1a2332;
   color: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
-.btn-primary:hover  { background: #2d3e55; }
-.btn-primary:active { background: #111827; }
+.btn-primary:hover  { background: #2a3850; }
+.btn-primary:active { background: #10161f; }
 
 .btn-secondary {
-  background: #f1f5f9;
-  color: #0f172a;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  background: #eef1f4;
+  color: #1a2332;
 }
-.btn-secondary:hover  { background: #e2e8f0; }
-.btn-secondary:active { background: #cbd5e1; }
+.btn-secondary:hover  { background: #e5e9ee; }
+.btn-secondary:active { background: #dce1e8; }
 
 .btn-outline {
   background: #fff;
-  border-color: #e2e8f0;
-  color: #374151;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  border-color: #ececec;
+  color: #111827;
 }
-.btn-outline:hover  { background: #f8fafc; border-color: #cbd5e1; color: #1a2332; }
-.btn-outline:active { background: #f1f5f9; }
+.btn-outline:hover  { border-color: #d4d4d8; }
+.btn-outline:active { background: #f6f6f7; }
 
 .btn-ghost {
   background: transparent;
-  color: #4b5563;
+  color: #5a6577;
 }
-.btn-ghost:hover  { background: #f1f5f9; color: #1a2332; }
-.btn-ghost:active { background: #e2e8f0; }
+.btn-ghost:hover  { background: rgba(15, 23, 42, 0.05); color: #1a2332; }
+.btn-ghost:active { background: rgba(15, 23, 42, 0.09); }
 
 .btn-danger {
-  background: #ef4444;
+  background: #e5484d;
   color: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
-.btn-danger:hover  { background: #dc2626; }
-.btn-danger:active { background: #b91c1c; }
+.btn-danger:hover  { background: #d63d42; }
+.btn-danger:active { background: #c43338; }
 
 .btn-green {
-  background: #1f7a1f;
+  background: #2b8a3e;
   color: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
-.btn-green:hover  { background: #186018; }
-.btn-green:active { background: #154d15; }
+.btn-green:hover  { background: #257a36; }
+.btn-green:active { background: #1f692e; }
 
 .btn-sm {
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 12px;
   font-size: 12px;
-  border-radius: 5px;
 }
 .btn-lg {
   height: 40px;
-  padding: 0 20px;
+  padding: 0 22px;
   font-size: 14px;
 }
 
-/* Icon-only button — no label, no border, square */
+/* Icon-only button — no label, circular */
 .btn-icon {
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 5px;
+  border-radius: 9999px;
   color: #64748b;
   background: transparent;
   border: none;
 }
-.btn-icon:hover  { background: #f1f5f9; color: #1a2332; }
-.btn-icon:active { background: #e2e8f0; }
+.btn-icon:hover  { background: rgba(15, 23, 42, 0.05); color: #1a2332; }
+.btn-icon:active { background: rgba(15, 23, 42, 0.09); }
 .btn-icon.danger { color: #f87171; }
-.btn-icon.danger:hover { background: #fef2f2; color: #ef4444; }
+.btn-icon.danger:hover { background: #fef2f2; color: #e5484d; }
 
 /* ── Inputs ── */
 .input {

@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Barcode,
   Copy,
+  GripVertical,
   Image as ImageIcon,
   Lock,
   LockOpen,
@@ -173,6 +174,8 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
   const [products, setProducts] = useState<Product[]>([])
   const [sampleProductId, setSampleProductId] = useState('')
   const [error, setError] = useState('')
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   const pastRef = useRef<DesignTemplate[]>([])
   const futureRef = useRef<DesignTemplate[]>([])
@@ -358,6 +361,27 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
       })
     },
     [commit],
+  )
+
+  /** Move a layer to a new position in the layers panel (display order = topmost first). */
+  const reorderLayer = useCallback(
+    (id: string, displayInsertIndex: number): void => {
+      setDesign((prev) => {
+        if (!prev) return prev
+        const displayed = [...prev.elements].reverse()
+        const from = displayed.findIndex((el) => el.id === id)
+        if (from < 0) return prev
+        let to = displayInsertIndex > from ? displayInsertIndex - 1 : displayInsertIndex
+        to = Math.max(0, Math.min(displayed.length - 1, to))
+        if (to === from) return prev
+        recordSnapshot(prev)
+        setDirty(true)
+        const [element] = displayed.splice(from, 1)
+        displayed.splice(to, 0, element)
+        return { ...prev, elements: displayed.reverse() }
+      })
+    },
+    [recordSnapshot],
   )
 
   // ── Save / manage designs ──────────────────────────────────────────────────
@@ -650,38 +674,80 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
           <p style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '4px 4px 8px' }}>
             Layers
           </p>
-          {[...design.elements].reverse().map((element) => (
-            <div
-              key={element.id}
-              onClick={() => setSelectedId(element.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 8px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 12,
-                background: element.id === selectedId ? '#eef2ff' : 'transparent',
-                color: '#334155',
-              }}
-            >
-              <span style={{ color: '#94a3b8', display: 'inline-flex' }}>{layerIcon(element)}</span>
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {layerName(element)}
-              </span>
-              <button
-                title={element.locked ? 'Unlock' : 'Lock'}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  commitElement(element.id, { locked: !element.locked })
+          <div
+            onDragOver={(e) => {
+              if (dragLayerId) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              if (dragLayerId && dropIndex !== null) reorderLayer(dragLayerId, dropIndex)
+              setDragLayerId(null)
+              setDropIndex(null)
+            }}
+          >
+            {[...design.elements].reverse().map((element, index, displayed) => (
+              <div
+                key={element.id}
+                draggable
+                onClick={() => setSelectedId(element.id)}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  setDragLayerId(element.id)
+                  setSelectedId(element.id)
                 }}
-                style={iconButtonStyle}
+                onDragOver={(e) => {
+                  if (!dragLayerId) return
+                  e.preventDefault()
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const below = e.clientY > rect.top + rect.height / 2
+                  setDropIndex(below ? index + 1 : index)
+                }}
+                onDragEnd={() => {
+                  setDragLayerId(null)
+                  setDropIndex(null)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 8px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  background: element.id === selectedId ? '#eef2ff' : 'transparent',
+                  color: '#334155',
+                  opacity: dragLayerId === element.id ? 0.4 : 1,
+                  boxShadow:
+                    dropIndex === index
+                      ? 'inset 0 2px 0 #4f46e5'
+                      : dropIndex === index + 1 && index === displayed.length - 1
+                        ? 'inset 0 -2px 0 #4f46e5'
+                        : 'none',
+                }}
               >
-                {element.locked ? <Lock size={11} /> : <LockOpen size={11} />}
-              </button>
-            </div>
-          ))}
+                <span style={{ color: '#cbd5e1', display: 'inline-flex', cursor: 'grab' }}>
+                  <GripVertical size={11} />
+                </span>
+                <span style={{ color: '#94a3b8', display: 'inline-flex' }}>{layerIcon(element)}</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {layerName(element)}
+                </span>
+                <button
+                  title={element.locked ? 'Unlock' : 'Lock'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    commitElement(element.id, { locked: !element.locked })
+                  }}
+                  style={iconButtonStyle}
+                >
+                  {element.locked ? <Lock size={11} /> : <LockOpen size={11} />}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Canvas */}
