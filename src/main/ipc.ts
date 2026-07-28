@@ -16,13 +16,25 @@ import {
 } from './database'
 import {
   saveBarcodeImage,
+  saveDesignSlotImage,
   saveLogoImage,
   saveTemplateImage,
   readImageAsBase64,
   readTemplatePNGBase64,
   listTemplates,
+  deleteCustomTemplate,
+  isCustomTemplate,
 } from './fileManager'
 import { buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import {
+  listDesigns,
+  getDesign,
+  saveDesign,
+  deleteDesign,
+  duplicateDesign,
+  importDesignAsset,
+  designAssetDataUri,
+} from './designs'
 import { getLabelTemplate } from '../shared/labelTemplates'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
 import {
@@ -189,6 +201,7 @@ export function registerIpcHandlers(): void {
           showPrice: true,
           showBarcode: true,
           showCookingInstructions: true,
+          showProductName: true,
           tillieProductId: null,
           createdAt: now,
           updatedAt: now,
@@ -291,8 +304,76 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('file:listTemplates', () => {
-    try { return ok(listTemplates()) }
+    try {
+      return ok([
+        ...listTemplates(),
+        ...listDesigns().map(({ id, name }) => ({ id, name })),
+      ])
+    }
     catch (e) { return fail(String(e)) }
+  })
+
+  // ── Design templates ──────────────────────────────────────────────────────
+
+  ipcMain.handle('design:list', () => {
+    try { return ok(listDesigns()) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('design:get', (_e, id: string) => {
+    try {
+      const design = getDesign(id)
+      return design ? ok(design) : fail('Design not found')
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('design:save', (_e, design: unknown) => {
+    try { return ok(saveDesign(design)) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('design:delete', (_e, id: string) => {
+    try { deleteDesign(id); return ok(true) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('design:duplicate', (_e, id: string) => {
+    try {
+      const copy = duplicateDesign(id)
+      return copy ? ok(copy) : fail('Design not found')
+    } catch (e) { return fail(String(e)) }
+  })
+
+  ipcMain.handle('design:importImage', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Choose an Image for the Design',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      const assetName = importDesignAsset(result.filePaths[0])
+      return ok({ assetName, dataUri: designAssetDataUri(assetName) })
+    } catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('design:assetDataUri', (_e, assetName: string) => {
+    try { return ok(designAssetDataUri(assetName)) }
+    catch (e) { return fail(String(e)) }
+  })
+
+  // Pick + store a per-label replacement for a design image element.
+  ipcMain.handle('design:pickSlotImage', async (_e, productId: string, elementId: string) => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Choose an Image for This Label',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      const storedPath = saveDesignSlotImage(result.filePaths[0], productId, elementId)
+      return ok(storedPath)
+    } catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
   })
 
   ipcMain.handle('file:pickTemplateImage', async () => {
@@ -310,6 +391,21 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('file:saveTemplateImage', async (_e, sourcePath: string) => {
     try { return ok(await saveTemplateImage(sourcePath)) }
     catch (e) { return fail(String(e)) }
+  })
+
+  // Delete an imported-artwork or design template. Built-ins cannot be removed.
+  ipcMain.handle('file:deleteTemplate', (_e, templateId: string) => {
+    try {
+      if (templateId.startsWith('design-')) {
+        deleteDesign(templateId)
+        return ok(true)
+      }
+      if (isCustomTemplate(templateId)) {
+        deleteCustomTemplate(templateId)
+        return ok(true)
+      }
+      return fail('Built-in templates cannot be deleted.')
+    } catch (e) { return fail(String(e)) }
   })
 
   ipcMain.handle('file:pickExportFolder', async () => {

@@ -12,6 +12,7 @@ import {
   getDefaultTopLogoPath,
   getGentyRegularFontPath,
   getLoraBoldFontPath,
+  getCustomTemplateSize,
   getTemplatePNGPath,
   isCustomTemplate,
   readImageAsBase64,
@@ -28,6 +29,9 @@ import {
   getSheetLayoutPoints,
   toInches,
 } from '../shared/sheetLayout'
+import { isDesignTemplateId } from '../shared/design/types'
+import { getDesign } from './designs'
+import { drawDesignLabel, designToSVG } from './designExport'
 
 type EmbeddedFont = Awaited<ReturnType<PDFDocument['embedFont']>>
 type EmbeddedImage =
@@ -337,11 +341,12 @@ async function drawLabel(
   const borderWidth = template.layout === 'info' || template.layout === 'logo-only' ? 0 : 1
 
   if (customBackground) {
+    // The page is already sized to the artwork's native dimensions.
     page.drawImage(customBackground, {
       x: 0,
       y: 0,
-      width: template.width,
-      height: template.height,
+      width: page.getWidth(),
+      height: page.getHeight(),
     })
     drawCustomTemplateFields(page, product, barcodeImage, fonts, text)
     return
@@ -428,13 +433,15 @@ function drawCustomTemplateFields(
   fonts: { name: EmbeddedFont; price: EmbeddedFont; body: EmbeddedFont; bodyBold: EmbeddedFont; bodyItalic: EmbeddedFont; ingredients: EmbeddedFont },
   text: ReturnType<typeof rgb>,
 ): void {
-  const name = product.name || 'Product Name'
-  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
-  const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w)
-  const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize
-  nameLines.slice(0, 3).forEach((line, index) => {
-    drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text)
-  })
+  if (product.showProductName !== false) {
+    const name = product.name || 'Product Name'
+    const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
+    const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w)
+    const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize
+    nameLines.slice(0, 3).forEach((line, index) => {
+      drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text)
+    })
+  }
   if (product.showPrice) {
     const price = product.price || '$13.99'
     drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, price.length > 10 ? 22 : 28, fonts.price, text)
@@ -670,6 +677,14 @@ async function buildLabelPDF(product: Product, topImageBytes: Buffer | null, bar
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
 
+  // Design templates render through the shared resolver + pdf-lib painter.
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null
+  if (design) {
+    const designPage = doc.addPage([design.canvas.width, design.canvas.height])
+    await drawDesignLabel(doc, designPage, design, product)
+    return doc.save()
+  }
+
   const fonts = await embedFonts(doc)
   const topImage = topImageBytes
     ? await embedImageAsset(doc, topImageBytes, product.logoImagePath ?? getDefaultTopLogoPath())
@@ -680,7 +695,8 @@ async function buildLabelPDF(product: Product, topImageBytes: Buffer | null, bar
     ? await embedImageAsset(doc, readFileSync(customPreviewPath), customPreviewPath)
     : null
 
-  const page = doc.addPage([template.width, template.height])
+  const customSize = customBackground ? getCustomTemplateSize(product.templateId) : null
+  const page = doc.addPage([customSize?.width ?? template.width, customSize?.height ?? template.height])
   await drawLabel(page, product, topImage, barcodeImage, customBackground, fonts)
   return doc.save()
 }
@@ -770,7 +786,6 @@ export async function buildSheetPDF(products: Product[], startSlot: number): Pro
     const product = products[productIndex]
     if (!product) continue
 
-    const template = getLabelTemplate(product.templateId)
     const col = (slot - 1) % sheetLayout.cols
     const row = Math.floor((slot - 1) / sheetLayout.cols)
     const slotX = sheetLayout.marginLeft + sheetLayout.offsetX + col * (sheetLayout.slotW + sheetLayout.gapX)
@@ -788,7 +803,9 @@ export async function buildSheetPDF(products: Product[], startSlot: number): Pro
     )
     const [embeddedLabel] = await sheetDoc.embedPdf(labelBytes)
 
-    if (template.layout === 'info') {
+    // Landscape labels (info layout, landscape custom artwork) fill the slot
+    // directly; portrait labels are rotated into it.
+    if (embeddedLabel.width >= embeddedLabel.height) {
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,
@@ -818,6 +835,9 @@ export async function exportSheetPDF(products: Product[], startSlot: number, out
 }
 
 export async function exportSingleLabelSVG(product: Product): Promise<string> {
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null
+  if (design) return designToSVG(design, product)
+
   const template = getLabelTemplate(product.templateId)
   const topImageUri = product.logoImagePath
     ? readImageAsBase64(product.logoImagePath)

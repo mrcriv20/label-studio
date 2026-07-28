@@ -21,6 +21,8 @@ export interface Product {
   showPrice: boolean
   showBarcode: boolean
   showCookingInstructions: boolean
+  showProductName?: boolean // absent = shown; toggleable only on custom artwork templates
+  designImageOverrides?: Record<string, string> | null // design image element id → per-label image path
   tillieProductId: string | null
   createdAt: string
   updatedAt: string
@@ -102,10 +104,23 @@ export interface LabelTemplate {
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
+import type { DesignTemplate } from '../../shared/design/types'
+export type { DesignTemplate }
+
 // Declared globally so TypeScript knows about window.api
 declare global {
   interface Window {
     api: {
+      design: {
+        list(): Promise<IpcResult<DesignTemplate[]>>
+        get(id: string): Promise<IpcResult<DesignTemplate>>
+        save(design: DesignTemplate): Promise<IpcResult<DesignTemplate>>
+        delete(id: string): Promise<IpcResult<boolean>>
+        duplicate(id: string): Promise<IpcResult<DesignTemplate>>
+        importImage(): Promise<IpcResult<{ assetName: string; dataUri: string } | null>>
+        assetDataUri(assetName: string): Promise<IpcResult<string>>
+        pickSlotImage(productId: string, elementId: string): Promise<IpcResult<string | null>>
+      }
       product: {
         list(): Promise<IpcResult<Product[]>>
         get(id: string): Promise<IpcResult<Product>>
@@ -129,6 +144,7 @@ declare global {
         listTemplates(): Promise<IpcResult<LabelTemplate[]>>
         pickTemplateImage(): Promise<IpcResult<string | null>>
         saveTemplateImage(sourcePath: string): Promise<IpcResult<LabelTemplate>>
+        deleteTemplate(templateId: string): Promise<IpcResult<boolean>>
         pickExportFolder(): Promise<IpcResult<string | null>>
       }
       font: {

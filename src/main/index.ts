@@ -5,6 +5,7 @@ import { initDatabase } from './database'
 import { initFileManager } from './fileManager'
 import { registerIpcHandlers } from './ipc'
 import { initFonts } from './fonts'
+import { initDesigns } from './designs'
 
 // Avoid noisy Chromium GPU mailbox/overlay errors seen on some macOS setups.
 app.disableHardwareAcceleration()
@@ -55,6 +56,7 @@ app.whenReady().then(() => {
   try {
     initFileManager()
     initFonts()
+    initDesigns()
     initDatabase()
     registerIpcHandlers()
   } catch (err) {

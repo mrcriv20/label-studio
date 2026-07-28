@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import JsBarcode from 'jsbarcode'
-import type { Product } from '../types'
+import type { Product, DesignTemplate } from '../types'
+import { isDesignTemplateId } from '../../../shared/design/types'
+import DesignLabelSvg from './design/DesignLabelSvg'
 import {
   getLabelTemplate,
   LOGO_ONLY_LABEL_ZONES,
@@ -33,6 +35,24 @@ export default function LabelPreview({
   const template = getLabelTemplate(product.templateId)
   const [globalLabelBackground, setGlobalLabelBackground] = useState('')
   const [customTemplateDataUri, setCustomTemplateDataUri] = useState('')
+  const [customTemplateAspect, setCustomTemplateAspect] = useState<number | null>(null)
+  const [designTemplate, setDesignTemplate] = useState<DesignTemplate | null>(null)
+
+  const designTemplateId =
+    product.templateId && isDesignTemplateId(product.templateId) ? product.templateId : null
+  useEffect(() => {
+    if (!designTemplateId) {
+      setDesignTemplate(null)
+      return
+    }
+    let alive = true
+    window.api.design.get(designTemplateId).then((result) => {
+      if (alive) setDesignTemplate(result.ok ? result.data : null)
+    })
+    return () => {
+      alive = false
+    }
+  }, [designTemplateId])
   const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor
   const resolvedProduct = { ...product, labelBackgroundColor: labelBackground }
 
@@ -45,10 +65,24 @@ export default function LabelPreview({
   useEffect(() => {
     if (!product.templateId?.startsWith('custom-')) {
       setCustomTemplateDataUri('')
+      setCustomTemplateAspect(null)
       return
     }
     window.api.file.getTemplatePNG(product.templateId).then((result) => {
-      setCustomTemplateDataUri(result.ok ? result.data : '')
+      const dataUri = result.ok ? result.data : ''
+      setCustomTemplateDataUri(dataUri)
+      if (!dataUri) {
+        setCustomTemplateAspect(null)
+        return
+      }
+      // Custom artwork keeps its own aspect ratio (e.g. landscape labels).
+      const image = new Image()
+      image.onload = () => {
+        if (image.naturalWidth && image.naturalHeight) {
+          setCustomTemplateAspect(image.naturalWidth / image.naturalHeight)
+        }
+      }
+      image.src = dataUri
     })
   }, [product.templateId])
 
@@ -69,6 +103,18 @@ export default function LabelPreview({
       // invalid barcode value
     }
   }, [barcodeOverrideDataUri, product.barcodeValue, product.showBarcode, template.layout, template.textColor])
+
+  if (designTemplateId) {
+    if (!designTemplate) return <div style={{ width: '100%' }} />
+    return (
+      <DesignLabelSvg
+        design={designTemplate}
+        product={resolvedProduct}
+        logoDataUri={logoDataUri}
+        scale={scale}
+      />
+    )
+  }
 
   if (template.layout === 'info') {
     return (
@@ -113,6 +159,7 @@ export default function LabelPreview({
       barcodeOverrideDataUri={barcodeOverrideDataUri}
       logoDataUri={logoDataUri}
       customTemplateDataUri={customTemplateDataUri}
+      customTemplateAspect={customTemplateAspect}
       scale={scale}
     />
   )
@@ -125,6 +172,7 @@ function FrontLabelPreview({
   barcodeOverrideDataUri,
   logoDataUri,
   customTemplateDataUri,
+  customTemplateAspect,
   scale,
 }: {
   product: Partial<Product>
@@ -133,6 +181,7 @@ function FrontLabelPreview({
   barcodeOverrideDataUri?: string
   logoDataUri?: string
   customTemplateDataUri?: string
+  customTemplateAspect?: number | null
   scale: number
 }): JSX.Element {
   const name = product.name || 'Product Name'
@@ -145,7 +194,10 @@ function FrontLabelPreview({
       style={{
         position: 'relative',
         width: '100%',
-        aspectRatio: `${template.width} / ${template.height}`,
+        aspectRatio:
+          customTemplateDataUri && customTemplateAspect
+            ? `${customTemplateAspect}`
+            : `${template.width} / ${template.height}`,
         overflow: 'hidden',
         borderRadius: 18,
         boxShadow: '0 4px 24px rgba(0,0,0,0.16)',
@@ -181,35 +233,37 @@ function FrontLabelPreview({
         }}
       />}
 
-      <div
-        style={{
-          position: 'absolute',
-          top: toPercentTop(LABEL_ZONES.name.y, LABEL_ZONES.name.h, template.height),
-          left: toPercentX(LABEL_ZONES.name.x, template.width),
-          width: toPercentWidth(LABEL_ZONES.name.w, template.width),
-          height: toPercentHeight(LABEL_ZONES.name.h, template.height),
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'center',
-          padding: '0 2%',
-          pointerEvents: 'none',
-        }}
-      >
-        <span
+      {(!customTemplateDataUri || product.showProductName !== false) && (
+        <div
           style={{
-            fontSize: nameFontSize,
-            fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
-            fontWeight: 700,
-            color: template.textColor,
-            textAlign: 'center',
-            lineHeight: 1.05,
-            wordBreak: 'break-word',
-            hyphens: 'auto',
+            position: 'absolute',
+            top: toPercentTop(LABEL_ZONES.name.y, LABEL_ZONES.name.h, template.height),
+            left: toPercentX(LABEL_ZONES.name.x, template.width),
+            width: toPercentWidth(LABEL_ZONES.name.w, template.width),
+            height: toPercentHeight(LABEL_ZONES.name.h, template.height),
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '0 2%',
+            pointerEvents: 'none',
           }}
         >
-          {name}
-        </span>
-      </div>
+          <span
+            style={{
+              fontSize: nameFontSize,
+              fontFamily: 'var(--label-title-font, "Lora", Georgia, serif)',
+              fontWeight: 700,
+              color: template.textColor,
+              textAlign: 'center',
+              lineHeight: 1.05,
+              wordBreak: 'break-word',
+              hyphens: 'auto',
+            }}
+          >
+            {name}
+          </span>
+        </div>
+      )}
 
       {product.showPrice !== false && (
         <div

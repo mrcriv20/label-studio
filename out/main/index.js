@@ -13,20 +13,20 @@ const os = require("os");
 const bwipjs = require("bwip-js");
 const mongodb = require("mongodb");
 function _interopNamespaceDefault(e) {
-  const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
+  const n2 = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
     for (const k in e) {
       if (k !== "default") {
         const d = Object.getOwnPropertyDescriptor(e, k);
-        Object.defineProperty(n, k, d.get ? d : {
+        Object.defineProperty(n2, k, d.get ? d : {
           enumerable: true,
           get: () => e[k]
         });
       }
     }
   }
-  n.default = e;
-  return Object.freeze(n);
+  n2.default = e;
+  return Object.freeze(n2);
 }
 const XLSX__namespace = /* @__PURE__ */ _interopNamespaceDefault(XLSX);
 const DATA_DIR = () => electron.app.getPath("userData");
@@ -143,6 +143,8 @@ function normalizeProduct(product) {
     showPrice: product.showPrice ?? true,
     showBarcode: product.showBarcode ?? true,
     showCookingInstructions: product.showCookingInstructions ?? true,
+    showProductName: product.showProductName ?? true,
+    designImageOverrides: product.designImageOverrides && Object.keys(product.designImageOverrides).length ? product.designImageOverrides : null,
     tillieProductId: product.tillieProductId ?? null,
     createdAt: product.createdAt ?? now,
     updatedAt: product.updatedAt ?? now
@@ -253,15 +255,18 @@ function svgYFromBottom(y, height = 0, canvasHeight = LABEL_HEIGHT) {
 const ASSETS_DIR = path.join(electron.app.getPath("userData"), "assets");
 const BARCODE_DIR = path.join(electron.app.getPath("userData"), "barcodes");
 const LOGO_DIR = path.join(electron.app.getPath("userData"), "logos");
+const DESIGN_SLOT_DIR = path.join(electron.app.getPath("userData"), "design-images");
 const TEMPLATE_DIR = path.join(ASSETS_DIR, "templates");
 const TEMPLATE_PNG = path.join(ASSETS_DIR, "label-template-300dpi.png");
 const TEMPLATE_EPS = path.join(ASSETS_DIR, "label-template.eps");
 const DEFAULT_TEMPLATE_ID = "avery5821";
 const TEMPLATE_CATALOG = path.join(TEMPLATE_DIR, "catalog.json");
+const TEMPLATE_TOMBSTONES = path.join(TEMPLATE_DIR, "deleted.json");
 function initFileManager() {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
   fs.mkdirSync(BARCODE_DIR, { recursive: true });
   fs.mkdirSync(LOGO_DIR, { recursive: true });
+  fs.mkdirSync(DESIGN_SLOT_DIR, { recursive: true });
   fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
   copyBundledAssets();
 }
@@ -278,11 +283,33 @@ function copyBundledAssets() {
   }
   if (fs.existsSync(sourceTemplateDir)) {
     for (const fileName of fs.readdirSync(sourceTemplateDir)) {
-      if (!fileName.toLowerCase().endsWith(".png")) continue;
+      if (!/\.(png|svg)$/i.test(fileName)) continue;
       const sourcePath = path.join(sourceTemplateDir, fileName);
       const destPath = path.join(TEMPLATE_DIR, fileName);
       if (!fs.existsSync(destPath)) fs.copyFileSync(sourcePath, destPath);
     }
+    registerBundledArtworkTemplates(sourceTemplateDir);
+  }
+}
+function registerBundledArtworkTemplates(sourceTemplateDir) {
+  const existing = readCustomTemplates();
+  const tombstones = readTemplateTombstones();
+  const added = [];
+  for (const fileName of fs.readdirSync(sourceTemplateDir)) {
+    if (!fileName.toLowerCase().endsWith(".svg")) continue;
+    const baseName = path.basename(fileName, path.extname(fileName));
+    const previewPath = path.join(TEMPLATE_DIR, `${baseName}.png`);
+    if (!fs.existsSync(previewPath)) continue;
+    const id = `custom-${slugify(baseName)}`;
+    if (tombstones.includes(id)) continue;
+    const name = prettifyTemplateName(baseName);
+    if (existing.some((record) => record.id === id || record.name === name)) continue;
+    const sourcePath = path.join(TEMPLATE_DIR, fileName);
+    const dimensions = svgDimensions(fs.readFileSync(sourcePath, "utf8"));
+    added.push({ id, name, sourcePath, previewPath, ...dimensions ?? {} });
+  }
+  if (added.length > 0) {
+    fs.writeFileSync(TEMPLATE_CATALOG, JSON.stringify([...existing, ...added], null, 2), "utf8");
   }
 }
 function listTemplates() {
@@ -296,6 +323,10 @@ function getTemplatePNGPath(templateId = DEFAULT_TEMPLATE_ID) {
 }
 function isCustomTemplate(templateId) {
   return Boolean(templateId && readCustomTemplates().some((template) => template.id === templateId));
+}
+function getCustomTemplateSize(templateId) {
+  const custom = readCustomTemplates().find((template) => template.id === templateId);
+  return custom?.width && custom?.height ? { width: custom.width, height: custom.height } : null;
 }
 function getDefaultTopLogoPath() {
   return path.join(getBundledAssetsDir(), "default-label-logo.png");
@@ -326,14 +357,44 @@ async function saveTemplateImage(sourcePath) {
   const previewPath = path.join(TEMPLATE_DIR, `${id}.png`);
   fs.copyFileSync(sourcePath, storedSource);
   await createTemplatePreview(storedSource, previewPath, extension);
+  const dimensions = extension === ".svg" ? svgDimensions(fs.readFileSync(storedSource, "utf8")) : null;
   const record = {
     id,
     name: prettifyTemplateName(baseId),
     sourcePath: storedSource,
-    previewPath
+    previewPath,
+    ...dimensions ?? {}
   };
   fs.writeFileSync(TEMPLATE_CATALOG, JSON.stringify([...readCustomTemplates(), record], null, 2), "utf8");
   return { id: record.id, name: record.name };
+}
+function deleteCustomTemplate(templateId) {
+  const records = readCustomTemplates();
+  const record = records.find((template) => template.id === templateId);
+  if (!record) return;
+  for (const path2 of [record.sourcePath, record.previewPath]) {
+    try {
+      if (fs.existsSync(path2)) fs.unlinkSync(path2);
+    } catch {
+    }
+  }
+  fs.writeFileSync(
+    TEMPLATE_CATALOG,
+    JSON.stringify(records.filter((template) => template.id !== templateId), null, 2),
+    "utf8"
+  );
+  const tombstones = readTemplateTombstones();
+  if (!tombstones.includes(templateId)) {
+    fs.writeFileSync(TEMPLATE_TOMBSTONES, JSON.stringify([...tombstones, templateId], null, 2), "utf8");
+  }
+}
+function readTemplateTombstones() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TEMPLATE_TOMBSTONES, "utf8"));
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
 }
 function readCustomTemplates() {
   try {
@@ -350,8 +411,8 @@ async function createTemplatePreview(sourcePath, previewPath, extension) {
   }
   if (extension === ".svg") {
     const svg = fs.readFileSync(sourcePath);
-    const dimensions = svgDimensions(svg.toString("utf8"));
-    const width = 1200;
+    const dimensions = svgDimensions(svg.toString("utf8")) ?? { width: 400, height: 640 };
+    const width = 1500;
     const height = Math.max(1, Math.round(width * dimensions.height / dimensions.width));
     const renderWindow = new electron.BrowserWindow({
       show: false,
@@ -361,7 +422,12 @@ async function createTemplatePreview(sourcePath, previewPath, extension) {
       webPreferences: { sandbox: true }
     });
     try {
-      await renderWindow.loadURL(`data:image/svg+xml;base64,${svg.toString("base64")}`);
+      const svgUri = `data:image/svg+xml;base64,${svg.toString("base64")}`;
+      const html = `<!doctype html><html><head><style>html,body{margin:0;overflow:hidden}img{display:block;width:${width}px;height:${height}px}</style></head><body><img src="${svgUri}"></body></html>`;
+      await renderWindow.loadURL(`data:text/html;base64,${Buffer.from(html).toString("base64")}`);
+      await renderWindow.webContents.executeJavaScript(
+        'document.querySelector("img").decode().then(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))'
+      );
       const image = await renderWindow.webContents.capturePage();
       if (!image.isEmpty()) {
         fs.writeFileSync(previewPath, image.toPNG());
@@ -391,15 +457,25 @@ async function createTemplatePreview(sourcePath, previewPath, extension) {
 }
 function svgDimensions(svg) {
   const viewBox = svg.match(/\bviewBox\s*=\s*["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
-  if (viewBox) return { width: Number(viewBox[1]) || 400, height: Number(viewBox[2]) || 640 };
+  if (viewBox && Number(viewBox[1]) && Number(viewBox[2])) {
+    return { width: Number(viewBox[1]), height: Number(viewBox[2]) };
+  }
   const width = Number(svg.match(/\bwidth\s*=\s*["']([\d.]+)/i)?.[1]);
   const height = Number(svg.match(/\bheight\s*=\s*["']([\d.]+)/i)?.[1]);
-  return { width: width || 400, height: height || 640 };
+  return width && height ? { width, height } : null;
 }
 function saveBarcodeImage(sourcePath, productId) {
   const ext = path.extname(sourcePath) || ".png";
   const destName = `barcode-${productId}${ext}`;
   const destPath = path.join(BARCODE_DIR, destName);
+  fs.copyFileSync(sourcePath, destPath);
+  return destPath;
+}
+function saveDesignSlotImage(sourcePath, productId, elementId) {
+  const ext = path.extname(sourcePath).toLowerCase() || ".png";
+  const clean = (value) => value.replace(/[^a-zA-Z0-9_-]/g, "");
+  const destPath = path.join(DESIGN_SLOT_DIR, `${clean(productId)}-${clean(elementId)}-${Date.now()}${ext}`);
+  fs.mkdirSync(DESIGN_SLOT_DIR, { recursive: true });
   fs.copyFileSync(sourcePath, destPath);
   return destPath;
 }
@@ -528,6 +604,679 @@ function getSheetLayoutPoints(offsetXIn = 0, offsetYIn = 0) {
     cols: PLS_780.columns,
     rows: PLS_780.rows
   };
+}
+const DESIGN_ID_PREFIX = "design-";
+const DEFAULT_DESIGN_FONT_ID = "bundled:lora";
+function isDesignTemplateId(templateId) {
+  return Boolean(templateId && templateId.startsWith(DESIGN_ID_PREFIX));
+}
+const TEXT_CASES = ["none", "upper", "lower", "title", "sentence"];
+const VISIBLE_IF = ["always", "showPrice", "showBarcode", "showCookingInstructions", "showProductName"];
+function validateDesignTemplate(raw) {
+  if (!raw || typeof raw !== "object") throw new Error("Design file is not an object.");
+  const doc = raw;
+  if (doc.schemaVersion !== 1) throw new Error(`Unsupported design schema version: ${String(doc.schemaVersion)}`);
+  const id = str(doc.id);
+  if (!id.startsWith(DESIGN_ID_PREFIX)) throw new Error('Design id must start with "design-".');
+  const canvas = doc.canvas ?? {};
+  const width = num(canvas.width, 0);
+  const height = num(canvas.height, 0);
+  if (!(width > 0) || !(height > 0)) throw new Error("Design canvas size is invalid.");
+  const elements = Array.isArray(doc.elements) ? doc.elements.map(validateElement) : [];
+  return {
+    schemaVersion: 1,
+    id,
+    name: str(doc.name) || "Untitled Design",
+    canvas: { width, height, background: str(canvas.background) || "#ffffff" },
+    elements,
+    createdAt: str(doc.createdAt) || (/* @__PURE__ */ new Date(0)).toISOString(),
+    updatedAt: str(doc.updatedAt) || (/* @__PURE__ */ new Date(0)).toISOString()
+  };
+}
+function validateElement(raw, index) {
+  if (!raw || typeof raw !== "object") throw new Error(`Element ${index} is not an object.`);
+  const el = raw;
+  const base = {
+    id: str(el.id) || `el-${index}`,
+    x: num(el.x, 0),
+    y: num(el.y, 0),
+    w: Math.max(1, num(el.w, 10)),
+    h: Math.max(1, num(el.h, 10)),
+    ...el.opacity !== void 0 ? { opacity: clamp$1(num(el.opacity, 1), 0, 1) } : {},
+    ...el.locked ? { locked: true } : {},
+    ...VISIBLE_IF.includes(el.visibleIf) && el.visibleIf !== "always" ? { visibleIf: el.visibleIf } : {}
+  };
+  switch (el.type) {
+    case "box":
+      return {
+        ...base,
+        type: "box",
+        fill: str(el.fill),
+        stroke: str(el.stroke),
+        strokeWidth: Math.max(0, num(el.strokeWidth, 1)),
+        cornerRadius: Math.max(0, num(el.cornerRadius, 0))
+      };
+    case "text":
+      return {
+        ...base,
+        type: "text",
+        content: str(el.content),
+        fontId: str(el.fontId),
+        size: clamp$1(num(el.size, 12), 1, 400),
+        autoFit: Boolean(el.autoFit),
+        color: str(el.color) || "#1b2733",
+        align: el.align === "left" || el.align === "right" ? el.align : "center",
+        lineHeight: clamp$1(num(el.lineHeight, 1.1), 0.5, 3),
+        ...el.maxLines !== void 0 ? { maxLines: Math.max(1, Math.floor(num(el.maxLines, 1))) } : {},
+        ...TEXT_CASES.includes(el.textCase) && el.textCase !== "none" ? { textCase: el.textCase } : {}
+      };
+    case "barcode":
+      return {
+        ...base,
+        type: "barcode",
+        showText: el.showText !== false,
+        color: str(el.color) || "#000000"
+      };
+    case "image":
+      return {
+        ...base,
+        type: "image",
+        source: el.source === "asset" ? "asset" : "productLogo",
+        ...el.assetName ? { assetName: str(el.assetName) } : {},
+        fit: el.fit === "cover" || el.fit === "stretch" ? el.fit : "contain",
+        ...el.label ? { label: str(el.label) } : {}
+      };
+    default:
+      throw new Error(`Element ${index} has unknown type "${String(el.type)}".`);
+  }
+}
+function str(value) {
+  return typeof value === "string" ? value : "";
+}
+function num(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function clamp$1(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+const designDir = () => path.join(electron.app.getPath("userData"), "designs");
+const designAssetDir = () => path.join(designDir(), "assets");
+function initDesigns() {
+  fs.mkdirSync(designAssetDir(), { recursive: true });
+  const seedDir = path.join(getBundledAssetsDir(), "designs");
+  if (!fs.existsSync(seedDir)) return;
+  for (const fileName of fs.readdirSync(seedDir)) {
+    if (!fileName.toLowerCase().endsWith(".json")) continue;
+    try {
+      const seed = validateDesignTemplate(JSON.parse(fs.readFileSync(path.join(seedDir, fileName), "utf8")));
+      const dest = path.join(designDir(), `${sanitizeId(seed.id)}.json`);
+      if (!fs.existsSync(dest)) fs.writeFileSync(dest, JSON.stringify(seed, null, 2), "utf8");
+    } catch {
+    }
+  }
+}
+function listDesigns() {
+  if (!fs.existsSync(designDir())) return [];
+  const designs = [];
+  for (const fileName of fs.readdirSync(designDir())) {
+    if (!fileName.toLowerCase().endsWith(".json")) continue;
+    try {
+      designs.push(validateDesignTemplate(JSON.parse(fs.readFileSync(path.join(designDir(), fileName), "utf8"))));
+    } catch {
+    }
+  }
+  return designs.sort((a, b) => a.name.localeCompare(b.name));
+}
+function getDesign(id) {
+  const path$1 = path.join(designDir(), `${sanitizeId(id)}.json`);
+  if (!fs.existsSync(path$1)) return null;
+  try {
+    return validateDesignTemplate(JSON.parse(fs.readFileSync(path$1, "utf8")));
+  } catch {
+    return null;
+  }
+}
+function saveDesign(raw) {
+  const design = validateDesignTemplate(raw);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const stored = {
+    ...design,
+    createdAt: getDesign(design.id)?.createdAt ?? now,
+    updatedAt: now
+  };
+  fs.mkdirSync(designDir(), { recursive: true });
+  fs.writeFileSync(path.join(designDir(), `${sanitizeId(stored.id)}.json`), JSON.stringify(stored, null, 2), "utf8");
+  return stored;
+}
+function deleteDesign(id) {
+  const path$1 = path.join(designDir(), `${sanitizeId(id)}.json`);
+  if (fs.existsSync(path$1)) fs.unlinkSync(path$1);
+}
+function duplicateDesign(id) {
+  const source = getDesign(id);
+  if (!source) return null;
+  return saveDesign({
+    ...source,
+    id: newDesignId(),
+    name: `${source.name} (copy)`
+  });
+}
+function newDesignId() {
+  return `${DESIGN_ID_PREFIX}${Date.now()}`;
+}
+function importDesignAsset(sourcePath) {
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (![".png", ".jpg", ".jpeg"].includes(extension)) {
+    throw new Error("Choose a PNG or JPEG image.");
+  }
+  const name = `${slug(path.basename(sourcePath, extension))}-${Date.now()}${extension}`;
+  fs.mkdirSync(designAssetDir(), { recursive: true });
+  fs.copyFileSync(sourcePath, path.join(designAssetDir(), name));
+  return name;
+}
+function designAssetPath(assetName) {
+  return path.join(designAssetDir(), path.basename(assetName));
+}
+function designAssetDataUri(assetName) {
+  return readImageAsBase64(designAssetPath(assetName));
+}
+function sanitizeId(id) {
+  return path.basename(id).replace(/[^a-zA-Z0-9_-]/g, "");
+}
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "image";
+}
+function createTextMeasurer(fontBytesById) {
+  const fonts = /* @__PURE__ */ new Map();
+  const widthCache = /* @__PURE__ */ new Map();
+  const load = (fontId) => {
+    if (fonts.has(fontId)) return fonts.get(fontId) ?? null;
+    let font = null;
+    const bytes = fontBytesById[fontId];
+    if (bytes) {
+      try {
+        font = fontkit.create(bytes);
+      } catch {
+        font = null;
+      }
+    }
+    fonts.set(fontId, font);
+    return font;
+  };
+  return {
+    widthOf(fontId, text, size) {
+      if (!text) return 0;
+      const key = `${fontId}\0${size}\0${text}`;
+      const cached = widthCache.get(key);
+      if (cached !== void 0) return cached;
+      const font = load(fontId);
+      let width;
+      if (!font) {
+        width = text.length * size * 0.55;
+      } else {
+        const units = font.layout(text).glyphs.reduce((sum, glyph) => sum + glyph.advanceWidth, 0);
+        width = units / font.unitsPerEm * size;
+      }
+      widthCache.set(key, width);
+      return width;
+    },
+    ascent(fontId, size) {
+      const font = load(fontId);
+      return font ? font.ascent / font.unitsPerEm * size : size * 0.8;
+    },
+    descent(fontId, size) {
+      const font = load(fontId);
+      return font ? Math.abs(font.descent) / font.unitsPerEm * size : size * 0.2;
+    }
+  };
+}
+const MIN_AUTO_FIT_SIZE = 4;
+function resolveLayout(design, product, measurer) {
+  const primitives = [];
+  for (const element of design.elements) {
+    if (!isVisible(element, product)) continue;
+    const opacity = clamp(element.opacity ?? 1, 0, 1);
+    switch (element.type) {
+      case "box":
+        primitives.push({
+          kind: "rect",
+          x: element.x,
+          y: element.y,
+          w: element.w,
+          h: element.h,
+          fill: element.fill,
+          stroke: element.stroke,
+          strokeWidth: element.strokeWidth,
+          radius: element.cornerRadius,
+          opacity
+        });
+        break;
+      case "text": {
+        const resolved = resolveText(element, product, measurer, opacity);
+        if (resolved) primitives.push(resolved);
+        break;
+      }
+      case "barcode": {
+        const resolved = resolveBarcode(element, product, opacity);
+        if (resolved) primitives.push(resolved);
+        break;
+      }
+      case "image":
+        primitives.push(resolveImage(element, product, opacity));
+        break;
+    }
+  }
+  return {
+    width: design.canvas.width,
+    height: design.canvas.height,
+    background: design.canvas.background,
+    primitives
+  };
+}
+function isVisible(element, product) {
+  switch (element.visibleIf) {
+    case "showPrice":
+      return product.showPrice !== false;
+    case "showBarcode":
+      return product.showBarcode !== false;
+    case "showCookingInstructions":
+      return product.showCookingInstructions !== false;
+    case "showProductName":
+      return product.showProductName !== false;
+    default:
+      return true;
+  }
+}
+function substituteTokens(content, product) {
+  return content.replace(/\{([a-zA-Z]+)\}/g, (_match, field) => {
+    const value = product[field];
+    return typeof value === "string" ? value : "";
+  });
+}
+function resolveText(element, product, measurer, opacity) {
+  const text = applyTextCase(substituteTokens(element.content, product).trim(), element.textCase);
+  if (!text) return null;
+  const fontId = element.fontId || DEFAULT_DESIGN_FONT_ID;
+  const fit = (size2) => {
+    return text.split(/\n/).map((paragraph) => wrapLine(paragraph, fontId, size2, element.w, measurer));
+  };
+  let size = element.size;
+  let paragraphs = fit(size);
+  if (element.autoFit) {
+    while (size > MIN_AUTO_FIT_SIZE && !fits(paragraphs, element, fontId, size, measurer)) {
+      size = Math.max(MIN_AUTO_FIT_SIZE, size - 0.5);
+      paragraphs = fit(size);
+    }
+  }
+  let lines = paragraphs.flat();
+  const lineStep = size * element.lineHeight;
+  const maxByHeight = Math.max(1, Math.floor((element.h + lineStep - size) / lineStep));
+  const maxLines = Math.min(element.maxLines ?? Infinity, maxByHeight);
+  if (lines.length > maxLines) lines = lines.slice(0, maxLines);
+  const ascent = measurer.ascent(fontId, size);
+  const resolvedLines = lines.map((line, index) => {
+    const lineWidth = measurer.widthOf(fontId, line, size);
+    const x = element.align === "center" ? element.x + (element.w - lineWidth) / 2 : element.align === "right" ? element.x + element.w - lineWidth : element.x;
+    return { text: line, x, baseline: element.y + ascent + index * lineStep };
+  });
+  return {
+    kind: "text",
+    lines: resolvedLines,
+    fontId,
+    size,
+    color: element.color,
+    opacity
+  };
+}
+function fits(paragraphs, element, fontId, size, measurer) {
+  const lines = paragraphs.flat();
+  if (element.maxLines && lines.length > element.maxLines) return false;
+  const lineStep = size * element.lineHeight;
+  if (size + (lines.length - 1) * lineStep > element.h) return false;
+  return lines.every((line) => measurer.widthOf(fontId, line, size) <= element.w + 0.01);
+}
+function applyTextCase(text, textCase) {
+  switch (textCase) {
+    case "upper":
+      return text.toUpperCase();
+    case "lower":
+      return text.toLowerCase();
+    case "title":
+      return text.toLowerCase().replace(/(^|[\s\-–—/("'])(\p{L})/gu, (_m, lead, letter) => lead + letter.toUpperCase());
+    case "sentence":
+      return text.toLowerCase().replace(/(^|[.!?]\s+|\n\s*)(\p{L})/gu, (_m, lead, letter) => lead + letter.toUpperCase());
+    default:
+      return text;
+  }
+}
+function wrapLine(text, fontId, size, maxWidth, measurer) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const trial = current ? `${current} ${word}` : word;
+    if (measurer.widthOf(fontId, trial, size) <= maxWidth || !current) current = trial;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+function resolveBarcode(element, product, opacity) {
+  const value = (product.barcodeValue ?? "").trim();
+  if (!value) return null;
+  return {
+    kind: "barcode",
+    x: element.x,
+    y: element.y,
+    w: element.w,
+    h: element.h,
+    value,
+    showText: element.showText,
+    color: element.color,
+    opacity
+  };
+}
+function resolveImage(element, product, opacity) {
+  const overridePath = product.designImageOverrides?.[element.id];
+  return {
+    kind: "image",
+    x: element.x,
+    y: element.y,
+    w: element.w,
+    h: element.h,
+    elementId: element.id,
+    source: element.source,
+    assetName: element.assetName,
+    ...overridePath ? { overridePath } : {},
+    fit: element.fit,
+    opacity
+  };
+}
+function fitRect(frame, imgW, imgH, fit) {
+  if (fit === "stretch" || !imgW || !imgH) return { ...frame };
+  const scale = fit === "contain" ? Math.min(frame.w / imgW, frame.h / imgH) : Math.max(frame.w / imgW, frame.h / imgH);
+  const w = imgW * scale;
+  const h = imgH * scale;
+  return { x: frame.x + (frame.w - w) / 2, y: frame.y + (frame.h - h) / 2, w, h };
+}
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+function designBarcodeOptions(value, showText, colorHex) {
+  const color = colorHex.replace("#", "") || "000000";
+  return {
+    bcid: "code128",
+    text: value,
+    scale: 3,
+    height: 10,
+    includetext: showText,
+    textxalign: "center",
+    barcolor: color,
+    textcolor: color
+  };
+}
+function paintSVG(resolved, ctx) {
+  const parts = [];
+  let clipCounter = 0;
+  parts.push(
+    `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml$1(resolved.background || "#ffffff")}"/>`
+  );
+  for (const primitive of resolved.primitives) {
+    switch (primitive.kind) {
+      case "rect": {
+        if (!primitive.fill && !primitive.stroke) break;
+        const inset = primitive.stroke ? primitive.strokeWidth / 2 : 0;
+        parts.push(
+          `<rect x="${n(primitive.x + inset)}" y="${n(primitive.y + inset)}" width="${n(Math.max(0, primitive.w - inset * 2))}" height="${n(Math.max(0, primitive.h - inset * 2))}" rx="${n(primitive.radius)}" fill="${primitive.fill ? xml$1(primitive.fill) : "none"}"` + (primitive.stroke ? ` stroke="${xml$1(primitive.stroke)}" stroke-width="${n(primitive.strokeWidth)}"` : "") + opacityAttr(primitive.opacity) + "/>"
+        );
+        break;
+      }
+      case "text": {
+        const family = ctx.fontFamily(primitive.fontId);
+        for (const line of primitive.lines) {
+          parts.push(
+            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml$1(family)}" font-size="${n(primitive.size)}" fill="${xml$1(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml$1(line.text)}</text>`
+          );
+        }
+        break;
+      }
+      case "barcode": {
+        const href = ctx.barcodeHref(primitive);
+        if (!href) break;
+        parts.push(
+          `<image x="${n(primitive.x)}" y="${n(primitive.y)}" width="${n(primitive.w)}" height="${n(primitive.h)}" preserveAspectRatio="none" href="${href}" xlink:href="${href}"${opacityAttr(primitive.opacity)}/>`
+        );
+        break;
+      }
+      case "image": {
+        const href = ctx.imageHref(primitive);
+        if (!href) break;
+        const size = ctx.imageSize(primitive);
+        const frame = { x: primitive.x, y: primitive.y, w: primitive.w, h: primitive.h };
+        const rect = size ? fitRect(frame, size.w, size.h, primitive.fit) : frame;
+        const needsClip = primitive.fit === "cover";
+        let element = `<image x="${n(rect.x)}" y="${n(rect.y)}" width="${n(rect.w)}" height="${n(rect.h)}" preserveAspectRatio="none" href="${href}" xlink:href="${href}"${opacityAttr(primitive.opacity)}/>`;
+        if (needsClip) {
+          const clipId = `design-clip-${clipCounter++}`;
+          element = `<clipPath id="${clipId}"><rect x="${n(frame.x)}" y="${n(frame.y)}" width="${n(frame.w)}" height="${n(frame.h)}"/></clipPath><g clip-path="url(#${clipId})">${element}</g>`;
+        }
+        parts.push(element);
+        break;
+      }
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
+}
+function opacityAttr(opacity) {
+  return opacity < 1 ? ` opacity="${n(opacity)}"` : "";
+}
+function n(value) {
+  return String(Math.round(value * 100) / 100);
+}
+function xml$1(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+function collectFontBytes(design) {
+  const ids = /* @__PURE__ */ new Set([DEFAULT_DESIGN_FONT_ID]);
+  for (const element of design.elements) {
+    if (element.type === "text") ids.add(element.fontId || DEFAULT_DESIGN_FONT_ID);
+  }
+  const bytes = {};
+  for (const id of ids) {
+    const font = getFont(id);
+    if (font && fs.existsSync(font.path)) bytes[id] = new Uint8Array(fs.readFileSync(font.path));
+  }
+  return bytes;
+}
+function resolveDesign(design, product) {
+  const measurer = createTextMeasurer(collectFontBytes(design));
+  return resolveLayout(design, product, measurer);
+}
+function imageSourcePath(image, product) {
+  if (image.overridePath && fs.existsSync(image.overridePath)) return image.overridePath;
+  if (image.source === "asset") return image.assetName ? designAssetPath(image.assetName) : "";
+  return product.logoImagePath && fs.existsSync(product.logoImagePath) ? product.logoImagePath : getDefaultTopLogoPath();
+}
+async function renderDesignBarcode(barcode) {
+  try {
+    return await bwipjs.toBuffer(designBarcodeOptions(barcode.value, barcode.showText, barcode.color));
+  } catch {
+    return null;
+  }
+}
+async function drawDesignLabel(doc, page, design, product) {
+  const resolved = resolveDesign(design, product);
+  const H = resolved.height;
+  const fontCache = /* @__PURE__ */ new Map();
+  const fontBytes = collectFontBytes(design);
+  const embedFontFor = async (fontId) => {
+    const cached = fontCache.get(fontId);
+    if (cached) return cached;
+    let font;
+    try {
+      const bytes = fontBytes[fontId];
+      font = bytes ? await doc.embedFont(bytes) : await doc.embedFont(pdfLib.StandardFonts.Helvetica);
+    } catch {
+      font = await doc.embedFont(pdfLib.StandardFonts.Helvetica);
+    }
+    fontCache.set(fontId, font);
+    return font;
+  };
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: resolved.width,
+    height: H,
+    color: hexToRgb$1(resolved.background || "#ffffff"),
+    borderWidth: 0
+  });
+  for (const primitive of resolved.primitives) {
+    switch (primitive.kind) {
+      case "rect": {
+        if (!primitive.fill && !primitive.stroke) break;
+        page.drawRectangle({
+          x: primitive.x,
+          y: H - primitive.y - primitive.h,
+          width: primitive.w,
+          height: primitive.h,
+          ...primitive.fill ? { color: hexToRgb$1(primitive.fill) } : {},
+          ...primitive.stroke ? { borderColor: hexToRgb$1(primitive.stroke), borderWidth: primitive.strokeWidth } : { borderWidth: 0 },
+          borderRadius: primitive.radius,
+          opacity: primitive.opacity,
+          borderOpacity: primitive.opacity
+        });
+        break;
+      }
+      case "text": {
+        const font = await embedFontFor(primitive.fontId);
+        const color = hexToRgb$1(primitive.color);
+        for (const line of primitive.lines) {
+          page.drawText(line.text, {
+            x: line.x,
+            y: H - line.baseline,
+            size: primitive.size,
+            font,
+            color,
+            opacity: primitive.opacity
+          });
+        }
+        break;
+      }
+      case "barcode": {
+        const png = await renderDesignBarcode(primitive);
+        if (!png) break;
+        try {
+          const image = await doc.embedPng(png);
+          page.drawImage(image, {
+            x: primitive.x,
+            y: H - primitive.y - primitive.h,
+            width: primitive.w,
+            height: primitive.h,
+            opacity: primitive.opacity
+          });
+        } catch {
+        }
+        break;
+      }
+      case "image": {
+        const sourcePath = imageSourcePath(primitive, product);
+        if (!sourcePath || !fs.existsSync(sourcePath)) break;
+        const image = await embedImage(doc, sourcePath);
+        if (!image) break;
+        const frame = { x: primitive.x, y: primitive.y, w: primitive.w, h: primitive.h };
+        const rect = fitRect(frame, image.width, image.height, primitive.fit);
+        const clipToFrame = primitive.fit === "cover";
+        if (clipToFrame) {
+          const fx = frame.x;
+          const fy = H - frame.y - frame.h;
+          page.pushOperators(
+            pdfLib.pushGraphicsState(),
+            pdfLib.moveTo(fx, fy),
+            pdfLib.lineTo(fx + frame.w, fy),
+            pdfLib.lineTo(fx + frame.w, fy + frame.h),
+            pdfLib.lineTo(fx, fy + frame.h),
+            pdfLib.closePath(),
+            pdfLib.clip(),
+            pdfLib.endPath()
+          );
+        }
+        page.drawImage(image, {
+          x: rect.x,
+          y: H - rect.y - rect.h,
+          width: rect.w,
+          height: rect.h,
+          opacity: primitive.opacity
+        });
+        if (clipToFrame) page.pushOperators(pdfLib.popGraphicsState());
+        break;
+      }
+    }
+  }
+}
+async function embedImage(doc, sourcePath) {
+  const bytes = fs.readFileSync(sourcePath);
+  const ext = path.extname(sourcePath).toLowerCase();
+  try {
+    if (ext === ".jpg" || ext === ".jpeg") return await doc.embedJpg(bytes);
+    return await doc.embedPng(bytes);
+  } catch {
+    try {
+      return await doc.embedJpg(bytes);
+    } catch {
+      return null;
+    }
+  }
+}
+async function designToSVG(design, product) {
+  const resolved = resolveDesign(design, product);
+  const barcodeUris = /* @__PURE__ */ new Map();
+  for (const primitive of resolved.primitives) {
+    if (primitive.kind !== "barcode") continue;
+    const key = barcodeKey(primitive);
+    if (barcodeUris.has(key)) continue;
+    const png = await renderDesignBarcode(primitive);
+    if (png) barcodeUris.set(key, `data:image/png;base64,${png.toString("base64")}`);
+  }
+  const usedFontIds = /* @__PURE__ */ new Set();
+  for (const primitive of resolved.primitives) {
+    if (primitive.kind === "text") usedFontIds.add(primitive.fontId);
+  }
+  const fontCss = [...usedFontIds].map((id) => {
+    const uri = fontDataUri(id);
+    return uri ? `@font-face{font-family:"${svgFontFamily(id)}";src:url("${uri}");}` : "";
+  }).join("");
+  return paintSVG(resolved, {
+    fontFamily: (id) => svgFontFamily(id),
+    fontCss,
+    imageHref: (image) => {
+      const path2 = imageSourcePath(image, product);
+      return path2 && fs.existsSync(path2) ? readImageAsBase64(path2) : null;
+    },
+    imageSize: (image) => {
+      const path2 = imageSourcePath(image, product);
+      if (!path2 || !fs.existsSync(path2)) return null;
+      const size = electron.nativeImage.createFromPath(path2).getSize();
+      return size.width && size.height ? { w: size.width, h: size.height } : null;
+    },
+    barcodeHref: (barcode) => barcodeUris.get(barcodeKey(barcode)) ?? null
+  });
+}
+function barcodeKey(barcode) {
+  return `${barcode.value}|${barcode.showText}|${barcode.color}`;
+}
+function svgFontFamily(fontId) {
+  return `LabelFont-${fontId.replace(/[^a-z0-9_-]/gi, "-")}`;
+}
+function hexToRgb$1(hex) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3 ? normalized.split("").map((char) => char + char).join("") : normalized;
+  const intValue = Number.parseInt(value, 16);
+  if (Number.isNaN(intValue)) return pdfLib.rgb(0, 0, 0);
+  return pdfLib.rgb((intValue >> 16 & 255) / 255, (intValue >> 8 & 255) / 255, (intValue & 255) / 255);
 }
 function resolveLabelBackground(product, templateColor) {
   const candidate = product.labelBackgroundColor || getSettings().labelBackgroundColor;
@@ -764,8 +1513,8 @@ async function drawLabel(page, product, topImage, barcodeImage, customBackground
     page.drawImage(customBackground, {
       x: 0,
       y: 0,
-      width: template.width,
-      height: template.height
+      width: page.getWidth(),
+      height: page.getHeight()
     });
     drawCustomTemplateFields(page, product, barcodeImage, fonts, text);
     return;
@@ -835,13 +1584,15 @@ async function drawLabel(page, product, topImage, barcodeImage, customBackground
   }
 }
 function drawCustomTemplateFields(page, product, barcodeImage, fonts, text) {
-  const name = product.name || "Product Name";
-  const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22;
-  const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w);
-  const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize;
-  nameLines.slice(0, 3).forEach((line, index) => {
-    drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text);
-  });
+  if (product.showProductName !== false) {
+    const name = product.name || "Product Name";
+    const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22;
+    const nameLines = wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w);
+    const startY = LABEL_ZONES.name.y + LABEL_ZONES.name.h - nameSize;
+    nameLines.slice(0, 3).forEach((line, index) => {
+      drawCenteredText(page, line, LABEL_ZONES.name.x + LABEL_ZONES.name.w / 2, startY - index * nameSize * 1.08, nameSize, fonts.name, text);
+    });
+  }
   if (product.showPrice) {
     const price = product.price || "$13.99";
     drawCenteredText(page, price, LABEL_ZONES.price.x + LABEL_ZONES.price.w / 2, LABEL_ZONES.price.y, price.length > 10 ? 22 : 28, fonts.price, text);
@@ -1035,12 +1786,19 @@ async function buildLabelPDF(product, topImageBytes, barcodeBytes) {
   const template = getLabelTemplate(product.templateId);
   const doc = await pdfLib.PDFDocument.create();
   doc.registerFontkit(fontkit);
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null;
+  if (design) {
+    const designPage = doc.addPage([design.canvas.width, design.canvas.height]);
+    await drawDesignLabel(doc, designPage, design, product);
+    return doc.save();
+  }
   const fonts = await embedFonts(doc);
   const topImage = topImageBytes ? await embedImageAsset(doc, topImageBytes, product.logoImagePath ?? getDefaultTopLogoPath()) : null;
   const barcodeImage = barcodeBytes ? await embedImageAsset(doc, barcodeBytes, product.barcodeImagePath) : null;
   const customPreviewPath = isCustomTemplate(product.templateId) ? getTemplatePNGPath(product.templateId) : null;
   const customBackground = customPreviewPath && fs.existsSync(customPreviewPath) ? await embedImageAsset(doc, fs.readFileSync(customPreviewPath), customPreviewPath) : null;
-  const page = doc.addPage([template.width, template.height]);
+  const customSize = customBackground ? getCustomTemplateSize(product.templateId) : null;
+  const page = doc.addPage([customSize?.width ?? template.width, customSize?.height ?? template.height]);
   await drawLabel(page, product, topImage, barcodeImage, customBackground, fonts);
   return doc.save();
 }
@@ -1111,7 +1869,6 @@ async function buildSheetPDF(products, startSlot) {
     if (productIndex < 0 || productIndex >= products.length) continue;
     const product = products[productIndex];
     if (!product) continue;
-    const template = getLabelTemplate(product.templateId);
     const col = (slot - 1) % sheetLayout.cols;
     const row = Math.floor((slot - 1) / sheetLayout.cols);
     const slotX = sheetLayout.marginLeft + sheetLayout.offsetX + col * (sheetLayout.slotW + sheetLayout.gapX);
@@ -1122,7 +1879,7 @@ async function buildSheetPDF(products, startSlot) {
       barcodeCache.get(product.id) ?? null
     );
     const [embeddedLabel] = await sheetDoc.embedPdf(labelBytes);
-    if (template.layout === "info") {
+    if (embeddedLabel.width >= embeddedLabel.height) {
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,
@@ -1149,6 +1906,8 @@ async function exportSheetPDF(products, startSlot, outputPath) {
   return outputPath;
 }
 async function exportSingleLabelSVG(product) {
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null;
+  if (design) return designToSVG(design, product);
   const template = getLabelTemplate(product.templateId);
   const topImageUri = product.logoImagePath ? readImageAsBase64(product.logoImagePath) : readImageAsBase64(getDefaultTopLogoPath());
   const avenirFontUri = readFontDataUri(getAvenirNextCondensedFontPath());
@@ -1471,7 +2230,7 @@ async function tillieDb() {
     }
     try {
       const listing = await _mongo.db().admin().listDatabases({ nameOnly: true });
-      const names = listing.databases.map((d) => d.name).filter((n) => !["admin", "local", "config"].includes(n));
+      const names = listing.databases.map((d) => d.name).filter((n2) => !["admin", "local", "config"].includes(n2));
       const configured = cfg.mongoDb || "pos";
       if (!names.includes(configured) && names.length === 1) {
         cfg.mongoDb = names[0];
@@ -1564,12 +2323,12 @@ function formatPrice(price) {
 function parsePrice(price) {
   const match = price.match(/\d+(?:\.\d+)?/);
   if (!match) return null;
-  const n = Number.parseFloat(match[0]);
-  return Number.isFinite(n) ? n : null;
+  const n2 = Number.parseFloat(match[0]);
+  return Number.isFinite(n2) ? n2 : null;
 }
 function generateBarcode$1() {
-  const num = Math.floor(Math.random() * 9e11) + 1e11;
-  return String(num);
+  const num2 = Math.floor(Math.random() * 9e11) + 1e11;
+  return String(num2);
 }
 function categoryName(p, scope) {
   return scope.categoryNameById.get(p.category) ?? p.category ?? "";
@@ -1889,6 +2648,7 @@ function registerIpcHandlers() {
           showPrice: true,
           showBarcode: true,
           showCookingInstructions: true,
+          showProductName: true,
           tillieProductId: null,
           createdAt: now,
           updatedAt: now
@@ -2006,9 +2766,85 @@ function registerIpcHandlers() {
   });
   electron.ipcMain.handle("file:listTemplates", () => {
     try {
-      return ok(listTemplates());
+      return ok([
+        ...listTemplates(),
+        ...listDesigns().map(({ id, name }) => ({ id, name }))
+      ]);
     } catch (e) {
       return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:list", () => {
+    try {
+      return ok(listDesigns());
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:get", (_e, id) => {
+    try {
+      const design = getDesign(id);
+      return design ? ok(design) : fail("Design not found");
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:save", (_e, design) => {
+    try {
+      return ok(saveDesign(design));
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("design:delete", (_e, id) => {
+    try {
+      deleteDesign(id);
+      return ok(true);
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:duplicate", (_e, id) => {
+    try {
+      const copy = duplicateDesign(id);
+      return copy ? ok(copy) : fail("Design not found");
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:importImage", async () => {
+    try {
+      const result = await electron.dialog.showOpenDialog({
+        title: "Choose an Image for the Design",
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+        properties: ["openFile"]
+      });
+      if (result.canceled || !result.filePaths.length) return ok(null);
+      const assetName = importDesignAsset(result.filePaths[0]);
+      return ok({ assetName, dataUri: designAssetDataUri(assetName) });
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("design:assetDataUri", (_e, assetName) => {
+    try {
+      return ok(designAssetDataUri(assetName));
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("design:pickSlotImage", async (_e, productId, elementId) => {
+    try {
+      const result = await electron.dialog.showOpenDialog({
+        title: "Choose an Image for This Label",
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg"] }],
+        properties: ["openFile"]
+      });
+      if (result.canceled || !result.filePaths.length) return ok(null);
+      const storedPath = saveDesignSlotImage(result.filePaths[0], productId, elementId);
+      return ok(storedPath);
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
     }
   });
   electron.ipcMain.handle("file:pickTemplateImage", async () => {
@@ -2027,6 +2863,21 @@ function registerIpcHandlers() {
   electron.ipcMain.handle("file:saveTemplateImage", async (_e, sourcePath) => {
     try {
       return ok(await saveTemplateImage(sourcePath));
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
+  electron.ipcMain.handle("file:deleteTemplate", (_e, templateId) => {
+    try {
+      if (templateId.startsWith("design-")) {
+        deleteDesign(templateId);
+        return ok(true);
+      }
+      if (isCustomTemplate(templateId)) {
+        deleteCustomTemplate(templateId);
+        return ok(true);
+      }
+      return fail("Built-in templates cannot be deleted.");
     } catch (e) {
       return fail(String(e));
     }
@@ -2192,8 +3043,8 @@ function registerIpcHandlers() {
   });
 }
 function generateBarcode() {
-  const num = Math.floor(Math.random() * 9e11) + 1e11;
-  return String(num);
+  const num2 = Math.floor(Math.random() * 9e11) + 1e11;
+  return String(num2);
 }
 async function printPdfToRoll(pdfPath, opts) {
   const silent = Boolean(opts.printerName);
@@ -2352,6 +3203,7 @@ electron.app.whenReady().then(() => {
   try {
     initFileManager();
     initFonts();
+    initDesigns();
     initDatabase();
     registerIpcHandlers();
   } catch (err) {

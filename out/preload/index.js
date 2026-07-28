@@ -27,6 +27,7 @@ const api = {
     listTemplates: () => electron.ipcRenderer.invoke("file:listTemplates"),
     pickTemplateImage: () => electron.ipcRenderer.invoke("file:pickTemplateImage"),
     saveTemplateImage: (sourcePath) => electron.ipcRenderer.invoke("file:saveTemplateImage", sourcePath),
+    deleteTemplate: (templateId) => electron.ipcRenderer.invoke("file:deleteTemplate", templateId),
     pickExportFolder: () => electron.ipcRenderer.invoke("file:pickExportFolder")
   },
   font: {
@@ -34,6 +35,17 @@ const api = {
     importLocal: () => electron.ipcRenderer.invoke("font:importLocal"),
     upload: () => electron.ipcRenderer.invoke("font:upload"),
     addGoogle: (family) => electron.ipcRenderer.invoke("font:addGoogle", family)
+  },
+  // Design templates
+  design: {
+    list: () => electron.ipcRenderer.invoke("design:list"),
+    get: (id) => electron.ipcRenderer.invoke("design:get", id),
+    save: (design) => electron.ipcRenderer.invoke("design:save", design),
+    delete: (id) => electron.ipcRenderer.invoke("design:delete", id),
+    duplicate: (id) => electron.ipcRenderer.invoke("design:duplicate", id),
+    importImage: () => electron.ipcRenderer.invoke("design:importImage"),
+    assetDataUri: (assetName) => electron.ipcRenderer.invoke("design:assetDataUri", assetName),
+    pickSlotImage: (productId, elementId) => electron.ipcRenderer.invoke("design:pickSlotImage", productId, elementId)
   },
   // Export
   export: {

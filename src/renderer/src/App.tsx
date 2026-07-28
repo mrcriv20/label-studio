@@ -5,15 +5,17 @@ import Editor from './screens/Editor'
 import SheetBuilder from './screens/SheetBuilder'
 import Settings from './screens/Settings'
 import HowTo from './screens/HowTo'
+import Designer from './screens/Designer'
 import type { Product } from './types'
 import { applyFontSettings, installFonts } from './lib/fonts'
 
-export type Screen = 'library' | 'editor' | 'sheet' | 'settings' | 'how-to'
+export type Screen = 'library' | 'editor' | 'sheet' | 'designer' | 'settings' | 'how-to'
 
 export default function App(): JSX.Element {
   const [screen, setScreen] = useState<Screen>('library')
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
+  const [designerTarget, setDesignerTarget] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([window.api.settings.get(), window.api.font.list()]).then(([settings, fonts]) => {
@@ -32,6 +34,11 @@ export default function App(): JSX.Element {
   function openSheet(products: Product[]): void {
     setSheetProducts(products)
     setScreen('sheet')
+  }
+
+  function openDesigner(designId?: string | null): void {
+    setDesignerTarget(designId ?? null)
+    setScreen('designer')
   }
 
   function backToLibrary(): void {
@@ -57,8 +64,10 @@ export default function App(): JSX.Element {
             initialProduct={editingProduct}
             onBack={backToLibrary}
             onOpenSheet={(p) => openSheet([p])}
+            onOpenDesigner={openDesigner}
           />
         )}
+        {screen === 'designer' && <Designer initialDesignId={designerTarget} />}
         {screen === 'sheet' && (
           <SheetBuilder
             initialProducts={sheetProducts}

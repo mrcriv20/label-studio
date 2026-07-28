@@ -1,19 +1,20 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ArrowLeft, Save, FileText, FileCode2,
-  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers, Sticker
+  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers, Sticker, Trash2
 } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import LabelPreview from '../components/LabelPreview'
 import RollPrintDialog from '../components/RollPrintDialog'
 import { generateBarcodeValue } from '../lib/barcode'
-import type { Product, LabelTemplate } from '../types'
+import type { Product, LabelTemplate, DesignTemplate } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
 
 interface Props {
   initialProduct: Product | null
   onBack: () => void
   onOpenSheet: (product: Product) => void
+  onOpenDesigner?: (designId?: string | null) => void
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -37,10 +38,11 @@ const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   showPrice: true,
   showBarcode: true,
   showCookingInstructions: true,
+  designImageOverrides: null,
   tillieProductId: null,
 })
 
-export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): JSX.Element {
+export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner }: Props): JSX.Element {
   const isNew = !initialProduct
 
   const [product, setProduct] = useState<Partial<Product>>(
@@ -57,6 +59,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const [regenConfirm, setRegenConfirm] = useState(false)
   const [importingTemplate, setImportingTemplate] = useState(false)
   const [rollProduct, setRollProduct] = useState<Product | null>(null)
+  const [designDoc, setDesignDoc] = useState<DesignTemplate | null>(null)
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
 
   useEffect(() => {
@@ -121,6 +124,53 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     }
   }, [product.barcodeValue])
 
+  // Design templates: fetch the design so per-label image slots can be listed.
+  useEffect(() => {
+    if (!product.templateId?.startsWith('design-')) {
+      setDesignDoc(null)
+      return
+    }
+    let alive = true
+    window.api.design.get(product.templateId).then((result) => {
+      if (alive) setDesignDoc(result.ok ? result.data : null)
+    })
+    return () => {
+      alive = false
+    }
+  }, [product.templateId])
+
+  const designImageSlots = useMemo(
+    () =>
+      (designDoc?.elements ?? []).flatMap((element, index) =>
+        element.type === 'image' && element.source === 'asset'
+          ? [{ id: element.id, label: element.label || element.assetName || `Image ${index + 1}` }]
+          : []
+      ),
+    [designDoc]
+  )
+
+  async function handlePickDesignImage(elementId: string): Promise<void> {
+    const productId = product.id ?? `tmp-${Date.now()}`
+    const result = await window.api.design.pickSlotImage(productId, elementId)
+    if (!result.ok) { alert(`Failed to save image: ${result.error}`); return }
+    if (!result.data) return
+    const storedPath = result.data
+    setProduct((prev) => ({
+      ...prev,
+      designImageOverrides: { ...(prev.designImageOverrides ?? {}), [elementId]: storedPath },
+    }))
+    setSaveStatus('idle')
+  }
+
+  function handleClearDesignImage(elementId: string): void {
+    setProduct((prev) => {
+      const next = { ...(prev.designImageOverrides ?? {}) }
+      delete next[elementId]
+      return { ...prev, designImageOverrides: Object.keys(next).length ? next : null }
+    })
+    setSaveStatus('idle')
+  }
+
   const activeTemplate = useMemo(
     () => getLabelTemplate(product.templateId),
     [product.templateId]
@@ -128,6 +178,10 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
   const usesPrice = activeTemplate.layout === 'front' || activeTemplate.layout === 'info'
   const usesBarcode = activeTemplate.layout === 'front' || activeTemplate.layout === 'info'
   const usesCookingInstructions = activeTemplate.layout === 'info' || activeTemplate.layout === 'vertical-info'
+  // Custom artwork templates often bake the name into the design, so it can be
+  // hidden there. Design templates control visibility per element too.
+  const isDesignTemplate = Boolean(product.templateId?.startsWith('design-'))
+  const usesProductNameToggle = Boolean(product.templateId?.startsWith('custom-')) || isDesignTemplate
   const requiresName = activeTemplate.layout !== 'logo-only'
 
   const templateNote = activeTemplate.layout === 'front'
@@ -143,7 +197,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     if (saveStatus === 'saved') setSaveStatus('idle')
   }
 
-  function updateFlag(field: 'showPrice' | 'showBarcode' | 'showCookingInstructions', value: boolean): void {
+  function updateFlag(field: 'showPrice' | 'showBarcode' | 'showCookingInstructions' | 'showProductName', value: boolean): void {
     setProduct((prev) => ({ ...prev, [field]: value }))
     if (saveStatus === 'saved') setSaveStatus('idle')
   }
@@ -208,6 +262,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
         logoImagePath: product.logoImagePath ?? null,
         templateId: product.templateId ?? 'avery5821',
         showCookingInstructions: product.showCookingInstructions ?? true,
+        showProductName: product.showProductName ?? true,
+        designImageOverrides: product.designImageOverrides ?? null,
         tillieProductId: product.tillieProductId ?? null,
       })
     } else {
@@ -280,6 +336,28 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
     const b64Result = await window.api.file.readImageAsBase64(storedPath)
     if (b64Result.ok && b64Result.data) setBarcodeOverrideDataUri(b64Result.data)
     setSaveStatus('idle')
+  }
+
+  const isDeletableTemplate = Boolean(
+    product.templateId && (product.templateId.startsWith('custom-') || product.templateId.startsWith('design-'))
+  )
+
+  async function handleDeleteTemplate(): Promise<void> {
+    const templateId = product.templateId
+    if (!templateId || !isDeletableTemplate) return
+    const templateName = templates.find((template) => template.id === templateId)?.name ?? templateId
+    const confirmed = window.confirm(
+      `Remove the template "${templateName}" from the list?\n\nLabels that use it will fall back to the default template. This cannot be undone.`
+    )
+    if (!confirmed) return
+    const result = await window.api.file.deleteTemplate(templateId)
+    if (!result.ok) {
+      setSaveError(result.error)
+      setSaveStatus('error')
+      return
+    }
+    setTemplates((current) => current.filter((template) => template.id !== templateId))
+    update('templateId', 'avery5821')
   }
 
   async function handleImportTemplate(): Promise<void> {
@@ -436,24 +514,80 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
             {/* Template */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <label className="label-text" style={{ marginBottom: 0 }}>Template</label>
-              <select
-                className="input"
-                value={product.templateId ?? 'avery5821'}
-                onChange={(e) => update('templateId', e.target.value)}
-              >
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  className="input"
+                  style={{ flex: 1 }}
+                  value={product.templateId ?? 'avery5821'}
+                  onChange={(e) => update('templateId', e.target.value)}
+                >
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>{template.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  title={isDeletableTemplate ? 'Remove this template from the list' : 'Built-in templates cannot be removed'}
+                  disabled={!isDeletableTemplate}
+                  onClick={handleDeleteTemplate}
+                  style={{ padding: '0 10px' }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
               <button type="button" className="btn-outline" onClick={handleImportTemplate} disabled={importingTemplate}>
                 <Upload size={13} /> {importingTemplate ? 'Creating template…' : 'Import label design'}
               </button>
+              {onOpenDesigner && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {isDesignTemplate && (
+                    <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => onOpenDesigner(product.templateId)}>
+                      Edit in Designer
+                    </button>
+                  )}
+                  <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => onOpenDesigner(null)}>
+                    New design…
+                  </button>
+                </div>
+              )}
               <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
-                {product.templateId?.startsWith('custom-')
-                  ? 'Your artwork is used as the full-label background. Product name, price, and barcode remain editable above it.'
-                  : templateNote}
+                {isDesignTemplate
+                  ? 'A design template built in the Designer. Fields bind to this product’s data automatically.'
+                  : product.templateId?.startsWith('custom-')
+                    ? 'Your artwork is used as the full-label background. Product name, price, and barcode remain editable above it.'
+                    : templateNote}
               </p>
             </div>
+
+            {/* Per-label design image slots */}
+            {isDesignTemplate && designImageSlots.length > 0 && (
+              <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label className="label-text" style={{ marginBottom: 0 }}>Design Images</label>
+                {designImageSlots.map((slot) => {
+                  const overridden = Boolean(product.designImageOverrides?.[slot.id])
+                  return (
+                    <div key={slot.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 12, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {slot.label}
+                        {overridden && <span style={{ color: '#16a34a' }}> — custom</span>}
+                      </span>
+                      <button type="button" className="btn-outline btn-sm" onClick={() => handlePickDesignImage(slot.id)}>
+                        <Upload size={12} /> {overridden ? 'Replace…' : 'Change…'}
+                      </button>
+                      {overridden && (
+                        <button type="button" className="btn-outline btn-sm" title="Use the design's image" onClick={() => handleClearDesignImage(slot.id)}>
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+                <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                  Swap this design’s images for this label only. Other products using the template keep the design’s images.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="label-text">Label Background</label>
@@ -633,6 +767,15 @@ export default function Editor({ initialProduct, onBack, onOpenSheet }: Props): 
                   disabled={!usesCookingInstructions}
                 />
                 Show cooking instructions
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={product.showProductName !== false}
+                  onChange={(e) => updateFlag('showProductName', e.target.checked)}
+                  disabled={!usesProductNameToggle}
+                />
+                Show product name on label
               </label>
               <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
                 Disabled options are ignored by the selected template.

@@ -8,6 +8,7 @@ import type {
   TillieProductSummary,
   TillieSyncSummary,
 } from '../main/types'
+import type { DesignTemplate } from '../shared/design/types'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -59,6 +60,8 @@ const api = {
       ipcRenderer.invoke('file:pickTemplateImage'),
     saveTemplateImage: (sourcePath: string): Promise<IpcResult<LabelTemplate>> =>
       ipcRenderer.invoke('file:saveTemplateImage', sourcePath),
+    deleteTemplate: (templateId: string): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('file:deleteTemplate', templateId),
     pickExportFolder: (): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('file:pickExportFolder'),
   },
@@ -68,6 +71,23 @@ const api = {
     importLocal: (): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:importLocal'),
     upload: (): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:upload'),
     addGoogle: (family: string): Promise<IpcResult<unknown>> => ipcRenderer.invoke('font:addGoogle', family),
+  },
+
+  // Design templates
+  design: {
+    list: (): Promise<IpcResult<DesignTemplate[]>> => ipcRenderer.invoke('design:list'),
+    get: (id: string): Promise<IpcResult<DesignTemplate>> => ipcRenderer.invoke('design:get', id),
+    save: (design: DesignTemplate): Promise<IpcResult<DesignTemplate>> =>
+      ipcRenderer.invoke('design:save', design),
+    delete: (id: string): Promise<IpcResult<boolean>> => ipcRenderer.invoke('design:delete', id),
+    duplicate: (id: string): Promise<IpcResult<DesignTemplate>> =>
+      ipcRenderer.invoke('design:duplicate', id),
+    importImage: (): Promise<IpcResult<{ assetName: string; dataUri: string } | null>> =>
+      ipcRenderer.invoke('design:importImage'),
+    assetDataUri: (assetName: string): Promise<IpcResult<string>> =>
+      ipcRenderer.invoke('design:assetDataUri', assetName),
+    pickSlotImage: (productId: string, elementId: string): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('design:pickSlotImage', productId, elementId),
   },
 
   // Export

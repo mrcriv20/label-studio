@@ -1,6 +1,6 @@
 import { app, BrowserWindow, nativeImage } from 'electron'
 import { join, extname, basename } from 'path'
-import { existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync } from 'fs'
+import { existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync, unlinkSync } from 'fs'
 import { writeFileSync } from 'fs'
 import { execFileSync } from 'child_process'
 import type { LabelTemplate } from './types'
@@ -9,22 +9,29 @@ import { getLabelTemplates } from '../shared/labelTemplates'
 const ASSETS_DIR = join(app.getPath('userData'), 'assets')
 const BARCODE_DIR = join(app.getPath('userData'), 'barcodes')
 const LOGO_DIR = join(app.getPath('userData'), 'logos')
+const DESIGN_SLOT_DIR = join(app.getPath('userData'), 'design-images')
 const TEMPLATE_DIR = join(ASSETS_DIR, 'templates')
 const TEMPLATE_PNG = join(ASSETS_DIR, 'label-template-300dpi.png')
 const TEMPLATE_EPS = join(ASSETS_DIR, 'label-template.eps')
 const DEFAULT_TEMPLATE_ID = 'avery5821'
 const DEFAULT_TEMPLATE_NAME = "Grazia's Italian Market"
 const TEMPLATE_CATALOG = join(TEMPLATE_DIR, 'catalog.json')
+// Ids of deleted bundled templates, so copyBundledAssets doesn't resurrect them.
+const TEMPLATE_TOMBSTONES = join(TEMPLATE_DIR, 'deleted.json')
 
 interface CustomTemplateRecord extends LabelTemplate {
   sourcePath: string
   previewPath: string
+  /** Label size in PDF points. Absent for older records; those fall back to the default label size. */
+  width?: number
+  height?: number
 }
 
 export function initFileManager(): void {
   mkdirSync(ASSETS_DIR, { recursive: true })
   mkdirSync(BARCODE_DIR, { recursive: true })
   mkdirSync(LOGO_DIR, { recursive: true })
+  mkdirSync(DESIGN_SLOT_DIR, { recursive: true })
   mkdirSync(TEMPLATE_DIR, { recursive: true })
   copyBundledAssets()
 }
@@ -48,11 +55,39 @@ function copyBundledAssets(): void {
 
   if (existsSync(sourceTemplateDir)) {
     for (const fileName of readdirSync(sourceTemplateDir)) {
-      if (!fileName.toLowerCase().endsWith('.png')) continue
+      if (!/\.(png|svg)$/i.test(fileName)) continue
       const sourcePath = join(sourceTemplateDir, fileName)
       const destPath = join(TEMPLATE_DIR, fileName)
       if (!existsSync(destPath)) copyFileSync(sourcePath, destPath)
     }
+    registerBundledArtworkTemplates(sourceTemplateDir)
+  }
+}
+
+/**
+ * Register bundled full-artwork templates (an SVG design plus its rendered PNG
+ * in assets/templates) in the custom-template catalog so they show up in the
+ * template picker and render through the same artwork pipeline as imports.
+ */
+function registerBundledArtworkTemplates(sourceTemplateDir: string): void {
+  const existing = readCustomTemplates()
+  const tombstones = readTemplateTombstones()
+  const added: CustomTemplateRecord[] = []
+  for (const fileName of readdirSync(sourceTemplateDir)) {
+    if (!fileName.toLowerCase().endsWith('.svg')) continue
+    const baseName = basename(fileName, extname(fileName))
+    const previewPath = join(TEMPLATE_DIR, `${baseName}.png`)
+    if (!existsSync(previewPath)) continue
+    const id = `custom-${slugify(baseName)}`
+    if (tombstones.includes(id)) continue
+    const name = prettifyTemplateName(baseName)
+    if (existing.some((record) => record.id === id || record.name === name)) continue
+    const sourcePath = join(TEMPLATE_DIR, fileName)
+    const dimensions = svgDimensions(readFileSync(sourcePath, 'utf8'))
+    added.push({ id, name, sourcePath, previewPath, ...(dimensions ?? {}) })
+  }
+  if (added.length > 0) {
+    writeFileSync(TEMPLATE_CATALOG, JSON.stringify([...existing, ...added], null, 2), 'utf8')
   }
 }
 
@@ -69,6 +104,12 @@ export function getTemplatePNGPath(templateId = DEFAULT_TEMPLATE_ID): string {
 
 export function isCustomTemplate(templateId?: string | null): boolean {
   return Boolean(templateId && readCustomTemplates().some((template) => template.id === templateId))
+}
+
+/** Native size (in PDF points) of a custom artwork template, when known. */
+export function getCustomTemplateSize(templateId?: string | null): { width: number; height: number } | null {
+  const custom = readCustomTemplates().find((template) => template.id === templateId)
+  return custom?.width && custom?.height ? { width: custom.width, height: custom.height } : null
 }
 
 export function getTemplateEPSPath(): string {
@@ -113,14 +154,48 @@ export async function saveTemplateImage(sourcePath: string): Promise<LabelTempla
   const previewPath = join(TEMPLATE_DIR, `${id}.png`)
   copyFileSync(sourcePath, storedSource)
   await createTemplatePreview(storedSource, previewPath, extension)
+  const dimensions = extension === '.svg' ? svgDimensions(readFileSync(storedSource, 'utf8')) : null
   const record: CustomTemplateRecord = {
     id,
     name: prettifyTemplateName(baseId),
     sourcePath: storedSource,
     previewPath,
+    ...(dimensions ?? {}),
   }
   writeFileSync(TEMPLATE_CATALOG, JSON.stringify([...readCustomTemplates(), record], null, 2), 'utf8')
   return { id: record.id, name: record.name }
+}
+
+/** Remove a custom artwork template: its catalog entry plus stored files. */
+export function deleteCustomTemplate(templateId: string): void {
+  const records = readCustomTemplates()
+  const record = records.find((template) => template.id === templateId)
+  if (!record) return
+  for (const path of [record.sourcePath, record.previewPath]) {
+    try {
+      if (existsSync(path)) unlinkSync(path)
+    } catch {
+      // Removing the catalog entry is what matters; stray files are harmless.
+    }
+  }
+  writeFileSync(
+    TEMPLATE_CATALOG,
+    JSON.stringify(records.filter((template) => template.id !== templateId), null, 2),
+    'utf8'
+  )
+  const tombstones = readTemplateTombstones()
+  if (!tombstones.includes(templateId)) {
+    writeFileSync(TEMPLATE_TOMBSTONES, JSON.stringify([...tombstones, templateId], null, 2), 'utf8')
+  }
+}
+
+function readTemplateTombstones(): string[] {
+  try {
+    const parsed = JSON.parse(readFileSync(TEMPLATE_TOMBSTONES, 'utf8'))
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function readCustomTemplates(): CustomTemplateRecord[] {
@@ -139,8 +214,8 @@ async function createTemplatePreview(sourcePath: string, previewPath: string, ex
   }
   if (extension === '.svg') {
     const svg = readFileSync(sourcePath)
-    const dimensions = svgDimensions(svg.toString('utf8'))
-    const width = 1200
+    const dimensions = svgDimensions(svg.toString('utf8')) ?? { width: 400, height: 640 }
+    const width = 1500
     const height = Math.max(1, Math.round(width * dimensions.height / dimensions.width))
     const renderWindow = new BrowserWindow({
       show: false,
@@ -150,7 +225,14 @@ async function createTemplatePreview(sourcePath: string, previewPath: string, ex
       webPreferences: { sandbox: true },
     })
     try {
-      await renderWindow.loadURL(`data:image/svg+xml;base64,${svg.toString('base64')}`)
+      // Render through an <img> so we can wait for the SVG (including any
+      // embedded raster images) to fully decode before capturing.
+      const svgUri = `data:image/svg+xml;base64,${svg.toString('base64')}`
+      const html = `<!doctype html><html><head><style>html,body{margin:0;overflow:hidden}img{display:block;width:${width}px;height:${height}px}</style></head><body><img src="${svgUri}"></body></html>`
+      await renderWindow.loadURL(`data:text/html;base64,${Buffer.from(html).toString('base64')}`)
+      await renderWindow.webContents.executeJavaScript(
+        'document.querySelector("img").decode().then(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))'
+      )
       const image = await renderWindow.webContents.capturePage()
       if (!image.isEmpty()) {
         writeFileSync(previewPath, image.toPNG())
@@ -180,12 +262,14 @@ async function createTemplatePreview(sourcePath: string, previewPath: string, ex
   throw new Error('This file could not be converted into a label preview. Try exporting the design as PNG.')
 }
 
-function svgDimensions(svg: string): { width: number; height: number } {
+function svgDimensions(svg: string): { width: number; height: number } | null {
   const viewBox = svg.match(/\bviewBox\s*=\s*["']\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*["']/i)
-  if (viewBox) return { width: Number(viewBox[1]) || 400, height: Number(viewBox[2]) || 640 }
+  if (viewBox && Number(viewBox[1]) && Number(viewBox[2])) {
+    return { width: Number(viewBox[1]), height: Number(viewBox[2]) }
+  }
   const width = Number(svg.match(/\bwidth\s*=\s*["']([\d.]+)/i)?.[1])
   const height = Number(svg.match(/\bheight\s*=\s*["']([\d.]+)/i)?.[1])
-  return { width: width || 400, height: height || 640 }
+  return width && height ? { width, height } : null
 }
 
 /** Save an uploaded barcode image into the managed barcodes folder. Returns the stored path. */
@@ -193,6 +277,19 @@ export function saveBarcodeImage(sourcePath: string, productId: string): string 
   const ext = extname(sourcePath) || '.png'
   const destName = `barcode-${productId}${ext}`
   const destPath = join(BARCODE_DIR, destName)
+  copyFileSync(sourcePath, destPath)
+  return destPath
+}
+
+/**
+ * Save a per-label replacement for a design image element. The stored name is
+ * timestamped so replacing an image yields a fresh path (no stale caches).
+ */
+export function saveDesignSlotImage(sourcePath: string, productId: string, elementId: string): string {
+  const ext = extname(sourcePath).toLowerCase() || '.png'
+  const clean = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '')
+  const destPath = join(DESIGN_SLOT_DIR, `${clean(productId)}-${clean(elementId)}-${Date.now()}${ext}`)
+  mkdirSync(DESIGN_SLOT_DIR, { recursive: true })
   copyFileSync(sourcePath, destPath)
   return destPath
 }
@@ -235,7 +332,7 @@ function prettifyTemplateName(id: string): string {
     .join(' ')
 }
 
-function getBundledAssetsDir(): string {
+export function getBundledAssetsDir(): string {
   return !app.isPackaged
     ? join(__dirname, '../../assets')
     : join(process.resourcesPath, 'assets')

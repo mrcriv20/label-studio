@@ -1,4 +1,4 @@
-import { LayoutGrid, Tag, Layers, Settings, CircleHelp } from 'lucide-react'
+import { LayoutGrid, Tag, Layers, PenTool, Settings, CircleHelp } from 'lucide-react'
 import type { Screen } from '../App'
 import logo from '../assets/logo.png'
 
@@ -6,6 +6,7 @@ const items: { id: Screen; label: string; Icon: typeof LayoutGrid }[] = [
   { id: 'library', label: 'Products', Icon: LayoutGrid },
   { id: 'editor', label: 'New Label', Icon: Tag },
   { id: 'sheet', label: 'Print Sheet', Icon: Layers },
+  { id: 'designer', label: 'Designer', Icon: PenTool },
   { id: 'settings', label: 'Settings', Icon: Settings },
   { id: 'how-to', label: 'How to Use', Icon: CircleHelp },
 ]

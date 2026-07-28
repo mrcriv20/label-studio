@@ -20,6 +20,8 @@ export interface Product {
   showPrice: boolean
   showBarcode: boolean
   showCookingInstructions: boolean
+  showProductName?: boolean // absent = shown; toggleable only on custom artwork templates
+  designImageOverrides?: Record<string, string> | null // design image element id → per-label image path
   tillieProductId: string | null // linked Tillie POS product; Tillie owns name/price/category when set
   createdAt: string
   updatedAt: string

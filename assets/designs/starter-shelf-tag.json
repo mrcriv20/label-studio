@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "design-starter-shelf-tag",
+  "name": "Starter Shelf Tag (3.5 x 2 in)",
+  "canvas": { "width": 252, "height": 144, "background": "#ffffff" },
+  "elements": [
+    {
+      "id": "bg",
+      "type": "box",
+      "x": 0,
+      "y": 0,
+      "w": 252,
+      "h": 144,
+      "fill": "#f6f2df",
+      "stroke": "#e3dbc0",
+      "strokeWidth": 1,
+      "cornerRadius": 10
+    },
+    {
+      "id": "name",
+      "type": "text",
+      "x": 14,
+      "y": 12,
+      "w": 224,
+      "h": 42,
+      "content": "{name}",
+      "fontId": "bundled:lora",
+      "size": 22,
+      "autoFit": true,
+      "color": "#1b2733",
+      "align": "center",
+      "lineHeight": 1.08,
+      "maxLines": 2,
+      "visibleIf": "showProductName"
+    },
+    {
+      "id": "price",
+      "type": "text",
+      "x": 14,
+      "y": 58,
+      "w": 224,
+      "h": 30,
+      "content": "{price}",
+      "fontId": "bundled:genty",
+      "size": 26,
+      "autoFit": true,
+      "color": "#1b2733",
+      "align": "center",
+      "lineHeight": 1,
+      "maxLines": 1,
+      "visibleIf": "showPrice"
+    },
+    {
+      "id": "barcode",
+      "type": "barcode",
+      "x": 66,
+      "y": 96,
+      "w": 120,
+      "h": 38,
+      "showText": true,
+      "color": "#000000",
+      "visibleIf": "showBarcode"
+    }
+  ],
+  "createdAt": "2026-07-28T00:00:00.000Z",
+  "updatedAt": "2026-07-28T00:00:00.000Z"
+}

@@ -360,3 +360,10 @@ canvas.barcode-canvas {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Design templates: the painted SVG fills its aspect-ratio container */
+.design-label-svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
