@@ -88,6 +88,10 @@ const api = {
       ipcRenderer.invoke('design:assetDataUri', assetName),
     pickSlotImage: (productId: string, elementId: string): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('design:pickSlotImage', productId, elementId),
+    exportFile: (design: DesignTemplate): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('design:export', design),
+    importFile: (): Promise<IpcResult<DesignTemplate | null>> =>
+      ipcRenderer.invoke('design:import'),
   },
 
   // Export

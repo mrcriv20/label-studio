@@ -45,7 +45,9 @@ const api = {
     duplicate: (id) => electron.ipcRenderer.invoke("design:duplicate", id),
     importImage: () => electron.ipcRenderer.invoke("design:importImage"),
     assetDataUri: (assetName) => electron.ipcRenderer.invoke("design:assetDataUri", assetName),
-    pickSlotImage: (productId, elementId) => electron.ipcRenderer.invoke("design:pickSlotImage", productId, elementId)
+    pickSlotImage: (productId, elementId) => electron.ipcRenderer.invoke("design:pickSlotImage", productId, elementId),
+    exportFile: (design) => electron.ipcRenderer.invoke("design:export", design),
+    importFile: () => electron.ipcRenderer.invoke("design:import")
   },
   // Export
   export: {

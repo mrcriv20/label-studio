@@ -34,6 +34,8 @@ import {
   duplicateDesign,
   importDesignAsset,
   designAssetDataUri,
+  exportDesignToFile,
+  importDesignFromFile,
 } from './designs'
 import { getLabelTemplate } from '../shared/labelTemplates'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
@@ -354,6 +356,35 @@ export function registerIpcHandlers(): void {
       if (result.canceled || !result.filePaths.length) return ok(null)
       const assetName = importDesignAsset(result.filePaths[0])
       return ok({ assetName, dataUri: designAssetDataUri(assetName) })
+    } catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  // Export a design (plus its placed images) as a portable file another
+  // Label Studio instance can import.
+  ipcMain.handle('design:export', async (_e, design: unknown) => {
+    try {
+      const name = (design as { name?: string })?.name || 'design'
+      const fileName = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'design'
+      const result = await dialog.showSaveDialog({
+        title: 'Export Design',
+        defaultPath: `${fileName}.tilliedesign`,
+        filters: [{ name: 'Label Studio Design', extensions: ['tilliedesign'] }],
+      })
+      if (result.canceled || !result.filePath) return ok(null)
+      exportDesignToFile(design, result.filePath)
+      return ok(result.filePath)
+    } catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
+  ipcMain.handle('design:import', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Import Design',
+        filters: [{ name: 'Label Studio Design', extensions: ['tilliedesign', 'json'] }],
+        properties: ['openFile'],
+      })
+      if (result.canceled || !result.filePaths.length) return ok(null)
+      return ok(importDesignFromFile(result.filePaths[0]))
     } catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
   })
 

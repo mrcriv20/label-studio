@@ -120,6 +120,8 @@ declare global {
         importImage(): Promise<IpcResult<{ assetName: string; dataUri: string } | null>>
         assetDataUri(assetName: string): Promise<IpcResult<string>>
         pickSlotImage(productId: string, elementId: string): Promise<IpcResult<string | null>>
+        exportFile(design: DesignTemplate): Promise<IpcResult<string | null>>
+        importFile(): Promise<IpcResult<DesignTemplate | null>>
       }
       product: {
         list(): Promise<IpcResult<Product[]>>

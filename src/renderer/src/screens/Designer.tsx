@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Barcode,
   Copy,
+  Download,
   GripVertical,
   Image as ImageIcon,
   Lock,
@@ -13,6 +14,7 @@ import {
   Square,
   Trash2,
   Type,
+  Upload,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -401,6 +403,24 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
     refreshDesignList()
   }, [design, refreshDesignList])
 
+  const exportDesign = useCallback(async (): Promise<void> => {
+    if (!design) return
+    const result = await window.api.design.exportFile(design)
+    if (!result.ok) setError(result.error)
+    else setError('')
+  }, [design])
+
+  const importDesign = useCallback(async (): Promise<void> => {
+    const result = await window.api.design.importFile()
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    if (!result.data) return
+    await refreshDesignList()
+    openDesign(result.data)
+  }, [refreshDesignList, openDesign])
+
   const deleteDesign = useCallback(async (): Promise<void> => {
     if (!design) return
     if (!window.confirm(`Delete the design "${design.name}"? Products using it will fall back to the default template.`)) return
@@ -655,6 +675,12 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
           <ZoomIn size={12} />
         </button>
 
+        <button className="btn-outline btn-sm" title="Import a design exported from another Label Studio" onClick={importDesign}>
+          <Upload size={12} /> Import…
+        </button>
+        <button className="btn-outline btn-sm" title="Export this design to share with another Label Studio" onClick={exportDesign}>
+          <Download size={12} /> Export
+        </button>
         <button className="btn-outline btn-sm" onClick={deleteDesign}>
           <Trash2 size={12} /> Delete
         </button>

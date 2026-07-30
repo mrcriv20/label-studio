@@ -105,6 +105,104 @@ export function designAssetDataUri(assetName: string): string {
   return readImageAsBase64(designAssetPath(assetName))
 }
 
+// ── Export / import bundles ──────────────────────────────────────────────────
+// A portable design is a single JSON file carrying the design document plus
+// any placed asset images (as data URIs) so it opens intact on another machine.
+
+const DESIGN_BUNDLE_FORMAT = 'tillie-design'
+
+interface DesignExportBundle {
+  format: typeof DESIGN_BUNDLE_FORMAT
+  formatVersion: 1
+  design: DesignTemplate
+  /** Asset file name → data URI for images placed on the design. */
+  assets: Record<string, string>
+}
+
+export function exportDesignToFile(raw: unknown, filePath: string): void {
+  const design = validateDesignTemplate(raw)
+  const assets: Record<string, string> = {}
+  for (const element of design.elements) {
+    if (element.type === 'image' && element.source === 'asset' && element.assetName) {
+      const dataUri = designAssetDataUri(element.assetName)
+      if (dataUri) assets[element.assetName] = dataUri
+    }
+  }
+  const bundle: DesignExportBundle = {
+    format: DESIGN_BUNDLE_FORMAT,
+    formatVersion: 1,
+    design,
+    assets,
+  }
+  writeFileSync(filePath, JSON.stringify(bundle, null, 2), 'utf8')
+}
+
+export function importDesignFromFile(filePath: string): DesignTemplate {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(filePath, 'utf8'))
+  } catch {
+    throw new Error('That file is not a valid design export.')
+  }
+
+  // Accept a full bundle or a bare design document.
+  const record = parsed as Partial<DesignExportBundle>
+  const isBundle = record?.format === DESIGN_BUNDLE_FORMAT
+  const rawDesign = isBundle ? record.design : parsed
+  const assets = isBundle && record.assets && typeof record.assets === 'object' ? record.assets : {}
+
+  let design: DesignTemplate
+  try {
+    design = validateDesignTemplate(rawDesign)
+  } catch (e) {
+    throw new Error(`That file is not a valid design export. ${e instanceof Error ? e.message : ''}`.trim())
+  }
+
+  // Unpack bundled images, renaming on content conflicts.
+  const renames = new Map<string, string>()
+  for (const [assetName, dataUri] of Object.entries(assets)) {
+    if (typeof dataUri !== 'string') continue
+    const stored = storeDesignAssetFromDataUri(assetName, dataUri)
+    if (stored && stored !== assetName) renames.set(assetName, stored)
+  }
+  if (renames.size) {
+    design = {
+      ...design,
+      elements: design.elements.map((element) =>
+        element.type === 'image' && element.assetName && renames.has(element.assetName)
+          ? { ...element, assetName: renames.get(element.assetName) }
+          : element,
+      ),
+    }
+  }
+
+  // Keep the id when it's free (re-import updates in place across instances);
+  // otherwise mint a fresh id so an existing design is never clobbered silently.
+  if (getDesign(design.id)) {
+    design = { ...design, id: newDesignId(), name: `${design.name} (imported)` }
+  }
+  return saveDesign(design)
+}
+
+/** Write a bundled image into the assets folder; returns the stored name or null. */
+function storeDesignAssetFromDataUri(assetName: string, dataUri: string): string | null {
+  const match = /^data:image\/(png|jpe?g);base64,(.+)$/.exec(dataUri)
+  if (!match) return null
+  const buffer = Buffer.from(match[2], 'base64')
+  mkdirSync(designAssetDir(), { recursive: true })
+  const safeName = basename(assetName)
+  const target = join(designAssetDir(), safeName)
+  if (!existsSync(target)) {
+    writeFileSync(target, buffer)
+    return safeName
+  }
+  if (readFileSync(target).equals(buffer)) return safeName
+  const extension = extname(safeName)
+  const renamed = `${slug(basename(safeName, extension))}-${Date.now()}${extension}`
+  writeFileSync(join(designAssetDir(), renamed), buffer)
+  return renamed
+}
+
 function sanitizeId(id: string): string {
   return basename(id).replace(/[^a-zA-Z0-9_-]/g, '')
 }

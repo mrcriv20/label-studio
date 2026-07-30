@@ -780,6 +780,77 @@ function designAssetPath(assetName) {
 function designAssetDataUri(assetName) {
   return readImageAsBase64(designAssetPath(assetName));
 }
+const DESIGN_BUNDLE_FORMAT = "tillie-design";
+function exportDesignToFile(raw, filePath) {
+  const design = validateDesignTemplate(raw);
+  const assets = {};
+  for (const element of design.elements) {
+    if (element.type === "image" && element.source === "asset" && element.assetName) {
+      const dataUri = designAssetDataUri(element.assetName);
+      if (dataUri) assets[element.assetName] = dataUri;
+    }
+  }
+  const bundle = {
+    format: DESIGN_BUNDLE_FORMAT,
+    formatVersion: 1,
+    design,
+    assets
+  };
+  fs.writeFileSync(filePath, JSON.stringify(bundle, null, 2), "utf8");
+}
+function importDesignFromFile(filePath) {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    throw new Error("That file is not a valid design export.");
+  }
+  const record = parsed;
+  const isBundle = record?.format === DESIGN_BUNDLE_FORMAT;
+  const rawDesign = isBundle ? record.design : parsed;
+  const assets = isBundle && record.assets && typeof record.assets === "object" ? record.assets : {};
+  let design;
+  try {
+    design = validateDesignTemplate(rawDesign);
+  } catch (e) {
+    throw new Error(`That file is not a valid design export. ${e instanceof Error ? e.message : ""}`.trim());
+  }
+  const renames = /* @__PURE__ */ new Map();
+  for (const [assetName, dataUri] of Object.entries(assets)) {
+    if (typeof dataUri !== "string") continue;
+    const stored = storeDesignAssetFromDataUri(assetName, dataUri);
+    if (stored && stored !== assetName) renames.set(assetName, stored);
+  }
+  if (renames.size) {
+    design = {
+      ...design,
+      elements: design.elements.map(
+        (element) => element.type === "image" && element.assetName && renames.has(element.assetName) ? { ...element, assetName: renames.get(element.assetName) } : element
+      )
+    };
+  }
+  if (getDesign(design.id)) {
+    design = { ...design, id: newDesignId(), name: `${design.name} (imported)` };
+  }
+  return saveDesign(design);
+}
+function storeDesignAssetFromDataUri(assetName, dataUri) {
+  const match = /^data:image\/(png|jpe?g);base64,(.+)$/.exec(dataUri);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2], "base64");
+  fs.mkdirSync(designAssetDir(), { recursive: true });
+  const safeName = path.basename(assetName);
+  const target = path.join(designAssetDir(), safeName);
+  if (!fs.existsSync(target)) {
+    fs.writeFileSync(target, buffer);
+    return safeName;
+  }
+  if (fs.readFileSync(target).equals(buffer)) return safeName;
+  const extension = path.extname(safeName);
+  const renamed = `${slug(path.basename(safeName, extension))}-${Date.now()}${extension}`;
+  fs.writeFileSync(path.join(designAssetDir(), renamed), buffer);
+  return renamed;
+}
 function sanitizeId(id) {
   return path.basename(id).replace(/[^a-zA-Z0-9_-]/g, "");
 }
@@ -2822,6 +2893,35 @@ function registerIpcHandlers() {
       if (result.canceled || !result.filePaths.length) return ok(null);
       const assetName = importDesignAsset(result.filePaths[0]);
       return ok({ assetName, dataUri: designAssetDataUri(assetName) });
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("design:export", async (_e, design) => {
+    try {
+      const name = design?.name || "design";
+      const fileName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "design";
+      const result = await electron.dialog.showSaveDialog({
+        title: "Export Design",
+        defaultPath: `${fileName}.tilliedesign`,
+        filters: [{ name: "Label Studio Design", extensions: ["tilliedesign"] }]
+      });
+      if (result.canceled || !result.filePath) return ok(null);
+      exportDesignToFile(design, result.filePath);
+      return ok(result.filePath);
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
+  electron.ipcMain.handle("design:import", async () => {
+    try {
+      const result = await electron.dialog.showOpenDialog({
+        title: "Import Design",
+        filters: [{ name: "Label Studio Design", extensions: ["tilliedesign", "json"] }],
+        properties: ["openFile"]
+      });
+      if (result.canceled || !result.filePaths.length) return ok(null);
+      return ok(importDesignFromFile(result.filePaths[0]));
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
     }
