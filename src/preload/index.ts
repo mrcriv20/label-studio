@@ -9,6 +9,7 @@ import type {
   TillieSyncSummary,
 } from '../main/types'
 import type { DesignTemplate } from '../shared/design/types'
+import type { OutputEligibilityIssue } from '../shared/contentFit'
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -99,6 +100,10 @@ const api = {
   },
 
   // Export
+  output: {
+    preflight: (entries: Array<{ product: Product; slot?: number }>): Promise<IpcResult<OutputEligibilityIssue[]>> =>
+      ipcRenderer.invoke('output:preflight', entries),
+  },
   export: {
     singlePDF: (product: Product): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('export:singlePDF', product),

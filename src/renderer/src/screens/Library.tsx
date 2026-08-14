@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker, MoreHorizontal, Store } from 'lucide-react'
 import type { Product } from '../types'
 import RollPrintDialog from '../components/RollPrintDialog'
-import { outputEligibilityError } from '../../../shared/contentFit'
+import { assessProductContentFit, outputEligibilityError } from '../../../shared/contentFit'
 
 interface Props {
   onEdit: (product?: Product) => void
@@ -399,6 +399,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                       >
                         {p.name}
                       </button>
+                      {assessProductContentFit(p).some((issue) => issue.status === 'clipped') && <button type="button" className="fit-inline-badge" onClick={() => onEdit(p)} title="Open this label to repair clipped content">Content needs attention</button>}
                       {p.tillieProductId && <span className="sr-only"> · Linked to Tillie POS</span>}
                     </td>
                     <td className="library-secondary-column" style={{ padding: '11px 16px', color: 'var(--color-text-strong-secondary)' }}>{p.category || 'Uncategorized'}</td>
@@ -408,7 +409,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
                         <button onClick={() => onEdit(p)} className="btn-ghost btn-sm"><Edit2 size={13} /> Edit</button>
-                        <button onClick={() => onOpenSheet([p])} className="btn-outline btn-sm"><Printer size={13} /> Print</button>
+                        <button onClick={() => onOpenSheet([p])} className="btn-outline btn-sm" title={assessProductContentFit(p).some((issue) => issue.status === 'clipped') ? 'Open the sheet and repair content before printing' : 'Build a print sheet'}><Printer size={13} /> Print</button>
                         <details className="row-actions-menu">
                           <summary className="btn btn-icon" aria-label={`More actions for ${p.name}`} title="More actions"><MoreHorizontal size={14} /></summary>
                           <div className="row-actions-popover">

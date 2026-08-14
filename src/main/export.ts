@@ -31,7 +31,8 @@ import {
 } from '../shared/sheetLayout'
 import { isDesignTemplateId } from '../shared/design/types'
 import { getDesign } from './designs'
-import { drawDesignLabel, designToSVG } from './designExport'
+import { assessDesignFit, drawDesignLabel, designToSVG } from './designExport'
+import type { ContentFitIssue } from '../shared/contentFit'
 
 type EmbeddedFont = Awaited<ReturnType<PDFDocument['embedFont']>>
 type EmbeddedImage =
@@ -307,6 +308,81 @@ function wrapText(
   }
   if (current) lines.push(current)
   return lines.length ? lines : [text]
+}
+
+/** Authoritative fit check using the same fonts, zones, wrapping, and resolver as output. */
+export async function assessRenderedContentFit(product: Product): Promise<ContentFitIssue[]> {
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null
+  if (design) {
+    const knownFields = new Set<keyof Product>(['name', 'price', 'category', 'ingredients', 'allergenStatement', 'servingInfo', 'nutritionInfo', 'cookingInstructions', 'customerName'])
+    return assessDesignFit(design, product).map((issue) => ({
+      field: knownFields.has(issue.field as keyof Product) ? issue.field as keyof Product : 'templateId',
+      label: issue.field,
+      status: issue.status,
+      message: issue.message,
+    }))
+  }
+
+  const template = getLabelTemplate(product.templateId)
+  if (template.layout === 'logo-only') return []
+  const doc = await PDFDocument.create()
+  doc.registerFontkit(fontkit)
+  const fonts = await embedFonts(doc)
+  const issues: ContentFitIssue[] = []
+  const clipped = (field: keyof Product, label: string, message: string): void => {
+    issues.push({ field, label, status: 'clipped', message })
+  }
+
+  if (template.layout === 'front' || product.templateId.startsWith('custom-')) {
+    const name = product.name || 'Product Name'
+    const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22
+    if (wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w).length > 3) clipped('name', 'Product name', 'Product name exceeds the three printable lines.')
+    if (product.showPrice && fonts.price.widthOfTextAtSize(product.price || '$13.99', (product.price || '').length > 10 ? 22 : 28) > LABEL_ZONES.price.w) clipped('price', 'Price', 'Price exceeds the printable price area.')
+    return issues
+  }
+
+  if (template.layout === 'vertical-info') {
+    const name = product.name || 'Product Title'
+    const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24
+    if (wrapText(name, fonts.name, nameSize, VERTICAL_INFO_LABEL_ZONES.title.w).length > 3) clipped('name', 'Product name', 'Product name exceeds the three printable lines.')
+    if (product.customerName.trim()) {
+      const order = `Order: ${product.customerName.trim()}`
+      const size = order.length > 34 ? 7 : 8
+      if (fonts.bodyBold.widthOfTextAtSize(order, size) > VERTICAL_INFO_LABEL_ZONES.customerName.w) clipped('customerName', 'Customer name', 'Customer name exceeds the printable order line.')
+    }
+    if (product.showCookingInstructions !== false && wrapText(product.cookingInstructions || 'Add cooking instructions', fonts.ingredients, 8, VERTICAL_INFO_LABEL_ZONES.cookingBody.w).length > 4) clipped('cookingInstructions', 'Cooking instructions', 'Cooking instructions exceed the four printable lines.')
+    return issues
+  }
+
+  const nameLines = wrapText(product.name || 'Product Name', fonts.name, 12, INFO_LABEL_ZONES.leftName.w)
+  if (nameLines.length > 2) clipped('name', 'Product name', 'Product name exceeds the two printable lines.')
+  let y = INFO_LABEL_ZONES.infoText.y + INFO_LABEL_ZONES.infoText.h - 6
+  const bottomY = INFO_LABEL_ZONES.infoText.y
+  const sections: Array<{ field: keyof Product; label: string; body: string }> = [
+    { field: 'nutritionInfo', label: 'Serving and nutrition', body: joinInfo(product.servingInfo, product.nutritionInfo) },
+    { field: 'cookingInstructions', label: 'Cooking instructions', body: product.showCookingInstructions ? product.cookingInstructions : '' },
+    { field: 'ingredients', label: 'Ingredients', body: product.ingredients },
+  ]
+  for (const section of sections) {
+    if (!section.body) continue
+    if (y <= bottomY + 7.2) { clipped(section.field, section.label, `${section.label} falls outside the printable information panel.`); break }
+    y -= 7.2 * 1.45
+    const lines = wrapText(section.body, fonts.ingredients, 8, INFO_LABEL_ZONES.infoText.w)
+    let printed = 0
+    for (const _line of lines) {
+      if (y <= bottomY + 8) break
+      y -= 8 * 1.2
+      printed += 1
+    }
+    if (printed < lines.length) { clipped(section.field, section.label, `${section.label} is clipped in the printable information panel.`); break }
+    y -= 8 * 0.5
+  }
+  if (!issues.length && product.allergenStatement) {
+    const lines = wrapText(product.allergenStatement, fonts.ingredients, 8, INFO_LABEL_ZONES.infoText.w)
+    const available = Math.max(0, Math.floor((y - bottomY - 8) / (8 * 1.2)) + 1)
+    if (lines.length > available) clipped('allergenStatement', 'Allergen statement', 'Allergen statement is clipped in the printable information panel.')
+  }
+  return issues
 }
 
 function splitLines(text: string, maxChars: number, maxLines: number): string[] {

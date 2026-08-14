@@ -19,6 +19,13 @@ import type { TextMeasurer } from './metrics'
 
 const MIN_AUTO_FIT_SIZE = 4
 
+export interface DesignTextFitIssue {
+  elementId: string
+  field: string
+  status: 'tight' | 'clipped'
+  message: string
+}
+
 export function resolveLayout(
   design: DesignTemplate,
   product: DesignProductData,
@@ -86,6 +93,42 @@ export function substituteTokens(content: string, product: DesignProductData): s
     const value = (product as Record<string, unknown>)[field]
     return typeof value === 'string' ? value : ''
   })
+}
+
+/** Uses the same measurer, wrapping, auto-fit floor, and line caps as rendering. */
+export function assessDesignTextFit(
+  design: DesignTemplate,
+  product: DesignProductData,
+  measurer: TextMeasurer,
+): DesignTextFitIssue[] {
+  const issues: DesignTextFitIssue[] = []
+  for (const element of design.elements) {
+    if (element.type !== 'text' || !isVisible(element, product)) continue
+    const text = applyTextCase(substituteTokens(element.content, product).trim(), element.textCase)
+    if (!text) continue
+    const fontId = element.fontId || DEFAULT_DESIGN_FONT_ID
+    const fitAt = (size: number): string[][] => text.split(/\n/).map((paragraph) => wrapLine(paragraph, fontId, size, element.w, measurer))
+    let size = element.size
+    let paragraphs = fitAt(size)
+    if (element.autoFit) {
+      while (size > MIN_AUTO_FIT_SIZE && !fits(paragraphs, element, fontId, size, measurer)) {
+        size = Math.max(MIN_AUTO_FIT_SIZE, size - 0.5)
+        paragraphs = fitAt(size)
+      }
+    }
+    const lines = paragraphs.flat()
+    const lineStep = size * element.lineHeight
+    const maxByHeight = Math.max(1, Math.floor((element.h + lineStep - size) / lineStep))
+    const maxLines = Math.min(element.maxLines ?? Infinity, maxByHeight)
+    const clipped = lines.length > maxLines || !fits(paragraphs, element, fontId, size, measurer)
+    const field = element.content.match(/\{([a-zA-Z]+)\}/)?.[1] ?? element.label ?? 'Text'
+    if (clipped) {
+      issues.push({ elementId: element.id, field, status: 'clipped', message: `${field} does not fit the “${element.label || 'text'}” template area.` })
+    } else if (element.autoFit && size <= Math.max(MIN_AUTO_FIT_SIZE + 1, element.size * 0.65)) {
+      issues.push({ elementId: element.id, field, status: 'tight', message: `${field} fits only at ${size.toFixed(1)} pt in “${element.label || 'text'}”.` })
+    }
+  }
+  return issues
 }
 
 function resolveText(

@@ -17,6 +17,8 @@ interface Props {
   onOpenSheet: (product: Product) => void
   onOpenDesigner?: (designId?: string | null) => void
   onDirtyChange: (dirty: boolean) => void
+  repairField?: keyof Product | null
+  onReturnToSheet?: () => void
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -44,7 +46,7 @@ const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   tillieProductId: null,
 })
 
-export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyChange }: Props): JSX.Element {
+export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyChange, repairField, onReturnToSheet }: Props): JSX.Element {
   const isNew = !initialProduct
 
   const [product, setProduct] = useState<Partial<Product>>(
@@ -64,13 +66,15 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   const [outputNotice, setOutputNotice] = useState('')
   const [outputError, setOutputError] = useState('')
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [renderedFitIssues, setRenderedFitIssues] = useState<Array<{ field: keyof Product; label: string; status: 'tight' | 'clipped'; message: string }> | null>(null)
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
   const savedProductRef = useRef(JSON.stringify(product))
   const draftAssetIdRef = useRef(`draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const newAssetPathsRef = useRef(new Set<string>())
   const replacedAssetPathsRef = useRef(new Set<string>())
   const dirty = useMemo(() => JSON.stringify(product) !== savedProductRef.current, [product, saveStatus])
-  const contentFitIssues = useMemo(() => assessProductContentFit(product), [product])
+  const estimatedFitIssues = useMemo(() => assessProductContentFit(product), [product])
+  const contentFitIssues = renderedFitIssues ?? estimatedFitIssues
   const clippedContent = contentFitIssues.filter((issue) => issue.status === 'clipped')
 
   useEffect(() => {
@@ -81,6 +85,42 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   useEffect(() => () => {
     for (const filePath of newAssetPathsRef.current) void window.api.file.deleteManagedImage(filePath)
   }, [])
+
+  useEffect(() => {
+    if (!repairField) return
+    const ids: Partial<Record<keyof Product, string>> = {
+      name: 'product-name',
+      templateId: 'product-template',
+      price: 'product-price',
+      category: 'product-category',
+      customerName: 'customer-name',
+      servingInfo: 'serving-info',
+      nutritionInfo: 'nutrition-info',
+      cookingInstructions: 'cooking-instructions',
+      ingredients: 'ingredients',
+      allergenStatement: 'allergen-note',
+    }
+    const id = ids[repairField]
+    if (!id) return
+    const timer = window.setTimeout(() => {
+      const field = document.getElementById(id) as HTMLElement | null
+      const disclosure = field?.closest('details') as HTMLDetailsElement | null
+      if (disclosure) disclosure.open = true
+      field?.classList.add('repair-field-focus')
+      field?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      field?.focus()
+    }, 80)
+    return () => window.clearTimeout(timer)
+  }, [repairField])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      window.api.output.preflight([{ product: product as Product }]).then((result) => {
+        if (result.ok) setRenderedFitIssues(result.data)
+      })
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [product])
 
   function stageAssetReplacement(previousPath: string | null | undefined, nextPath: string): void {
     if (previousPath && previousPath !== nextPath) {
@@ -470,7 +510,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
         flexShrink: 0,
       }}>
         <button onClick={onBack} className="btn-ghost btn-sm">
-          <ArrowLeft size={13} /> Products
+          <ArrowLeft size={13} /> {onReturnToSheet ? 'Draft Sheet' : 'Products'}
         </button>
         <span style={{ color: 'var(--color-border-strong)', fontSize: 13 }}>/</span>
         <h1 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-workbench-navy)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
@@ -496,9 +536,14 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
           <button onClick={handleSave} disabled={saveStatus === 'saving'} className="btn-outline btn-sm" title="Save label (⌘S)">
             <Save size={12} /> {saveStatus === 'saving' ? 'Saving…' : 'Save'}
           </button>
-          <button onClick={handlePrint} className="btn-green btn-sm" title="Save and open print setup (⌘P)">
+          {onReturnToSheet && (
+            <button onClick={async () => { const saved = await handleSave(); if (saved) onReturnToSheet() }} disabled={saveStatus === 'saving'} className="btn-green btn-sm">
+              Return to Sheet
+            </button>
+          )}
+          {!onReturnToSheet && <button onClick={handlePrint} className="btn-green btn-sm" title="Save and open print setup (⌘P)">
             <Layers size={12} /> Print Sheet
-          </button>
+          </button>}
           <details className="row-actions-menu">
             <summary className="btn btn-icon" aria-label="More label output actions" title="More output actions"><MoreHorizontal size={14} /></summary>
             <div className="row-actions-popover">

@@ -162,6 +162,17 @@ declare global {
         singleSVG(product: Product): Promise<IpcResult<string | null>>
         sheetPDF(slots: Array<Product | null>): Promise<IpcResult<string | null>>
       }
+      output: {
+        preflight(entries: Array<{ product: Product; slot?: number }>): Promise<IpcResult<Array<{
+          field: keyof Product
+          label: string
+          status: 'tight' | 'clipped'
+          message: string
+          productId?: string
+          productName: string
+          slot?: number
+        }>>>
+      }
       print: {
         sheet(slots: Array<Product | null>): Promise<IpcResult<boolean>>
         calibrationSheet(): Promise<IpcResult<boolean>>

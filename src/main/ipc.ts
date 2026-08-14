@@ -27,7 +27,7 @@ import {
   deleteManagedImage,
   isCustomTemplate,
 } from './fileManager'
-import { buildCalibrationSheetPDF, buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import { assessRenderedContentFit, buildCalibrationSheetPDF, buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import {
   listDesigns,
   getDesign,
@@ -40,7 +40,8 @@ import {
   importDesignFromFile,
 } from './designs'
 import { getLabelTemplate } from '../shared/labelTemplates'
-import { outputEligibilityError } from '../shared/contentFit'
+import { formatOutputEligibilityIssues } from '../shared/contentFit'
+import type { OutputEligibilityIssue } from '../shared/contentFit'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
 import {
   getTillieConfig,
@@ -61,6 +62,29 @@ function ok<T>(data: T): IpcResult<T> {
 }
 function fail(error: string): IpcResult<never> {
   return { ok: false, error }
+}
+
+async function renderedEligibilityError(
+  entries: Array<{ product: Product; slot?: number }>,
+  action: string,
+): Promise<string | null> {
+  return formatOutputEligibilityIssues(await renderedEligibilityIssues(entries), action)
+}
+
+async function renderedEligibilityIssues(
+  entries: Array<{ product: Product; slot?: number }>,
+): Promise<OutputEligibilityIssue[]> {
+  const issues: OutputEligibilityIssue[] = []
+  for (const { product, slot } of entries) {
+    const fitIssues = await assessRenderedContentFit(product)
+    issues.push(...fitIssues.filter((issue) => issue.status === 'clipped').map((issue) => ({
+      ...issue,
+      productId: product.id,
+      productName: product.name || (slot ? `Slot ${slot}` : 'Untitled label'),
+      slot,
+    })))
+  }
+  return issues
 }
 
 export function registerIpcHandlers(): void {
@@ -465,9 +489,14 @@ export function registerIpcHandlers(): void {
 
   // ── Export ────────────────────────────────────────────────────────────────
 
+  ipcMain.handle('output:preflight', async (_e, entries: Array<{ product: Product; slot?: number }>) => {
+    try { return ok(await renderedEligibilityIssues(entries)) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
   ipcMain.handle('export:singlePDF', async (_e, product: Product) => {
     try {
-      const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
+      const eligibilityError = await renderedEligibilityError([{ product }], 'PDF export')
       if (eligibilityError) return fail(eligibilityError)
       const settings = getSettings()
       const result = await dialog.showSaveDialog({
@@ -484,7 +513,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('export:singleSVG', async (_e, product: Product) => {
     try {
-      const eligibilityError = outputEligibilityError([{ product }], 'SVG export')
+      const eligibilityError = await renderedEligibilityError([{ product }], 'SVG export')
       if (eligibilityError) return fail(eligibilityError)
       const settings = getSettings()
       const svgContent = await exportSingleLabelSVG(product)
@@ -499,7 +528,7 @@ export function registerIpcHandlers(): void {
     'export:sheetPDF',
     async (_e, slots: Array<Product | null>) => {
       try {
-        const eligibilityError = outputEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet PDF export')
+        const eligibilityError = await renderedEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet PDF export')
         if (eligibilityError) return fail(eligibilityError)
         const settings = getSettings()
         const result = await dialog.showSaveDialog({
@@ -518,7 +547,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:sheet', async (_e, slots: Array<Product | null>) => {
     const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.pdf`)
     try {
-      const eligibilityError = outputEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet printing')
+      const eligibilityError = await renderedEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet printing')
       if (eligibilityError) return fail(eligibilityError)
       const pdfBytes = await buildSheetPDF(slots)
       writeFileSync(tempPath, pdfBytes)
@@ -575,7 +604,7 @@ export function registerIpcHandlers(): void {
       const tempPath = join(app.getPath('temp'), `roll-label-print-${Date.now()}-${nanoid(8)}.pdf`)
       try {
         if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail('Label size must be positive numbers.')
-        const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
+        const eligibilityError = await renderedEligibilityError([{ product }], 'Roll printing')
         if (eligibilityError) return fail(eligibilityError)
         const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn)
         writeFileSync(tempPath, pdfBytes)

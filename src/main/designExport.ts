@@ -26,7 +26,7 @@ import type {
 } from '../shared/design/types'
 import { DEFAULT_DESIGN_FONT_ID } from '../shared/design/types'
 import { createTextMeasurer } from '../shared/design/metrics'
-import { resolveLayout, fitRect } from '../shared/design/resolve'
+import { assessDesignTextFit, resolveLayout, fitRect } from '../shared/design/resolve'
 import { designBarcodeOptions } from '../shared/design/barcode'
 import { paintSVG } from '../shared/design/svg'
 import { getFont, fontDataUri } from './fonts'
@@ -54,6 +54,10 @@ function collectFontBytes(design: DesignTemplate): Record<string, Uint8Array> {
 export function resolveDesign(design: DesignTemplate, product: Partial<Product>): ResolvedDesign {
   const measurer = createTextMeasurer(collectFontBytes(design))
   return resolveLayout(design, product, measurer)
+}
+
+export function assessDesignFit(design: DesignTemplate, product: Partial<Product>): ReturnType<typeof assessDesignTextFit> {
+  return assessDesignTextFit(design, product, createTextMeasurer(collectFontBytes(design)))
 }
 
 function imageSourcePath(image: ResolvedImage, product: Partial<Product>): string {

@@ -14,12 +14,33 @@ interface SlotAssignment {
   product: Product | null
 }
 
+interface SheetDraft {
+  version: 1
+  mode: 'fill' | 'manual'
+  slotIds: Array<string | null>
+  fillProductId: string | null
+  startSlot: number
+  fillCount: number
+  reviewAction: 'print' | 'export'
+  calibrationOpen: boolean
+  calibrationX: string
+  calibrationY: string
+  horizontalDirection: 'none' | 'left' | 'right'
+  verticalDirection: 'none' | 'up' | 'down'
+  horizontalDistance: string
+  verticalDistance: string
+  updatedAt: string
+}
+
+const SHEET_DRAFT_KEY = 'tillie:sheet-draft-v1'
+
 interface Props {
   initialProducts: Product[]
   onBack: () => void
+  onRepairIssue: (product: Product, field: keyof Product) => void
 }
 
-export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.Element {
+export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }: Props): JSX.Element {
   const [slots, setSlots] = useState<SlotAssignment[]>(
     Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
   )
@@ -50,6 +71,8 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
   const [verticalDirection, setVerticalDirection] = useState<'none' | 'up' | 'down'>('none')
   const [horizontalDistance, setHorizontalDistance] = useState('0.000')
   const [verticalDistance, setVerticalDistance] = useState('0.000')
+  const [draftReady, setDraftReady] = useState(false)
+  const [renderedSheetFitIssues, setRenderedSheetFitIssues] = useState<Array<{ field: keyof Product; label: string; status: 'tight' | 'clipped'; message: string; product: Product; productName: string; slot: number }> | null>(null)
 
   useEffect(() => {
     if (!reviewOpen) return
@@ -84,6 +107,40 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
       if (r.ok) {
         setAllProducts(r.data)
         try { setLastSheetIds(JSON.parse(localStorage.getItem('tillie:last-sheet') || '[]')) } catch { setLastSheetIds([]) }
+        if (initialProducts.length === 1) {
+          setFillProduct(initialProducts[0])
+          setMode('fill')
+        } else if (initialProducts.length > 1) {
+          const newSlots: SlotAssignment[] = Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
+          initialProducts.slice(0, PLS_780.labelsPerSheet).forEach((product, index) => { newSlots[index].product = product })
+          setSlots(newSlots)
+          setMode('manual')
+        } else {
+          try {
+            const draft = JSON.parse(localStorage.getItem(SHEET_DRAFT_KEY) || 'null') as SheetDraft | null
+            if (draft?.version === 1) {
+              const byId = new Map(r.data.map((product) => [product.id, product]))
+              const restored = Array.from({ length: PLS_780.labelsPerSheet }, (_, index) => ({ product: draft.slotIds[index] ? byId.get(draft.slotIds[index] as string) ?? null : null }))
+              setSlots(restored)
+              setMode(draft.mode)
+              setFillProduct(draft.fillProductId ? byId.get(draft.fillProductId) ?? null : null)
+              setStartSlot(Math.min(PLS_780.labelsPerSheet, Math.max(1, draft.startSlot || 1)))
+              setFillCount(Math.min(PLS_780.labelsPerSheet, Math.max(1, draft.fillCount || PLS_780.labelsPerSheet)))
+              setReviewAction(draft.reviewAction)
+              setCalibrationOpen(draft.calibrationOpen)
+              setCalibrationX(draft.calibrationX)
+              setCalibrationY(draft.calibrationY)
+              setHorizontalDirection(draft.horizontalDirection)
+              setVerticalDirection(draft.verticalDirection)
+              setHorizontalDistance(draft.horizontalDistance)
+              setVerticalDistance(draft.verticalDistance)
+              setOutcome('Restored your automatic draft sheet.')
+            }
+          } catch {
+            localStorage.removeItem(SHEET_DRAFT_KEY)
+          }
+        }
+        setDraftReady(true)
       }
     })
     window.api.settings.get().then((r) => {
@@ -92,19 +149,29 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
       setCalibrationX(r.data.sheetOffsetXIn || '0')
       setCalibrationY(r.data.sheetOffsetYIn || '0')
     })
-  }, [])
+  }, [initialProducts])
 
   useEffect(() => {
-    if (initialProducts.length === 1) {
-      setFillProduct(initialProducts[0])
-      setMode('fill')
-    } else if (initialProducts.length > 1) {
-      const newSlots: SlotAssignment[] = Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
-      initialProducts.slice(0, PLS_780.labelsPerSheet).forEach((p, i) => { newSlots[i].product = p })
-      setSlots(newSlots)
-      setMode('manual')
+    if (!draftReady) return
+    const draft: SheetDraft = {
+      version: 1,
+      mode,
+      slotIds: buildDisplaySlots().map((product) => product?.id ?? null),
+      fillProductId: fillProduct?.id ?? null,
+      startSlot,
+      fillCount,
+      reviewAction,
+      calibrationOpen,
+      calibrationX,
+      calibrationY,
+      horizontalDirection,
+      verticalDirection,
+      horizontalDistance,
+      verticalDistance,
+      updatedAt: new Date().toISOString(),
     }
-  }, [initialProducts])
+    localStorage.setItem(SHEET_DRAFT_KEY, JSON.stringify(draft))
+  }, [draftReady, mode, slots, fillProduct, startSlot, fillCount, reviewAction, calibrationOpen, calibrationX, calibrationY, horizontalDirection, verticalDirection, horizontalDistance, verticalDistance])
 
   function setSlotProduct(slotIndex: number, product: Product | null): void {
     setSlots((prev) => {
@@ -214,26 +281,39 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
   }
 
   const displaySlots = buildDisplaySlots()
+  const displaySignature = JSON.stringify(displaySlots.map((product) => product ? [product.id, product.updatedAt, product.templateId, product.name, product.price, product.ingredients, product.cookingInstructions, product.allergenStatement] : null))
   const filled = displaySlots.filter(Boolean).length
   const readyToPrint = filled > 0
-  const sheetFitIssues = useMemo(() => {
-    const seen = new Set<string>()
+  const estimatedSheetFitIssues = useMemo(() => {
     return displaySlots.flatMap((product, index) => {
       if (!product) return []
-      return assessProductContentFit(product).filter((issue) => {
-        const key = `${product.id}-${issue.field}-${issue.status}`
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      }).map((issue) => ({ ...issue, productName: product.name || `Slot ${index + 1}` }))
+      return assessProductContentFit(product).map((issue) => ({ ...issue, product, productName: product.name || `Slot ${index + 1}`, slot: index + 1 }))
     })
-  }, [displaySlots])
+  }, [displaySignature])
+  const sheetFitIssues = renderedSheetFitIssues ?? estimatedSheetFitIssues
   const clippedSheetIssues = sheetFitIssues.filter((issue) => issue.status === 'clipped')
   const offsetX = toInches(settings?.sheetOffsetXIn)
   const offsetY = toInches(settings?.sheetOffsetYIn)
   const proposedX = toInches(calibrationX)
   const proposedY = toInches(calibrationY)
   const calibrationHasProposal = Math.abs(proposedX - offsetX) > 0.0005 || Math.abs(proposedY - offsetY) > 0.0005
+
+  useEffect(() => {
+    setRenderedSheetFitIssues(null)
+    const entries = displaySlots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : [])
+    if (!entries.length) { setRenderedSheetFitIssues([]); return }
+    let alive = true
+    window.api.output.preflight(entries).then((result) => {
+      if (!alive || !result.ok) return
+      const mapped = result.data.flatMap((issue) => {
+        const slot = issue.slot ?? 0
+        const product = slot ? displaySlots[slot - 1] : displaySlots.find((candidate) => candidate?.id === issue.productId)
+        return product ? [{ ...issue, product, productName: product.name || `Slot ${slot}`, slot }] : []
+      })
+      setRenderedSheetFitIssues(mapped)
+    })
+    return () => { alive = false }
+  }, [displaySignature])
 
   function repeatLastSheet(): void {
     const restored = lastSheetIds.slice(0, PLS_780.labelsPerSheet).map((id) => id ? allProducts.find((product) => product.id === id) ?? null : null)
@@ -295,6 +375,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
         <span className="sheet-stock-badge" style={{ fontSize: 11, background: 'var(--color-neutral-subtle)', color: 'var(--color-text-secondary)', borderRadius: 20, padding: '2px 10px', marginLeft: 4 }}>
           PLS780 · 8 labels
         </span>
+        {draftReady && <span className="sheet-draft-status" role="status">Draft saved automatically</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button ref={printTriggerRef} onClick={() => { activeReviewTriggerRef.current = printTriggerRef.current; setReviewAction('print'); setReviewOpen(true) }} disabled={printing || !readyToPrint} className="btn-green btn-sm" title={!readyToPrint ? 'Assign at least one product before printing' : 'Review physical print setup'}>
             <Printer size={13} /> Review & Print
@@ -548,11 +629,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
             </div>
             <div className="print-preflight" style={{ marginTop: 18 }}>
               <div className="preflight-item"><strong>Output target</strong><span>{reviewAction === 'print' ? 'macOS system print dialog' : 'Reviewed PDF file'}</span></div>
-              <div className="preflight-item"><strong>Stock</strong><span>PLS780 · US Letter portrait</span></div>
               <div className="preflight-item"><strong>Scale</strong><span>Choose 100% / Actual Size; never Fit to Page</span></div>
-              <div className="preflight-item"><strong>Occupied slots</strong><span>{displaySlots.map((product, index) => product ? index + 1 : null).filter(Boolean).join(', ')}</span></div>
-              <div className="preflight-item"><strong>Calibration</strong><span>X {offsetX >= 0 ? '+' : ''}{offsetX.toFixed(3)} · Y {offsetY >= 0 ? '+' : ''}{offsetY.toFixed(3)} in</span></div>
-              <div className="preflight-item"><strong>Content fit</strong><span className={clippedSheetIssues.length ? 'fit-status clipped' : sheetFitIssues.length ? 'fit-status tight' : 'fit-status fits'}>{clippedSheetIssues.length ? `${clippedSheetIssues.length} clipped field${clippedSheetIssues.length === 1 ? '' : 's'}` : sheetFitIssues.length ? 'Tight — review text' : 'All assigned labels fit'}</span></div>
               <div className="preflight-item"><strong>Completion</strong><span>{reviewAction === 'print' ? 'The app can confirm the dialog opened, not that paper printed.' : 'The app confirms when the PDF file is created.'}</span></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
@@ -562,7 +639,7 @@ export default function SheetBuilder({ initialProducts, onBack }: Props): JSX.El
             {sheetFitIssues.length > 0 && (
               <div className={clippedSheetIssues.length ? 'content-fit-callout clipped' : 'content-fit-callout tight'} role={clippedSheetIssues.length ? 'alert' : 'status'} style={{ marginTop: 14 }}>
                 <strong>{clippedSheetIssues.length ? 'Output blocked until clipped text is resolved' : 'Some content is close to its printable limit'}</strong>
-                <ul>{sheetFitIssues.map((issue) => <li key={`${issue.productName}-${issue.field}-${issue.status}`}><b>{issue.productName}:</b> {issue.message}</li>)}</ul>
+                <ul className="repair-issue-list">{sheetFitIssues.map((issue) => <li key={`${issue.slot}-${issue.product.id}-${issue.field}-${issue.status}`}><div><b>Slot {issue.slot} · {issue.productName}</b><span>{issue.message}</span></div><button type="button" className="btn-outline btn-sm" onClick={() => { setReviewOpen(false); onRepairIssue(issue.product, issue.field) }}>Edit {issue.label.toLowerCase()}</button></li>)}</ul>
               </div>
             )}
           </section>

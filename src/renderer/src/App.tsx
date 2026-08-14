@@ -18,6 +18,7 @@ export default function App(): JSX.Element {
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
   const [designerTarget, setDesignerTarget] = useState<string | null>(null)
   const [hasUnsavedWork, setHasUnsavedWork] = useState(false)
+  const [sheetRepair, setSheetRepair] = useState<{ field: keyof Product } | null>(null)
 
   useEffect(() => {
     Promise.all([window.api.settings.get(), window.api.font.list()]).then(([settings, fonts]) => {
@@ -77,9 +78,30 @@ export default function App(): JSX.Element {
   }
 
   function openSheet(products: Product[]): void {
+    setSheetRepair(null)
     setHasUnsavedWork(false)
     setSheetProducts(products)
     setScreen('sheet')
+  }
+
+  function openSheetRepair(product: Product, field: keyof Product): void {
+    setHasUnsavedWork(false)
+    setEditingProduct(product)
+    setSheetRepair({ field })
+    setScreen('editor')
+  }
+
+  function finishSheetRepair(): void {
+    setHasUnsavedWork(false)
+    setEditingProduct(null)
+    setSheetProducts([])
+    setSheetRepair(null)
+    setScreen('sheet')
+  }
+
+  function backToDraftSheet(): void {
+    if (!canLeaveWorkspace()) return
+    finishSheetRepair()
   }
 
   function openDesigner(designId?: string | null): void {
@@ -112,10 +134,12 @@ export default function App(): JSX.Element {
           {screen === 'editor' && (
             <Editor
               initialProduct={editingProduct}
-              onBack={backToLibrary}
+              onBack={sheetRepair ? backToDraftSheet : backToLibrary}
               onOpenSheet={(p) => openSheet([p])}
               onOpenDesigner={openDesigner}
               onDirtyChange={setHasUnsavedWork}
+              repairField={sheetRepair?.field ?? null}
+              onReturnToSheet={sheetRepair ? finishSheetRepair : undefined}
             />
           )}
           {screen === 'designer' && <Designer initialDesignId={designerTarget} onDirtyChange={setHasUnsavedWork} />}
@@ -123,6 +147,7 @@ export default function App(): JSX.Element {
             <SheetBuilder
               initialProducts={sheetProducts}
               onBack={() => setScreen('library')}
+              onRepairIssue={openSheetRepair}
             />
           )}
           {screen === 'settings' && <Settings onDirtyChange={setHasUnsavedWork} onOpenCalibration={() => { if (!canLeaveWorkspace()) return; setSheetProducts([]); setHasUnsavedWork(false); setScreen('sheet') }} />}

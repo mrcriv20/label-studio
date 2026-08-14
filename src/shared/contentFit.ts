@@ -130,6 +130,10 @@ export function outputEligibilityError(
   action: string,
 ): string | null {
   const issues = assessOutputEligibility(entries)
+  return formatOutputEligibilityIssues(issues, action)
+}
+
+export function formatOutputEligibilityIssues(issues: OutputEligibilityIssue[], action: string): string | null {
   if (!issues.length) return null
   const shown = issues.slice(0, 3).map((issue) => {
     const location = issue.slot ? `slot ${issue.slot}, ${issue.productName}` : issue.productName
