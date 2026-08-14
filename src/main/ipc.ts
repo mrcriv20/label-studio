@@ -13,6 +13,7 @@ import {
   deleteProduct,
   getSettings,
   setSetting,
+  setSettings,
 } from './database'
 import {
   saveBarcodeImage,
@@ -23,9 +24,10 @@ import {
   readTemplatePNGBase64,
   listTemplates,
   deleteCustomTemplate,
+  deleteManagedImage,
   isCustomTemplate,
 } from './fileManager'
-import { buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
+import { buildCalibrationSheetPDF, buildSheetPDF, buildRollLabelPDF, exportSingleLabelPDF, exportSingleLabelSVG, exportSheetPDF } from './export'
 import {
   listDesigns,
   getDesign,
@@ -38,6 +40,7 @@ import {
   importDesignFromFile,
 } from './designs'
 import { getLabelTemplate } from '../shared/labelTemplates'
+import { outputEligibilityError } from '../shared/contentFit'
 import { addGoogleFont, fontDataUri, importFont, listFonts } from './fonts'
 import {
   getTillieConfig,
@@ -228,6 +231,11 @@ export function registerIpcHandlers(): void {
     catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle('settings:setMany', (_e, patch: Partial<Record<keyof ReturnType<typeof getSettings>, string>>) => {
+    try { setSettings(patch); return ok(true) }
+    catch (e) { return fail(String(e)) }
+  })
+
   ipcMain.handle('font:list', () => {
     try { return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) }))) }
     catch (e) { return fail(String(e)) }
@@ -300,6 +308,11 @@ export function registerIpcHandlers(): void {
     catch (e) { return fail(String(e)) }
   })
 
+  ipcMain.handle('file:deleteManagedImage', (_e, filePath: string) => {
+    try { return ok(deleteManagedImage(filePath)) }
+    catch (e) { return fail(e instanceof Error ? e.message : String(e)) }
+  })
+
   ipcMain.handle('file:getTemplatePNG', (_e, templateId?: string | null) => {
     try { return ok(readTemplatePNGBase64(templateId || undefined)) }
     catch (e) { return fail(String(e)) }
@@ -360,7 +373,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Export a design (plus its placed images) as a portable file another
-  // Label Studio instance can import.
+  // Tillie Print installation can import.
   ipcMain.handle('design:export', async (_e, design: unknown) => {
     try {
       const name = (design as { name?: string })?.name || 'design'
@@ -368,7 +381,7 @@ export function registerIpcHandlers(): void {
       const result = await dialog.showSaveDialog({
         title: 'Export Design',
         defaultPath: `${fileName}.tilliedesign`,
-        filters: [{ name: 'Label Studio Design', extensions: ['tilliedesign'] }],
+        filters: [{ name: 'Tillie Print Design', extensions: ['tilliedesign'] }],
       })
       if (result.canceled || !result.filePath) return ok(null)
       exportDesignToFile(design, result.filePath)
@@ -380,7 +393,7 @@ export function registerIpcHandlers(): void {
     try {
       const result = await dialog.showOpenDialog({
         title: 'Import Design',
-        filters: [{ name: 'Label Studio Design', extensions: ['tilliedesign', 'json'] }],
+        filters: [{ name: 'Tillie Print Design', extensions: ['tilliedesign', 'json'] }],
         properties: ['openFile'],
       })
       if (result.canceled || !result.filePaths.length) return ok(null)
@@ -454,6 +467,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('export:singlePDF', async (_e, product: Product) => {
     try {
+      const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
+      if (eligibilityError) return fail(eligibilityError)
       const settings = getSettings()
       const result = await dialog.showSaveDialog({
         title: 'Save Label PDF',
@@ -469,6 +484,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('export:singleSVG', async (_e, product: Product) => {
     try {
+      const eligibilityError = outputEligibilityError([{ product }], 'SVG export')
+      if (eligibilityError) return fail(eligibilityError)
       const settings = getSettings()
       const svgContent = await exportSingleLabelSVG(product)
       const outPath = join(settings.exportFolder, `${sanitizeFilename(product.name)}.svg`)
@@ -480,8 +497,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'export:sheetPDF',
-    async (_e, products: Product[], startSlot: number) => {
+    async (_e, slots: Array<Product | null>) => {
       try {
+        const eligibilityError = outputEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet PDF export')
+        if (eligibilityError) return fail(eligibilityError)
         const settings = getSettings()
         const result = await dialog.showSaveDialog({
           title: 'Save Sheet PDF',
@@ -489,23 +508,38 @@ export function registerIpcHandlers(): void {
           filters: [{ name: 'PDF', extensions: ['pdf'] }],
         })
         if (result.canceled || !result.filePath) return ok(null)
-        const outPath = await exportSheetPDF(products, startSlot, result.filePath)
+        const outPath = await exportSheetPDF(slots, result.filePath)
         shell.openPath(outPath)
         return ok(outPath)
       } catch (e) { return fail(String(e)) }
     }
   )
 
-  ipcMain.handle('print:sheet', async (_e, products: Product[], startSlot: number) => {
+  ipcMain.handle('print:sheet', async (_e, slots: Array<Product | null>) => {
     const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.pdf`)
     try {
-      const pdfBytes = await buildSheetPDF(products, startSlot)
+      const eligibilityError = outputEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet printing')
+      if (eligibilityError) return fail(eligibilityError)
+      const pdfBytes = await buildSheetPDF(slots)
       writeFileSync(tempPath, pdfBytes)
       const printed = await printPdfWithDialog(tempPath)
-      scheduleTempFileCleanup(tempPath)
       return ok(printed)
     } catch (e) {
       return fail(String(e))
+    } finally {
+      scheduleTempFileCleanup(tempPath)
+    }
+  })
+
+  ipcMain.handle('print:calibrationSheet', async () => {
+    const tempPath = join(app.getPath('temp'), `label-calibration-${Date.now()}-${nanoid(8)}.pdf`)
+    try {
+      writeFileSync(tempPath, await buildCalibrationSheetPDF())
+      return ok(await printPdfWithDialog(tempPath))
+    } catch (e) {
+      return fail(String(e))
+    } finally {
+      scheduleTempFileCleanup(tempPath)
     }
   })
 
@@ -541,13 +575,16 @@ export function registerIpcHandlers(): void {
       const tempPath = join(app.getPath('temp'), `roll-label-print-${Date.now()}-${nanoid(8)}.pdf`)
       try {
         if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail('Label size must be positive numbers.')
+        const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
+        if (eligibilityError) return fail(eligibilityError)
         const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn)
         writeFileSync(tempPath, pdfBytes)
         const printed = await printPdfToRoll(tempPath, opts)
-        scheduleTempFileCleanup(tempPath)
         return ok(printed)
       } catch (e) {
         return fail(String(e))
+      } finally {
+        scheduleTempFileCleanup(tempPath)
       }
     }
   )
@@ -679,12 +716,26 @@ async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
     })
 
     let settled = false
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      if (!printWin.isDestroyed()) printWin.destroy()
+      reject(new Error('Print setup timed out. Please try again.'))
+    }, 120_000)
     const finish = (result: boolean): void => {
       if (settled) return
       settled = true
+      clearTimeout(timeout)
       if (!printWin.isDestroyed()) printWin.close()
       resolve(result)
     }
+
+    printWin.once('closed', () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      resolve(false)
+    })
 
     printWin.webContents.once('did-finish-load', () => {
       // Give Chromium's built-in PDF viewer time to fully initialise.
@@ -705,6 +756,7 @@ async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
     printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
       if (!settled) {
         settled = true
+        clearTimeout(timeout)
         if (!printWin.isDestroyed()) printWin.destroy()
         reject(new Error(`Failed to load printable PDF: ${desc}`))
       }
@@ -713,6 +765,7 @@ async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
     printWin.loadURL(pathToFileURL(pdfPath).toString()).catch((err) => {
       if (!settled) {
         settled = true
+        clearTimeout(timeout)
         if (!printWin.isDestroyed()) printWin.destroy()
         reject(err)
       }
@@ -722,13 +775,14 @@ async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
 
 function scheduleTempFileCleanup(filePath: string): void {
   // Keep file around briefly so OS print spooler can reliably consume it.
-  setTimeout(() => {
+  const remove = (attempt: number): void => setTimeout(() => {
     try {
       if (existsSync(filePath)) unlinkSync(filePath)
     } catch {
-      // best-effort cleanup
+      if (attempt < 3) remove(attempt + 1)
     }
-  }, 60_000)
+  }, attempt === 1 ? 60_000 : 15_000 * attempt)
+  remove(1)
 }
 
 function sanitizeFilename(name: string): string {

@@ -23,22 +23,38 @@ export default function Nav({ current, onNavigate }: Props): JSX.Element {
       <div className="sidebar-traffic" />
 
       <div className="sidebar-brand">
-        <img src={logo} alt="Label Studio logo" className="sidebar-brand-logo"/>
+        <img src={logo} alt="Tillie Print logo" className="sidebar-brand-logo"/>
       </div>
 
       <div className="sidebar-sep" />
 
-      <nav className="sidebar-nav">
-        {items.map(({ id, label, Icon }) => (
+      <nav className="sidebar-nav" aria-label="Primary navigation">
+        {items.slice(0, 4).map(({ id, label, Icon }) => (
           <button
             key={id}
             onClick={() => onNavigate(id)}
             className={`nav-item${current === id ? ' active' : ''}`}
+            aria-current={current === id ? 'page' : undefined}
+            title={label}
           >
             <Icon size={20} />
             {label}
           </button>
         ))}
+        <div className="sidebar-nav-secondary" aria-label="Support and settings">
+          {items.slice(4).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => onNavigate(id)}
+              className={`nav-item${current === id ? ' active' : ''}`}
+              aria-current={current === id ? 'page' : undefined}
+              title={label}
+            >
+              <Icon size={20} />
+              {label}
+            </button>
+          ))}
+        </div>
       </nav>
     </aside>
   )

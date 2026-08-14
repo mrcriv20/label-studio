@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -17,6 +17,11 @@ import {
   Upload,
   ZoomIn,
   ZoomOut,
+  Undo2,
+  Redo2,
+  MoreHorizontal,
+  CheckCircle2,
+  X,
 } from 'lucide-react'
 import type { DesignTemplate, Product } from '../types'
 import type {
@@ -31,6 +36,7 @@ import type {
 import { BINDABLE_FIELDS, DESIGN_ID_PREFIX, TEXT_CASE_OPTIONS } from '../../../shared/design/types'
 import {
   paintDesignSVG,
+  useBarcodeRenderer,
   useDesignImages,
   useTextMeasurer,
 } from '../components/design/DesignLabelSvg'
@@ -47,7 +53,7 @@ const CANVAS_PRESETS: Array<{ label: string; w: number; h: number }> = [
   { label: '2.5 × 4 in — roll portrait', w: 180, h: 288 },
   { label: '4 × 2.5 in — roll landscape', w: 288, h: 180 },
   { label: '5 × 3 in — jar / sauce label', w: 360, h: 216 },
-  { label: 'Avery sheet slot (2.51 × 4.01 in)', w: 181, h: 289 },
+  { label: 'PLS780-compatible slot (2.51 × 4.01 in)', w: 181, h: 289 },
 ]
 
 const SAMPLE_PRODUCT: Partial<Product> = {
@@ -162,15 +168,18 @@ function newDesign(): DesignTemplate {
 
 interface Props {
   initialDesignId?: string | null
+  onDirtyChange: (dirty: boolean) => void
 }
 
-export default function Designer({ initialDesignId }: Props): JSX.Element {
+export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX.Element {
   const [designs, setDesigns] = useState<Array<{ id: string; name: string }>>([])
   const [design, setDesign] = useState<DesignTemplate | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [layersOpen, setLayersOpen] = useState(false)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
-  const [zoom, setZoom] = useState(2)
+  const [zoom, setZoom] = useState(1)
   const [guides, setGuides] = useState<{ vx: number | null; vy: number | null }>({ vx: null, vy: null })
   const [fonts, setFonts] = useState<Array<{ id: string; family: string }>>([])
   const [products, setProducts] = useState<Product[]>([])
@@ -178,9 +187,15 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
   const [error, setError] = useState('')
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const [compactLayout, setCompactLayout] = useState(false)
 
   const pastRef = useRef<DesignTemplate[]>([])
   const futureRef = useRef<DesignTemplate[]>([])
+  const canvasViewportRef = useRef<HTMLDivElement>(null)
+  const layersPaneRef = useRef<HTMLDivElement>(null)
+  const inspectorPaneRef = useRef<HTMLDivElement>(null)
+  const layersTriggerRef = useRef<HTMLButtonElement>(null)
+  const inspectorTriggerRef = useRef<HTMLButtonElement>(null)
   const gestureRef = useRef<{
     mode: 'move' | 'resize'
     handle: ResizeHandle | null
@@ -193,12 +208,99 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
   const measurer = useTextMeasurer()
 
+  useEffect(() => {
+    onDirtyChange(dirty)
+    return () => onDirtyChange(false)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 760px)')
+    const update = (): void => {
+      setCompactLayout(query.matches)
+      if (!query.matches) {
+        setLayersOpen(false)
+        setInspectorOpen(false)
+      }
+    }
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
+    if (!compactLayout || (!layersOpen && !inspectorOpen)) return
+    const pane = layersOpen ? layersPaneRef.current : inspectorPaneRef.current
+    const trigger = layersOpen ? layersTriggerRef.current : inspectorTriggerRef.current
+    const background = [
+      document.querySelector<HTMLElement>('.designer-toolbar'),
+      document.querySelector<HTMLElement>('.designer-onboarding'),
+      canvasViewportRef.current,
+    ].filter(Boolean) as HTMLElement[]
+    background.forEach((element) => element.setAttribute('inert', ''))
+    pane?.querySelector<HTMLElement>('button, input, select, [tabindex]:not([tabindex="-1"])')?.focus()
+
+    function closePane(): void {
+      setLayersOpen(false)
+      setInspectorOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closePane()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = pane?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])')
+      if (!focusable?.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      background.forEach((element) => element.removeAttribute('inert'))
+      window.requestAnimationFrame(() => trigger?.focus())
+    }
+  }, [compactLayout, layersOpen, inspectorOpen])
+
+  useEffect(() => {
+    const pairs: Array<[HTMLElement | null, boolean]> = [
+      [layersPaneRef.current, layersOpen],
+      [inspectorPaneRef.current, inspectorOpen],
+    ]
+    for (const [pane, open] of pairs) {
+      if (!pane) continue
+      if (compactLayout && !open) pane.setAttribute('inert', '')
+      else pane.removeAttribute('inert')
+    }
+  }, [compactLayout, layersOpen, inspectorOpen, design?.id])
+
+  const confirmDiscard = useCallback((): boolean => (
+    !dirty || window.confirm('Discard your unsaved design changes? This cannot be undone.')
+  ), [dirty])
+
   const sampleProduct = useMemo<Partial<Product>>(() => {
     const chosen = products.find((product) => product.id === sampleProductId)
     return chosen ?? SAMPLE_PRODUCT
   }, [products, sampleProductId])
 
   const images = useDesignImages(design, undefined, sampleProduct.designImageOverrides)
+  const hasBarcode = useMemo(() => design?.elements.some((element) => element.type === 'barcode') ?? false, [design])
+  const barcodeReady = useBarcodeRenderer(hasBarcode)
+
+  const fitCanvas = useCallback((): void => {
+    if (!design || !canvasViewportRef.current) return
+    const { clientWidth, clientHeight } = canvasViewportRef.current
+    const fitted = Math.min((clientWidth - 80) / design.canvas.width, (clientHeight - 80) / design.canvas.height)
+    setZoom(Math.max(0.5, Math.min(4, round2(fitted))))
+  }, [design?.id, design?.canvas.width, design?.canvas.height])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(fitCanvas)
+    return () => cancelAnimationFrame(frame)
+  }, [fitCanvas])
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
@@ -220,11 +322,12 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
   const loadDesign = useCallback(
     async (id: string): Promise<void> => {
+      if (!confirmDiscard()) return
       const result = await window.api.design.get(id)
       if (result.ok) openDesign(result.data)
       else setError(result.error)
     },
-    [openDesign],
+    [confirmDiscard, openDesign],
   )
 
   useEffect(() => {
@@ -411,6 +514,7 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
   }, [design])
 
   const importDesign = useCallback(async (): Promise<void> => {
+    if (!confirmDiscard()) return
     const result = await window.api.design.importFile()
     if (!result.ok) {
       setError(result.error)
@@ -419,7 +523,7 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
     if (!result.data) return
     await refreshDesignList()
     openDesign(result.data)
-  }, [refreshDesignList, openDesign])
+  }, [confirmDiscard, refreshDesignList, openDesign])
 
   const deleteDesign = useCallback(async (): Promise<void> => {
     if (!design) return
@@ -588,12 +692,12 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
   // ── Painted canvas ─────────────────────────────────────────────────────────
 
   const svg = useMemo(() => {
-    if (!design || !measurer) return ''
+    if (!design || !measurer || !barcodeReady) return ''
     return paintDesignSVG(design, sampleProduct, measurer, images)
-  }, [design, sampleProduct, measurer, images])
+  }, [design, sampleProduct, measurer, images, barcodeReady])
 
   if (!design) {
-    return <div style={{ padding: 40, color: '#94a3b8' }}>Loading designer…</div>
+    return <div style={{ padding: 40, color: 'var(--color-text-muted)' }}>Loading designer…</div>
   }
 
   const canvasW = design.canvas.width * zoom
@@ -601,24 +705,30 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <h1 className="sr-only">Reusable Label Template Designer</h1>
       {/* ── Top bar ── */}
       <div
+        className="workspace-toolbar designer-toolbar"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           padding: '14px 20px',
-          borderBottom: '1px solid #e8eaed',
-          background: 'white',
+          borderBottom: '1px solid var(--color-border-soft)',
+          background: 'var(--color-surface)',
           flexWrap: 'wrap',
         }}
       >
         <select
+          id="designer-design-selector"
+          aria-label="Open a saved label design"
           className="input"
           style={{ width: 210 }}
           value={designs.some((d) => d.id === design.id) ? design.id : '__new__'}
           onChange={(e) => {
-            if (e.target.value === '__new__') openDesign(newDesign())
+            if (e.target.value === '__new__') {
+              if (confirmDiscard()) openDesign(newDesign())
+            }
             else loadDesign(e.target.value)
           }}
         >
@@ -629,78 +739,107 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
             </option>
           ))}
         </select>
-        <button className="btn-outline btn-sm" onClick={() => openDesign(newDesign())}>
+        <button className="btn-outline btn-sm" onClick={() => { if (confirmDiscard()) openDesign(newDesign()) }}>
           <Plus size={12} /> New
         </button>
         <input
           className="input"
+          aria-label="Design name"
           style={{ width: 200 }}
           value={design.name}
           onChange={(e) => commit((d) => ({ ...d, name: e.target.value }))}
           placeholder="Design name"
         />
 
-        <div style={{ width: 1, alignSelf: 'stretch', background: '#e8eaed' }} />
+        <div className="designer-control-cluster" aria-label="Design history">
+          <button aria-label="Undo design change" title="Undo (⌘Z)" className="btn-icon" onClick={undo} disabled={pastRef.current.length === 0}><Undo2 size={13} /></button>
+          <button aria-label="Redo design change" title="Redo (⇧⌘Z)" className="btn-icon" onClick={redo} disabled={futureRef.current.length === 0}><Redo2 size={13} /></button>
+        </div>
 
-        <button className="btn-outline btn-sm" onClick={() => addElement(newBox(design.canvas))}>
-          <Square size={12} /> Box
-        </button>
-        <button className="btn-outline btn-sm" onClick={() => addElement(newText(design.canvas))}>
-          <Type size={12} /> Text
-        </button>
-        <button className="btn-outline btn-sm" onClick={() => addElement(newBarcode(design.canvas))}>
-          <Barcode size={12} /> Barcode
-        </button>
-        <button className="btn-outline btn-sm" onClick={() => addElement(newImage(design.canvas, 'productLogo'))}>
-          <ImageIcon size={12} /> Logo
+        <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border-soft)' }} />
+
+        <details className="row-actions-menu">
+          <summary className="btn-outline btn-sm"><Plus size={12} /> Add</summary>
+          <div className="row-actions-popover" style={{ insetInlineStart: 0, insetInlineEnd: 'auto' }}>
+            <button onClick={() => addElement(newBox(design.canvas))}><Square size={13} /> Box</button>
+            <button onClick={() => addElement(newText(design.canvas))}><Type size={13} /> Text</button>
+            <button onClick={() => addElement(newBarcode(design.canvas))}><Barcode size={13} /> Barcode</button>
+            <button onClick={() => addElement(newImage(design.canvas, 'productLogo'))}><ImageIcon size={13} /> Product logo</button>
+            <button onClick={async () => {
+              const result = await window.api.design.importImage()
+              if (result.ok && result.data) addElement(newImage(design.canvas, 'asset', result.data.assetName))
+              else if (!result.ok) setError(result.error)
+            }}><ImageIcon size={13} /> Uploaded image</button>
+          </div>
+        </details>
+
+        <button
+          ref={layersTriggerRef}
+          type="button"
+          className="btn-outline btn-sm compact-only"
+          aria-expanded={layersOpen}
+          aria-controls="designer-layers"
+          onClick={() => { setLayersOpen((open) => !open); setInspectorOpen(false) }}
+        >
+          Layers
         </button>
         <button
-          className="btn-outline btn-sm"
-          onClick={async () => {
-            const result = await window.api.design.importImage()
-            if (result.ok && result.data) addElement(newImage(design.canvas, 'asset', result.data.assetName))
-            else if (!result.ok) setError(result.error)
-          }}
+          ref={inspectorTriggerRef}
+          type="button"
+          className="btn-outline btn-sm compact-only"
+          aria-expanded={inspectorOpen}
+          aria-controls="designer-inspector"
+          onClick={() => { setInspectorOpen((open) => !open); setLayersOpen(false) }}
         >
-          <ImageIcon size={12} /> Image…
+          Inspector
         </button>
-
         <div style={{ flex: 1 }} />
 
-        <button className="btn-outline btn-sm" onClick={() => setZoom((z) => Math.max(0.5, round2(z - 0.5)))}>
-          <ZoomOut size={12} />
-        </button>
-        <span style={{ fontSize: 11, color: '#64748b', width: 38, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-        <button className="btn-outline btn-sm" onClick={() => setZoom((z) => Math.min(6, round2(z + 0.5)))}>
-          <ZoomIn size={12} />
-        </button>
+        <div className="designer-control-cluster" aria-label="Canvas zoom">
+          <button aria-label="Zoom out" className="btn-icon" onClick={() => setZoom((z) => Math.max(0.5, round2(z - 0.5)))}><ZoomOut size={13} /></button>
+          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', minWidth: 36, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <button aria-label="Zoom in" className="btn-icon" onClick={() => setZoom((z) => Math.min(6, round2(z + 0.5)))}><ZoomIn size={13} /></button>
+          <button className="btn-ghost btn-sm" onClick={fitCanvas}>Fit</button>
+        </div>
 
-        <button className="btn-outline btn-sm" title="Import a design exported from another Label Studio" onClick={importDesign}>
-          <Upload size={12} /> Import…
-        </button>
-        <button className="btn-outline btn-sm" title="Export this design to share with another Label Studio" onClick={exportDesign}>
-          <Download size={12} /> Export
-        </button>
-        <button className="btn-outline btn-sm" onClick={deleteDesign}>
-          <Trash2 size={12} /> Delete
-        </button>
-        <button className="btn-green btn-sm" onClick={saveDesign}>
-          <Save size={12} /> {savedFlash ? 'Saved ✓' : dirty ? 'Save*' : 'Save'}
+        <details className="row-actions-menu">
+          <summary className="btn btn-icon" aria-label="More design actions" title="More design actions"><MoreHorizontal size={14} /></summary>
+          <div className="row-actions-popover">
+            <button title="Import a design exported from Tillie Print" onClick={importDesign}><Upload size={13} /> Import design</button>
+            <button title="Export this design to share with another Tillie Print installation" onClick={exportDesign}><Download size={13} /> Export design</button>
+            <button className="danger" onClick={deleteDesign}><Trash2 size={13} /> Delete design</button>
+          </div>
+        </details>
+        <button className="btn-primary btn-sm" onClick={saveDesign}>
+          <Save size={12} /> {savedFlash ? 'Saved' : 'Save Template'}
         </button>
       </div>
 
+      {dirty && !savedFlash && <div role="status" className="status-message" style={{ padding: '6px 20px', background: 'var(--color-warning-surface)', color: 'var(--color-warning)', fontSize: 12 }}>Unsaved template changes</div>}
+
       {error && (
-        <div style={{ padding: '8px 20px', background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>{error}</div>
+        <div role="alert" className="status-message" style={{ padding: '8px 20px', background: 'var(--color-danger-surface)', color: 'var(--color-danger-text)', fontSize: 12 }}>{error}</div>
+      )}
+
+      {(design.elements.length <= 2 || dirty) && (
+        <div className="designer-onboarding" role="region" aria-label="Reusable template progress">
+          <strong>Template progress</strong>
+          <span><CheckCircle2 size={12} /> Size ready</span>
+          <span className={design.elements.length > 1 ? 'is-complete' : ''}><CheckCircle2 size={12} /> {design.elements.length > 1 ? 'Content added' : 'Add content'}</span>
+          <span className={sampleProductId ? 'is-complete' : ''}><CheckCircle2 size={12} /> {sampleProductId ? 'Preview selected' : 'Choose preview product'}</span>
+          <span className={!dirty ? 'is-complete' : ''}><CheckCircle2 size={12} /> {!dirty ? 'Saved' : 'Save template'}</span>
+        </div>
       )}
 
       {/* ── Body ── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div className="designer-workspace" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {compactLayout && (layersOpen || inspectorOpen) && <button type="button" className="designer-pane-scrim" aria-label="Close Designer panel" onClick={() => { setLayersOpen(false); setInspectorOpen(false) }} />}
         {/* Layers */}
-        <div style={{ width: 190, borderRight: '1px solid #e8eaed', background: 'white', overflowY: 'auto', padding: 10 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '4px 4px 8px' }}>
-            Layers
-          </p>
+        <div ref={layersPaneRef} id="designer-layers" className={`designer-layers-pane${layersOpen ? ' is-open' : ''}`} aria-hidden={compactLayout && !layersOpen} style={{ width: 190, borderRight: '1px solid var(--color-border-soft)', background: 'var(--color-surface)', overflowY: 'auto', padding: 10 }}>
+          <div className="designer-pane-heading"><p className="section-label">Layers</p><button type="button" className="btn-icon compact-only" aria-label="Close Layers" onClick={() => setLayersOpen(false)}><X size={14} /></button></div>
           <div
+            role="listbox"
+            aria-label="Design layers"
             onDragOver={(e) => {
               if (dragLayerId) {
                 e.preventDefault()
@@ -717,8 +856,25 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
             {[...design.elements].reverse().map((element, index, displayed) => (
               <div
                 key={element.id}
+                role="option"
+                aria-selected={element.id === selectedId}
+                aria-label={`${layerName(element)} layer${element.locked ? ', locked' : ''}`}
+                tabIndex={0}
                 draggable
-                onClick={() => setSelectedId(element.id)}
+                onClick={() => { setSelectedId(element.id); setInspectorOpen(true); if (compactLayout) setLayersOpen(false) }}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+                    event.preventDefault()
+                    moveLayer(element.id, event.key === 'ArrowUp' ? 1 : -1)
+                    return
+                  }
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setSelectedId(element.id)
+                    setInspectorOpen(true)
+                    if (compactLayout) setLayersOpen(false)
+                  }
+                }}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = 'move'
                   setDragLayerId(element.id)
@@ -744,7 +900,7 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
                   cursor: 'pointer',
                   fontSize: 12,
                   background: element.id === selectedId ? '#eef2ff' : 'transparent',
-                  color: '#334155',
+                  color: 'var(--color-text-strong-secondary)',
                   opacity: dragLayerId === element.id ? 0.4 : 1,
                   boxShadow:
                     dropIndex === index
@@ -754,14 +910,15 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
                         : 'none',
                 }}
               >
-                <span style={{ color: '#cbd5e1', display: 'inline-flex', cursor: 'grab' }}>
+                <span style={{ color: 'var(--color-border-strong)', display: 'inline-flex', cursor: 'grab' }}>
                   <GripVertical size={11} />
                 </span>
-                <span style={{ color: '#94a3b8', display: 'inline-flex' }}>{layerIcon(element)}</span>
+                <span style={{ color: 'var(--color-text-muted)', display: 'inline-flex' }}>{layerIcon(element)}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {layerName(element)}
                 </span>
                 <button
+                  aria-label={element.locked ? `Unlock ${layerName(element)} layer` : `Lock ${layerName(element)} layer`}
                   title={element.locked ? 'Unlock' : 'Lock'}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -778,8 +935,9 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
         {/* Canvas */}
         <div
+          ref={canvasViewportRef}
           style={{ flex: 1, overflow: 'auto', background: '#eceff3', display: 'flex', padding: 40 }}
-          onPointerDown={() => setSelectedId(null)}
+          onPointerDown={() => { setSelectedId(null); if (compactLayout) { setLayersOpen(false); setInspectorOpen(false) } }}
         >
           <div style={{ margin: 'auto', position: 'relative', width: canvasW, height: canvasH, flexShrink: 0 }}>
             <div
@@ -794,7 +952,12 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
               return (
                 <div
                   key={element.id}
+                  role="button"
+                  aria-label={`${layerName(element)} canvas element${element.locked ? ', locked' : ''}. Use arrow keys to move.`}
+                  aria-pressed={isSelected}
+                  tabIndex={0}
                   onPointerDown={(e) => beginGesture(e, element, 'move', null)}
+                  onFocus={() => { setSelectedId(element.id); if (!compactLayout) setInspectorOpen(true) }}
                   style={{
                     position: 'absolute',
                     left: element.x * zoom,
@@ -819,7 +982,19 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
                     RESIZE_HANDLES.map((handle) => (
                       <div
                         key={handle}
+                        role="button"
+                        tabIndex={handle === 'se' ? 0 : -1}
+                        aria-label={`Resize ${layerName(element)} from ${handle}. Use arrow keys.`}
                         onPointerDown={(e) => beginGesture(e, element, 'resize', handle)}
+                        onKeyDown={(event) => {
+                          const step = event.shiftKey ? 10 : 1
+                          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
+                          event.preventDefault()
+                          if (event.key === 'ArrowLeft') commitElement(element.id, { w: Math.max(MIN_ELEMENT_SIZE, element.w - step) })
+                          if (event.key === 'ArrowRight') commitElement(element.id, { w: element.w + step })
+                          if (event.key === 'ArrowUp') commitElement(element.id, { h: Math.max(MIN_ELEMENT_SIZE, element.h - step) })
+                          if (event.key === 'ArrowDown') commitElement(element.id, { h: element.h + step })
+                        }}
                         style={handleStyle(handle)}
                       />
                     ))}
@@ -829,21 +1004,23 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
             {/* snap guides */}
             {guides.vx !== null && (
-              <div style={{ position: 'absolute', left: guides.vx * zoom, top: 0, bottom: 0, width: 1, background: '#f43f5e', pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', left: guides.vx * zoom, top: 0, bottom: 0, width: 1, background: 'var(--color-snap-guide)', pointerEvents: 'none' }} />
             )}
             {guides.vy !== null && (
-              <div style={{ position: 'absolute', top: guides.vy * zoom, left: 0, right: 0, height: 1, background: '#f43f5e', pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', top: guides.vy * zoom, left: 0, right: 0, height: 1, background: 'var(--color-snap-guide)', pointerEvents: 'none' }} />
             )}
           </div>
         </div>
 
         {/* Inspector */}
-        <div style={{ width: 300, borderLeft: '1px solid #e8eaed', background: 'white', overflowY: 'auto', padding: 16 }}>
+        <div ref={inspectorPaneRef} id="designer-inspector" className={`designer-inspector-pane${inspectorOpen ? ' is-open' : ''}`} aria-hidden={compactLayout && !inspectorOpen} style={{ width: 300, borderLeft: '1px solid var(--color-border-soft)', background: 'var(--color-surface)', overflowY: 'auto', padding: 16 }}>
+          <div className="designer-pane-heading compact-only"><p className="section-label">Inspector</p><button type="button" className="btn-icon" aria-label="Close Inspector" onClick={() => setInspectorOpen(false)}><X size={14} /></button></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Canvas settings */}
             <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label className="label-text" style={{ marginBottom: 0 }}>Canvas</label>
+              <label className="label-text" htmlFor="designer-canvas-preset" style={{ marginBottom: 0 }}>Canvas</label>
               <select
+                id="designer-canvas-preset"
                 className="input"
                 value={CANVAS_PRESETS.findIndex((p) => p.w === design.canvas.width && p.h === design.canvas.height)}
                 onChange={(e) => {
@@ -883,8 +1060,8 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
 
             {/* Sample data */}
             <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label className="label-text" style={{ marginBottom: 0 }}>Preview with</label>
-              <select className="input" value={sampleProductId} onChange={(e) => setSampleProductId(e.target.value)}>
+              <label className="label-text" htmlFor="designer-preview-product" style={{ marginBottom: 0 }}>Preview with</label>
+              <select id="designer-preview-product" className="input" value={sampleProductId} onChange={(e) => setSampleProductId(e.target.value)}>
                 <option value="">Sample data</option>
                 {products.map((product) => (
                   <option key={product.id} value={product.id}>
@@ -906,7 +1083,7 @@ export default function Designer({ initialDesignId }: Props): JSX.Element {
                 onLayer={(direction) => moveLayer(selected.id, direction)}
               />
             ) : (
-              <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.6 }}>
                 Select an element on the canvas to edit it.
                 <br />
                 Drag to move · handles to resize · arrows to nudge (⇧ = 10) · ⌘D duplicate · ⌘Z undo · Delete removes.
@@ -939,9 +1116,9 @@ function ElementInspector({
   return (
     <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <label className="label-text" style={{ marginBottom: 0, flex: 1 }}>
+        <div className="section-label" style={{ marginBottom: 0, flex: 1 }}>
           {typeLabel(element)}
-        </label>
+        </div>
         <button className="btn-outline btn-sm" title="Bring forward" onClick={() => onLayer(1)}>
           <ArrowUp size={12} />
         </button>
@@ -957,12 +1134,15 @@ function ElementInspector({
       </div>
 
       {/* Geometry */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <details className="editor-disclosure">
+        <summary>Advanced geometry</summary>
+        <div className="editor-disclosure-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <NumberField label="X (pt)" value={round2(element.x)} onChange={(x) => onChange({ x })} />
         <NumberField label="Y (pt)" value={round2(element.y)} onChange={(y) => onChange({ y })} />
         <NumberField label="W (pt)" value={round2(element.w)} min={MIN_ELEMENT_SIZE} onChange={(w) => onChange({ w })} />
         <NumberField label="H (pt)" value={round2(element.h)} min={MIN_ELEMENT_SIZE} onChange={(h) => onChange({ h })} />
-      </div>
+        </div>
+      </details>
 
       {element.type === 'box' && (
         <>
@@ -978,8 +1158,9 @@ function ElementInspector({
       {element.type === 'text' && (
         <>
           <div>
-            <label className="label-text">Text</label>
+            <label className="label-text" htmlFor={`element-text-${element.id}`}>Text</label>
             <textarea
+              id={`element-text-${element.id}`}
               className="input"
               rows={3}
               value={element.content}
@@ -987,6 +1168,7 @@ function ElementInspector({
               style={{ resize: 'vertical', fontFamily: 'inherit' }}
             />
             <select
+              aria-label="Insert product field"
               className="input"
               style={{ marginTop: 6 }}
               value=""
@@ -1003,8 +1185,8 @@ function ElementInspector({
             </select>
           </div>
           <div>
-            <label className="label-text">Font</label>
-            <select className="input" value={element.fontId} onChange={(e) => onChange({ fontId: e.target.value })}>
+            <label className="label-text" htmlFor={`element-font-${element.id}`}>Font</label>
+            <select id={`element-font-${element.id}`} className="input" value={element.fontId} onChange={(e) => onChange({ fontId: e.target.value })}>
               {fonts.map((font) => (
                 <option key={font.id} value={font.id}>
                   {font.family}
@@ -1023,8 +1205,8 @@ function ElementInspector({
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <div>
-              <label className="label-text">Align</label>
-              <select className="input" value={element.align} onChange={(e) => onChange({ align: e.target.value as TextElement['align'] })}>
+              <label className="label-text" htmlFor={`element-align-${element.id}`}>Align</label>
+              <select id={`element-align-${element.id}`} className="input" value={element.align} onChange={(e) => onChange({ align: e.target.value as TextElement['align'] })}>
                 <option value="left">Left</option>
                 <option value="center">Center</option>
                 <option value="right">Right</option>
@@ -1038,8 +1220,9 @@ function ElementInspector({
             />
           </div>
           <div>
-            <label className="label-text">Letter case</label>
+            <label className="label-text" htmlFor={`element-case-${element.id}`}>Letter case</label>
             <select
+              id={`element-case-${element.id}`}
               className="input"
               value={element.textCase ?? 'none'}
               onChange={(e) => {
@@ -1062,7 +1245,7 @@ function ElementInspector({
         <>
           <CheckboxField label="Show number under bars" checked={element.showText} onChange={(showText) => onChange({ showText })} />
           <ColorField label="Color" value={element.color} onChange={(color) => onChange({ color })} />
-          <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: 0 }}>
             The barcode always uses the product’s barcode number (CODE128).
           </p>
         </>
@@ -1071,8 +1254,9 @@ function ElementInspector({
       {element.type === 'image' && (
         <>
           <div>
-            <label className="label-text">Source</label>
+            <label className="label-text" htmlFor={`element-source-${element.id}`}>Source</label>
             <select
+              id={`element-source-${element.id}`}
               className="input"
               value={element.source}
               onChange={async (e) => {
@@ -1101,32 +1285,37 @@ function ElementInspector({
             </button>
           )}
           <div>
-            <label className="label-text">Fit</label>
-            <select className="input" value={element.fit} onChange={(e) => onChange({ fit: e.target.value as ImageElement['fit'] })}>
+            <label className="label-text" htmlFor={`element-fit-${element.id}`}>Fit</label>
+            <select id={`element-fit-${element.id}`} className="input" value={element.fit} onChange={(e) => onChange({ fit: e.target.value as ImageElement['fit'] })}>
               <option value="contain">Contain (letterbox)</option>
               <option value="cover">Cover (crop)</option>
               <option value="stretch">Stretch</option>
             </select>
           </div>
           <div>
-            <label className="label-text">Slot name (shown in product editor)</label>
+            <label className="label-text" htmlFor={`element-slot-${element.id}`}>Slot name (shown in product editor)</label>
             <input
+              id={`element-slot-${element.id}`}
               className="input"
               value={element.label ?? ''}
               placeholder="e.g. Product photo"
               onChange={(e) => onChange({ label: e.target.value || undefined })}
             />
-            <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
               Each product can replace this image from the label editor; this design’s image is the default.
             </p>
           </div>
         </>
       )}
 
-      {/* Common */}
+      {/* Common advanced controls */}
+      <details className="editor-disclosure">
+        <summary>Advanced visibility and locking</summary>
+        <div className="editor-disclosure-body">
       <div>
-        <label className="label-text">Visibility</label>
+        <label className="label-text" htmlFor={`element-visibility-${element.id}`}>Visibility</label>
         <select
+          id={`element-visibility-${element.id}`}
           className="input"
           value={element.visibleIf ?? 'always'}
           onChange={(e) => {
@@ -1149,6 +1338,8 @@ function ElementInspector({
         onChange={(value) => onChange({ opacity: Math.min(100, Math.max(0, value)) / 100 })}
       />
       <CheckboxField label="Locked" checked={Boolean(element.locked)} onChange={(locked) => onChange({ locked })} />
+        </div>
+      </details>
     </div>
   )
 }
@@ -1170,10 +1361,12 @@ function NumberField({
   max?: number
   step?: number
 }): JSX.Element {
+  const id = useId()
   return (
     <div style={{ flex: 1 }}>
-      <label className="label-text">{label}</label>
+      <label className="label-text" htmlFor={id}>{label}</label>
       <input
+        id={id}
         className="input"
         type="number"
         value={value}
@@ -1200,18 +1393,22 @@ function ColorField({
   onChange: (value: string) => void
   allowNone?: boolean
 }): JSX.Element {
+  const colorId = useId()
+  const textId = useId()
   return (
     <div>
-      <label className="label-text">{label}</label>
+      <label className="label-text" htmlFor={textId}>{label}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
+          id={colorId}
           type="color"
           value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#ffffff'}
           onChange={(e) => onChange(e.target.value)}
           aria-label={label}
-          style={{ width: 38, height: 32, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', cursor: 'pointer' }}
+          style={{ width: 38, height: 32, padding: 2, border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface)', cursor: 'pointer' }}
         />
         <input
+          id={textId}
           className="input"
           value={value}
           placeholder={allowNone ? 'None' : '#000000'}
@@ -1238,7 +1435,7 @@ function CheckboxField({
   onChange: (checked: boolean) => void
 }): JSX.Element {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#334155', cursor: 'pointer' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
@@ -1252,8 +1449,12 @@ const iconButtonStyle: React.CSSProperties = {
   background: 'transparent',
   padding: 2,
   cursor: 'pointer',
-  color: '#94a3b8',
+  color: 'var(--color-text-muted)',
   display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 28,
+  height: 28,
 }
 
 function layerIcon(element: DesignElement): JSX.Element {
@@ -1300,7 +1501,7 @@ function handleStyle(handle: ResizeHandle): React.CSSProperties {
     position: 'absolute',
     width: 9,
     height: 9,
-    background: 'white',
+    background: 'var(--color-surface)',
     border: '1.5px solid #4f46e5',
     borderRadius: 2,
     zIndex: 2,

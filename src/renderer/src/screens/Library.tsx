@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker } from 'lucide-react'
+import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker, MoreHorizontal, Store } from 'lucide-react'
 import type { Product } from '../types'
 import RollPrintDialog from '../components/RollPrintDialog'
+import { outputEligibilityError } from '../../../shared/contentFit'
 
 interface Props {
-  onEdit: (product: Product) => void
+  onEdit: (product?: Product) => void
   onOpenSheet: (products: Product[]) => void
 }
 
@@ -23,6 +24,10 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [tillieNotice, setTillieNotice] = useState('')
   const [rollProduct, setRollProduct] = useState<Product | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [selectionNotice, setSelectionNotice] = useState('')
+  const [operationNotice, setOperationNotice] = useState('')
+  const [operationError, setOperationError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,6 +111,32 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
     setSortDirection('asc')
   }
 
+  function toggleProductSelection(id: string): void {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else if (next.size < 8) next.add(id)
+      else setSelectionNotice('A PLS780 sheet holds eight labels. Clear one selection before adding another.')
+      return next
+    })
+  }
+
+  function toggleAllVisible(): void {
+    const visibleIds = sortedProducts.map(({ id }) => id)
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id))
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      visibleIds.forEach((id) => {
+        if (allSelected) next.delete(id)
+        else if (next.size < 8) next.add(id)
+      })
+      if (!allSelected && visibleIds.length > 8) setSelectionNotice('Selected the first eight visible products—the maximum for one PLS780 sheet.')
+      return next
+    })
+  }
+
+  const selectedProducts = products.filter(({ id }) => selectedIds.has(id))
+
   function renderSortIcon(key: SortKey): JSX.Element {
     if (sortKey !== key) return <ArrowUpDown size={12} />
     return sortDirection === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
@@ -115,35 +146,51 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
     if (!confirm('Delete this product? This cannot be undone.')) return
     setDeleting(id)
     const result = await window.api.product.delete(id)
-    if (result.ok) setProducts((prev) => prev.filter((p) => p.id !== id))
-    else alert(`Delete failed: ${result.error}`)
+    if (result.ok) {
+      setProducts((prev) => prev.filter((p) => p.id !== id))
+      setSelectedIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    }
+    else setOperationError(`Product could not be deleted: ${result.error}`)
     setDeleting(null)
   }
 
   async function handleDuplicate(id: string): Promise<void> {
     const result = await window.api.product.duplicate(id)
     if (result.ok) setProducts((prev) => [result.data, ...prev])
-    else alert(`Duplicate failed: ${result.error}`)
+    else setOperationError(`Product could not be duplicated: ${result.error}`)
   }
 
   async function handleImport(): Promise<void> {
     setImporting(true)
     const result = await window.api.product.importSpreadsheet()
     setImporting(false)
-    if (!result.ok) { alert(`Import failed: ${result.error}`); return }
+    if (!result.ok) { setOperationError(`Import failed: ${result.error}. Check the file and try again.`); return }
     if (result.data === null) return // user cancelled
     const { imported, skipped } = result.data
     await load()
     let msg = `Imported ${imported} product${imported !== 1 ? 's' : ''}.`
     if (skipped.length) msg += `\n\nSkipped ${skipped.length} row${skipped.length !== 1 ? 's' : ''}:\n${skipped.slice(0, 10).join('\n')}${skipped.length > 10 ? `\n…and ${skipped.length - 10} more` : ''}`
-    alert(msg)
+    setOperationNotice(msg.replace(/\n+/g, ' '))
   }
 
   async function handleExportPDF(product: Product): Promise<void> {
+    const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
+    if (eligibilityError) { setOperationError(eligibilityError); return }
     setExporting(product.id)
     const result = await window.api.export.singlePDF(product)
-    if (!result.ok) alert(`Export failed: ${result.error}`)
+    if (!result.ok) setOperationError(`Label PDF export failed: ${result.error}. Check the export folder and try again.`)
+    else if (result.data) setOperationNotice(`Exported ${product.name} as a label PDF.`)
     setExporting(null)
+  }
+
+  function openRollPrint(product: Product): void {
+    const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
+    if (eligibilityError) { setOperationError(eligibilityError); return }
+    setRollProduct(product)
   }
 
   function fmtDate(iso: string): string {
@@ -154,35 +201,50 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
     <div className="screen" style={{ display: 'flex', flexDirection: 'column', gap: 20, minHeight: 0 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div className="library-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1a2332', margin: 0 }}>Products</h1>
-          <p style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-workbench-navy)', margin: 0 }}>Products</h1>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 3 }}>
             {products.length} product{products.length !== 1 ? 's' : ''} in your library
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
-          <button onClick={load} className="btn btn-icon" title="Refresh">
+        <div className="library-header-actions" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={load} className="btn btn-icon" title="Refresh" aria-label="Refresh product library">
             <RefreshCw size={13} />
           </button>
           <button onClick={handleImport} disabled={importing} className="btn-outline btn-sm" title="Import from CSV / Excel">
             <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
           </button>
-          {products.length > 0 && (
-            <button onClick={() => onOpenSheet(sortedProducts.slice(0, 8))} className="btn-outline btn-sm">
-              <Printer size={13} /> Print Sheet
-            </button>
-          )}
-          <button onClick={() => onEdit(undefined as unknown as Product)} className="btn-primary">
-            <Plus size={14} /> New Product
+          <button onClick={() => onOpenSheet(selectedProducts)} className="btn-outline btn-sm">
+            <Printer size={13} /> {selectedProducts.length ? `Print Sheet (${selectedProducts.length})` : 'Blank Print Sheet'}
+          </button>
+          <button onClick={() => onEdit()} className="btn-primary">
+            <Plus size={14} /> New Label
           </button>
         </div>
       </div>
 
       {/* Search */}
+      {selectionNotice && (
+        <div role="status" className="status-message" style={{ padding: '8px 12px', background: 'var(--color-warning-surface)', color: 'var(--color-warning)', border: '1px solid var(--color-warning-border)', borderRadius: 8, fontSize: 12 }}>
+          {selectionNotice}
+        </div>
+      )}
+      {operationNotice && (
+        <div role="status" aria-live="polite" className="status-message" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', background: 'var(--color-success-surface)', color: 'var(--color-success-text)', border: '1px solid var(--color-success-border)', borderRadius: 8, fontSize: 12 }}>
+          <span style={{ flex: 1 }}>{operationNotice}</span><button className="btn-ghost btn-sm" onClick={() => setOperationNotice('')}>Dismiss</button>
+        </div>
+      )}
+      {operationError && (
+        <div role="alert" className="status-message" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', background: 'var(--color-danger-surface)', color: 'var(--color-danger-text)', border: '1px solid var(--color-danger-border)', borderRadius: 8, fontSize: 12 }}>
+          <span style={{ flex: 1 }}>{operationError}</span><button className="btn-ghost btn-sm" onClick={() => setOperationError('')}>Dismiss</button>
+        </div>
+      )}
       <div style={{ position: 'relative' }}>
-        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+        <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
         <input
+          id="product-search"
+          aria-label="Search products by name, price, or barcode"
           className="input"
           style={{ paddingLeft: 36 }}
           placeholder="Search by name, price, or barcode…"
@@ -194,22 +256,23 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
       {/* Category filter tabs */}
       {categories.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Tag size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
+          <Tag size={12} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
           {[{ id: '__all__', label: 'All' }, ...categories.map((c) => ({ id: c, label: c }))].map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setActiveCategory(id)}
               style={{
                 padding: '3px 12px',
+                minHeight: 28,
                 borderRadius: 20,
                 border: '1px solid',
                 fontSize: 12,
                 fontWeight: 500,
                 cursor: 'pointer',
                 transition: 'all 0.1s',
-                borderColor: activeCategory === id ? '#2563eb' : '#e2e8f0',
-                background: activeCategory === id ? '#2563eb' : 'white',
-                color: activeCategory === id ? 'white' : '#64748b',
+                borderColor: activeCategory === id ? 'var(--color-action-blue)' : 'var(--color-border)',
+                background: activeCategory === id ? 'var(--color-action-blue)' : 'white',
+                color: activeCategory === id ? 'white' : 'var(--color-text-secondary)',
               }}
             >
               {label}
@@ -227,11 +290,11 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
 
       {/* Tillie sync notice */}
       {tillieNotice && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#166534' }}>
+        <div role="status" aria-live="polite" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--color-success-surface)', border: '1px solid var(--color-success-border)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: 'var(--color-success-text)' }}>
           <span style={{ flex: 1 }}>{tillieNotice}</span>
           <button
             onClick={() => setTillieNotice('')}
-            style={{ border: 'none', background: 'transparent', color: '#166534', cursor: 'pointer', fontSize: 12, padding: 0 }}
+            style={{ border: 'none', background: 'transparent', color: 'var(--color-success-text)', cursor: 'pointer', fontSize: 12, padding: 0 }}
           >
             Dismiss
           </button>
@@ -240,32 +303,32 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
 
       {/* Error */}
       {error && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#dc2626' }}>
+        <div role="alert" className="status-message" style={{ background: 'var(--color-danger-surface)', border: '1px solid var(--color-danger-border)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--color-danger-text)' }}>
           {error}
         </div>
       )}
 
       {/* Content */}
       {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13, paddingTop: 60 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: 13, paddingTop: 60 }}>
           Loading products…
         </div>
       ) : sortedProducts.length === 0 ? (
         <div className="card" style={{ padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 8 }}>
-          <div style={{ fontSize: 40 }}>🏪</div>
-          <p style={{ fontWeight: 600, color: '#1a2332', margin: 0 }}>
+          <Store size={38} strokeWidth={1.6} aria-hidden="true" style={{ color: 'var(--color-market-green)' }} />
+          <p style={{ fontWeight: 600, color: 'var(--color-workbench-navy)', margin: 0 }}>
             {query || activeCategory !== '__all__' ? 'No products match your filter' : 'No products yet'}
           </p>
-          <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>
             {query || activeCategory !== '__all__' ? 'Try clearing the search or selecting a different category.' : 'Create your first product label to get started.'}
           </p>
           {!query && activeCategory === '__all__' && (
             <button
-              onClick={() => onEdit(undefined as unknown as Product)}
+              onClick={() => onEdit()}
               className="btn-primary"
               style={{ marginTop: 8 }}
             >
-              <Plus size={14} /> Create Product
+              <Plus size={14} /> Create Label
             </button>
           )}
         </div>
@@ -274,33 +337,41 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#fafafa' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <tr style={{ borderBottom: '1px solid #f1f5f9', background: 'var(--color-neutral-canvas)' }}>
+                  <th style={{ width: 42, padding: '10px 8px 10px 16px' }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible products"
+                      checked={sortedProducts.length > 0 && sortedProducts.every(({ id }) => selectedIds.has(id))}
+                      onChange={toggleAllVisible}
+                    />
+                  </th>
+                  <th aria-sort={sortKey === 'name' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('name')} style={sortButtonStyle}>
                       Product {renderSortIcon('name')}
                     </button>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th className="library-secondary-column" aria-sort={sortKey === 'category' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('category')} style={sortButtonStyle}>
                       Category {renderSortIcon('category')}
                     </button>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th aria-sort={sortKey === 'price' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('price')} style={sortButtonStyle}>
                       Price {renderSortIcon('price')}
                     </button>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th className="library-secondary-column" aria-sort={sortKey === 'barcodeValue' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('barcodeValue')} style={sortButtonStyle}>
                       Barcode {renderSortIcon('barcodeValue')}
                     </button>
                   </th>
-                  <th style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th className="library-secondary-column" aria-sort={sortKey === 'updatedAt' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     <button type="button" onClick={() => toggleSort('updatedAt')} style={sortButtonStyle}>
                       Modified {renderSortIcon('updatedAt')}
                     </button>
                   </th>
-                  <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</th>
+                  <th style={{ textAlign: 'right', padding: '10px 16px', fontSize: 11, fontWeight: 600, color: '#526173', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -308,9 +379,17 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                   <tr
                     key={p.id}
                     style={{ borderBottom: '1px solid #f8fafc' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-neutral-canvas)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
+                    <td style={{ width: 42, padding: '11px 8px 11px 16px' }}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.name} for a print sheet`}
+                        checked={selectedIds.has(p.id)}
+                        onChange={() => toggleProductSelection(p.id)}
+                      />
+                    </td>
                     <td style={{ padding: '11px 16px' }}>
                       <button
                         type="button"
@@ -320,34 +399,25 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                       >
                         {p.name}
                       </button>
-                      {p.tillieProductId && (
-                        <span
-                          title="Linked to Tillie — name, price, and category sync from the register"
-                          style={{ marginLeft: 8, fontSize: 10, color: '#16a34a', border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 10, padding: '1px 7px', verticalAlign: 'middle' }}
-                        >
-                          Tillie
-                        </span>
-                      )}
+                      {p.tillieProductId && <span className="sr-only"> · Linked to Tillie POS</span>}
                     </td>
-                    <td style={{ padding: '11px 16px', color: '#334155' }}>{p.category || 'Uncategorized'}</td>
-                    <td style={{ padding: '11px 16px', color: '#334155', fontFamily: 'monospace' }}>{p.price}</td>
-                    <td style={{ padding: '11px 16px', color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
-                    <td style={{ padding: '11px 16px', color: '#94a3b8', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>
+                    <td className="library-secondary-column" style={{ padding: '11px 16px', color: 'var(--color-text-strong-secondary)' }}>{p.category || 'Uncategorized'}</td>
+                    <td style={{ padding: '11px 16px', color: 'var(--color-text-strong-secondary)', fontFamily: 'monospace' }}>{p.price}</td>
+                    <td className="library-secondary-column" style={{ padding: '11px 16px', color: 'var(--color-text-muted)', fontFamily: 'monospace', fontSize: 11 }}>{p.barcodeValue}</td>
+                    <td className="library-secondary-column" style={{ padding: '11px 16px', color: 'var(--color-text-muted)', fontSize: 12 }}>{fmtDate(p.updatedAt)}</td>
                     <td style={{ padding: '11px 16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                        <button onClick={() => onEdit(p)} className="btn btn-icon" title="Edit"><Edit2 size={13} /></button>
-                        <button onClick={() => handleDuplicate(p.id)} className="btn btn-icon" title="Duplicate"><Copy size={13} /></button>
-                        <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id} className="btn btn-icon" title="Export PDF"><FileText size={13} /></button>
-                        <button onClick={() => setRollProduct(p)} className="btn btn-icon" title="Print to Roll"><Sticker size={13} /></button>
-                        <button onClick={() => onOpenSheet([p])} className="btn btn-icon" title="Print Sheet"><Printer size={13} /></button>
-                        <button
-                          onClick={() => handleDelete(p.id)}
-                          disabled={deleting === p.id}
-                          className="btn btn-icon danger"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
+                        <button onClick={() => onEdit(p)} className="btn-ghost btn-sm"><Edit2 size={13} /> Edit</button>
+                        <button onClick={() => onOpenSheet([p])} className="btn-outline btn-sm"><Printer size={13} /> Print</button>
+                        <details className="row-actions-menu">
+                          <summary className="btn btn-icon" aria-label={`More actions for ${p.name}`} title="More actions"><MoreHorizontal size={14} /></summary>
+                          <div className="row-actions-popover">
+                            <button onClick={() => handleDuplicate(p.id)}><Copy size={13} /> Duplicate product</button>
+                            <button onClick={() => handleExportPDF(p)} disabled={exporting === p.id}><FileText size={13} /> Export label PDF</button>
+                            <button onClick={() => openRollPrint(p)}><Sticker size={13} /> Print roll label</button>
+                            <button onClick={() => handleDelete(p.id)} disabled={deleting === p.id} className="danger"><Trash2 size={13} /> Delete product</button>
+                          </div>
+                        </details>
                       </div>
                     </td>
                   </tr>
@@ -373,4 +443,5 @@ const sortButtonStyle: React.CSSProperties = {
   textTransform: 'inherit',
   letterSpacing: 'inherit',
   cursor: 'pointer',
+  minHeight: 24,
 }

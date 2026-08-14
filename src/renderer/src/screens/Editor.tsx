@@ -1,20 +1,22 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   ArrowLeft, Save, FileText, FileCode2,
-  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers, Sticker, Trash2
+  RefreshCw, Upload, X, AlertCircle, CheckCircle2, Layers, Sticker, MoreHorizontal
 } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import LabelPreview from '../components/LabelPreview'
 import RollPrintDialog from '../components/RollPrintDialog'
 import { generateBarcodeValue } from '../lib/barcode'
-import type { Product, LabelTemplate, DesignTemplate } from '../types'
+import type { Product, LabelTemplate, DesignTemplate, AppSettings } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
+import { assessProductContentFit, outputEligibilityError } from '../../../shared/contentFit'
 
 interface Props {
   initialProduct: Product | null
   onBack: () => void
   onOpenSheet: (product: Product) => void
   onOpenDesigner?: (designId?: string | null) => void
+  onDirtyChange: (dirty: boolean) => void
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
@@ -42,7 +44,7 @@ const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   tillieProductId: null,
 })
 
-export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner }: Props): JSX.Element {
+export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyChange }: Props): JSX.Element {
   const isNew = !initialProduct
 
   const [product, setProduct] = useState<Partial<Product>>(
@@ -57,10 +59,42 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   const [saveError, setSaveError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [regenConfirm, setRegenConfirm] = useState(false)
-  const [importingTemplate, setImportingTemplate] = useState(false)
   const [rollProduct, setRollProduct] = useState<Product | null>(null)
   const [designDoc, setDesignDoc] = useState<DesignTemplate | null>(null)
+  const [outputNotice, setOutputNotice] = useState('')
+  const [outputError, setOutputError] = useState('')
+  const [settings, setSettings] = useState<AppSettings | null>(null)
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
+  const savedProductRef = useRef(JSON.stringify(product))
+  const draftAssetIdRef = useRef(`draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  const newAssetPathsRef = useRef(new Set<string>())
+  const replacedAssetPathsRef = useRef(new Set<string>())
+  const dirty = useMemo(() => JSON.stringify(product) !== savedProductRef.current, [product, saveStatus])
+  const contentFitIssues = useMemo(() => assessProductContentFit(product), [product])
+  const clippedContent = contentFitIssues.filter((issue) => issue.status === 'clipped')
+
+  useEffect(() => {
+    onDirtyChange(dirty)
+    return () => onDirtyChange(false)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => () => {
+    for (const filePath of newAssetPathsRef.current) void window.api.file.deleteManagedImage(filePath)
+  }, [])
+
+  function stageAssetReplacement(previousPath: string | null | undefined, nextPath: string): void {
+    if (previousPath && previousPath !== nextPath) {
+      if (newAssetPathsRef.current.delete(previousPath)) void window.api.file.deleteManagedImage(previousPath)
+      else replacedAssetPathsRef.current.add(previousPath)
+    }
+    newAssetPathsRef.current.add(nextPath)
+  }
+
+  function stageAssetRemoval(filePath: string | null | undefined): void {
+    if (!filePath) return
+    if (newAssetPathsRef.current.delete(filePath)) void window.api.file.deleteManagedImage(filePath)
+    else replacedAssetPathsRef.current.add(filePath)
+  }
 
   useEffect(() => {
     window.api.file.listTemplates().then((r) => {
@@ -85,9 +119,28 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
     })
 
     window.api.settings.get().then((r) => {
-      if (r.ok) setGlobalLabelBackground(r.data.labelBackgroundColor)
+      if (r.ok) {
+        setGlobalLabelBackground(r.data.labelBackgroundColor)
+        setSettings(r.data)
+      }
     })
   }, [])
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent): void {
+      if (!(event.metaKey || event.ctrlKey)) return
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void handleSave()
+      }
+      if (event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        void handlePrint()
+      }
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  })
 
   useEffect(() => {
     if (!product.barcodeImagePath) {
@@ -150,11 +203,12 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   )
 
   async function handlePickDesignImage(elementId: string): Promise<void> {
-    const productId = product.id ?? `tmp-${Date.now()}`
+    const productId = product.id ?? draftAssetIdRef.current
     const result = await window.api.design.pickSlotImage(productId, elementId)
-    if (!result.ok) { alert(`Failed to save image: ${result.error}`); return }
+    if (!result.ok) { setOutputError(`Design image could not be saved: ${result.error}`); return }
     if (!result.data) return
     const storedPath = result.data
+    stageAssetReplacement(product.designImageOverrides?.[elementId], storedPath)
     setProduct((prev) => ({
       ...prev,
       designImageOverrides: { ...(prev.designImageOverrides ?? {}), [elementId]: storedPath },
@@ -163,6 +217,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   }
 
   function handleClearDesignImage(elementId: string): void {
+    stageAssetRemoval(product.designImageOverrides?.[elementId])
     setProduct((prev) => {
       const next = { ...(prev.designImageOverrides ?? {}) }
       delete next[elementId]
@@ -183,6 +238,10 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   const isDesignTemplate = Boolean(product.templateId?.startsWith('design-'))
   const usesProductNameToggle = Boolean(product.templateId?.startsWith('custom-')) || isDesignTemplate
   const requiresName = activeTemplate.layout !== 'logo-only'
+  const previewUsesSampleContent = isNew && (
+    (requiresName && !product.name?.trim()) ||
+    (usesPrice && product.showPrice !== false && !product.price?.trim())
+  )
 
   const templateNote = activeTemplate.layout === 'front'
     ? 'Classic vertical label with name, optional price, and optional barcode.'
@@ -273,6 +332,10 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
       })
     }
     if (result.ok) {
+      newAssetPathsRef.current.clear()
+      for (const filePath of replacedAssetPathsRef.current) void window.api.file.deleteManagedImage(filePath)
+      replacedAssetPathsRef.current.clear()
+      savedProductRef.current = JSON.stringify(result.data)
       setProduct(result.data)
       const savedCategory = result.data.category.trim()
       if (savedCategory) {
@@ -295,30 +358,52 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   }
 
   async function handleExportPDF(): Promise<void> {
+    const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
+    if (eligibilityError) {
+      setOutputError(eligibilityError)
+      return
+    }
     const saved = await handleSave()
     if (!saved) return
     setExporting(true)
     const result = await window.api.export.singlePDF(saved)
-    if (!result.ok) alert(`Export failed: ${result.error}`)
+    if (!result.ok) setOutputError(`PDF export failed: ${result.error}. Check the export folder and try again.`)
+    else if (result.data) setOutputNotice('Label PDF exported.')
     setExporting(false)
   }
 
   async function handleExportSVG(): Promise<void> {
+    const eligibilityError = outputEligibilityError([{ product }], 'SVG export')
+    if (eligibilityError) {
+      setOutputError(eligibilityError)
+      return
+    }
     const saved = await handleSave()
     if (!saved) return
     setExporting(true)
     const result = await window.api.export.singleSVG(saved)
-    if (!result.ok) alert(`Export failed: ${result.error}`)
+    if (!result.ok) setOutputError(`SVG export failed: ${result.error}. Check the export folder and try again.`)
+    else if (result.data) setOutputNotice('Label SVG exported.')
     setExporting(false)
   }
 
   async function handlePrint(): Promise<void> {
+    const eligibilityError = outputEligibilityError([{ product }], 'Sheet printing')
+    if (eligibilityError) {
+      setOutputError(eligibilityError)
+      return
+    }
     const saved = await handleSave()
     if (!saved) return
     onOpenSheet(saved)
   }
 
   async function handleRollPrint(): Promise<void> {
+    const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
+    if (eligibilityError) {
+      setOutputError(eligibilityError)
+      return
+    }
     const saved = await handleSave()
     if (!saved) return
     setRollProduct(saved)
@@ -328,80 +413,38 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
     const pickedResult = await window.api.file.pickBarcodeImage()
     if (!pickedResult.ok || !pickedResult.data) return
     const sourcePath = pickedResult.data
-    const productId = product.id ?? `tmp-${Date.now()}`
+    const productId = product.id ?? draftAssetIdRef.current
     const saveResult = await window.api.file.saveBarcodeImage(sourcePath, productId)
-    if (!saveResult.ok) { alert(`Failed to save barcode image: ${saveResult.error}`); return }
+    if (!saveResult.ok) { setOutputError(`Barcode image could not be saved: ${saveResult.error}`); return }
     const storedPath = saveResult.data
+    stageAssetReplacement(product.barcodeImagePath, storedPath)
     setProduct((prev) => ({ ...prev, barcodeImagePath: storedPath }))
     const b64Result = await window.api.file.readImageAsBase64(storedPath)
     if (b64Result.ok && b64Result.data) setBarcodeOverrideDataUri(b64Result.data)
     setSaveStatus('idle')
   }
 
-  const isDeletableTemplate = Boolean(
-    product.templateId && (product.templateId.startsWith('custom-') || product.templateId.startsWith('design-'))
-  )
-
-  async function handleDeleteTemplate(): Promise<void> {
-    const templateId = product.templateId
-    if (!templateId || !isDeletableTemplate) return
-    const templateName = templates.find((template) => template.id === templateId)?.name ?? templateId
-    const confirmed = window.confirm(
-      `Remove the template "${templateName}" from the list?\n\nLabels that use it will fall back to the default template. This cannot be undone.`
-    )
-    if (!confirmed) return
-    const result = await window.api.file.deleteTemplate(templateId)
-    if (!result.ok) {
-      setSaveError(result.error)
-      setSaveStatus('error')
-      return
-    }
-    setTemplates((current) => current.filter((template) => template.id !== templateId))
-    update('templateId', 'avery5821')
-  }
-
-  async function handleImportTemplate(): Promise<void> {
-    setImportingTemplate(true)
-    const picked = await window.api.file.pickTemplateImage()
-    if (!picked.ok) {
-      setSaveError(picked.error)
-      setSaveStatus('error')
-      setImportingTemplate(false)
-      return
-    }
-    if (!picked.data) {
-      setImportingTemplate(false)
-      return
-    }
-    const saved = await window.api.file.saveTemplateImage(picked.data)
-    setImportingTemplate(false)
-    if (!saved.ok) {
-      setSaveError(saved.error)
-      setSaveStatus('error')
-      return
-    }
-    setTemplates((current) => [...current, saved.data])
-    update('templateId', saved.data.id)
-  }
-
   async function handleUploadLogo(): Promise<void> {
     const pickedResult = await window.api.file.pickLogoImage()
     if (!pickedResult.ok || !pickedResult.data) return
     const sourcePath = pickedResult.data
-    const productId = product.id ?? `tmp-${Date.now()}`
+    const productId = product.id ?? draftAssetIdRef.current
     const saveResult = await window.api.file.saveLogoImage(sourcePath, productId)
-    if (!saveResult.ok) { alert(`Failed to save top image: ${saveResult.error}`); return }
+    if (!saveResult.ok) { setOutputError(`Top image could not be saved: ${saveResult.error}`); return }
+    stageAssetReplacement(product.logoImagePath, saveResult.data)
     setProduct((prev) => ({ ...prev, logoImagePath: saveResult.data }))
     setSaveStatus('idle')
   }
 
   function handleRemoveBarcodeImage(): void {
+    stageAssetRemoval(product.barcodeImagePath)
     setProduct((prev) => ({ ...prev, barcodeImagePath: null }))
     setBarcodeOverrideDataUri('')
     setSaveStatus('idle')
   }
 
   function handleRemoveLogo(): void {
+    stageAssetRemoval(product.logoImagePath)
     setProduct((prev) => ({ ...prev, logoImagePath: null }))
     setLogoDataUri('')
     setSaveStatus('idle')
@@ -420,68 +463,87 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
 
       {/* ── Top bar ── */}
-      <div style={{
+      <div className="workspace-toolbar editor-toolbar" style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '0 20px', height: 52,
-        background: 'white', borderBottom: '1px solid #e8eaed',
+        background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border-soft)',
         flexShrink: 0,
       }}>
         <button onClick={onBack} className="btn-ghost btn-sm">
           <ArrowLeft size={13} /> Products
         </button>
-        <span style={{ color: '#cbd5e1', fontSize: 13 }}>/</span>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {isNew ? 'New Product' : product.name || 'Edit Product'}
-        </span>
+        <span style={{ color: 'var(--color-border-strong)', fontSize: 13 }}>/</span>
+        <h1 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-workbench-navy)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+          {isNew ? 'New Label' : product.name || 'Edit Label'}
+        </h1>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           {saveStatus === 'saved' && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1f7a1f', fontWeight: 500, marginRight: 4 }}>
+            <span role="status" aria-live="polite" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1f7a1f', fontWeight: 500, marginRight: 4 }}>
               <CheckCircle2 size={13} /> Saved
             </span>
           )}
+          {dirty && saveStatus !== 'saving' && saveStatus !== 'error' && (
+            <span role="status" className="status-message" style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500, marginRight: 4 }}>
+              Unsaved changes
+            </span>
+          )}
           {saveStatus === 'error' && saveError && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#dc2626', fontWeight: 500, marginRight: 4 }}>
+            <span role="alert" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-danger-text)', fontWeight: 500, marginRight: 4 }}>
               <AlertCircle size={13} /> {saveError}
             </span>
           )}
-          <button onClick={handleSave} disabled={saveStatus === 'saving'} className="btn-primary btn-sm">
+          <button onClick={handleSave} disabled={saveStatus === 'saving'} className="btn-outline btn-sm" title="Save label (⌘S)">
             <Save size={12} /> {saveStatus === 'saving' ? 'Saving…' : 'Save'}
           </button>
-          <button onClick={handleExportPDF} disabled={exporting} className="btn-outline btn-sm">
-            <FileText size={12} /> PDF
-          </button>
-          <button onClick={handleExportSVG} disabled={exporting} className="btn-outline btn-sm">
-            <FileCode2 size={12} /> SVG
-          </button>
-          <button onClick={handleRollPrint} className="btn-outline btn-sm">
-            <Sticker size={12} /> Print Roll
-          </button>
-          <button onClick={handlePrint} className="btn-green btn-sm">
+          <button onClick={handlePrint} className="btn-green btn-sm" title="Save and open print setup (⌘P)">
             <Layers size={12} /> Print Sheet
           </button>
+          <details className="row-actions-menu">
+            <summary className="btn btn-icon" aria-label="More label output actions" title="More output actions"><MoreHorizontal size={14} /></summary>
+            <div className="row-actions-popover">
+              <button onClick={handleExportPDF} disabled={exporting}><FileText size={13} /> Export label PDF</button>
+              <button onClick={handleExportSVG} disabled={exporting}><FileCode2 size={13} /> Export label SVG</button>
+              <button onClick={handleRollPrint}><Sticker size={13} /> Print roll label</button>
+            </div>
+          </details>
         </div>
       </div>
 
       {rollProduct && <RollPrintDialog product={rollProduct} onClose={() => setRollProduct(null)} />}
+      {outputNotice && (
+        <div role="status" aria-live="polite" className="status-message" style={{ padding: '8px 20px', background: 'var(--color-success-surface)', color: 'var(--color-success-text)', fontSize: 12 }}>
+          {outputNotice}
+        </div>
+      )}
+      {outputError && (
+        <div role="alert" className="status-message" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: 'var(--color-danger-surface)', color: 'var(--color-danger-text)', fontSize: 12 }}>
+          <span style={{ flex: 1 }}>{outputError}</span>
+          <button className="btn-ghost btn-sm" onClick={() => setOutputError('')}>Dismiss</button>
+        </div>
+      )}
 
       {/* ── Body ── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div className="editor-workspace" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-        {/* Preview panel — 2/3 width */}
-        <div style={{
-          flex: 2,
-          background: '#f0f2f5',
-          borderRight: '1px solid #e8eaed',
+        {/* Preview panel */}
+        <div className="editor-preview-pane" style={{
+          background: 'var(--color-panel)',
+          borderRight: '1px solid var(--color-border-soft)',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center',
           padding: '28px 24px',
           gap: 14,
           overflowY: 'auto',
         }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
             Preview
           </p>
+          {previewUsesSampleContent && (
+            <div role="status" style={{ fontSize: 12, color: 'var(--color-warning)', background: 'var(--color-warning-surface)', border: '1px solid var(--color-warning-border)', borderRadius: 8, padding: '7px 10px' }}>
+              Sample preview — enter the required product details before saving or printing.
+            </div>
+          )}
           <div style={{ width: '80%', maxWidth: 480 }}>
             <LabelPreview
               product={product}
@@ -489,88 +551,79 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               logoDataUri={logoDataUri}
             />
           </div>
-          <p style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', lineHeight: 1.5, margin: 0 }}>
-            Live preview —<br />matches printed output
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', textAlign: 'center', lineHeight: 1.5, margin: 0 }}>
+            Live label preview · verify physical placement in Print Sheet
           </p>
+          <div className="card print-preflight" style={{ width: 'min(100%, 520px)', padding: 14 }}>
+            <div className="preflight-item"><strong>Label</strong><span>{activeTemplate.name} · {(activeTemplate.width / 72).toFixed(2)} × {(activeTemplate.height / 72).toFixed(2)} in</span></div>
+            <div className="preflight-item"><strong>Barcode</strong><span>{product.showBarcode === false || !usesBarcode ? 'Not printed' : barcodeValidity ? 'Ready' : 'Needs attention'}</span></div>
+            <div className="preflight-item">
+              <strong>Content fit</strong>
+              <span className={clippedContent.length ? 'fit-status clipped' : contentFitIssues.length ? 'fit-status tight' : 'fit-status fits'}>
+                {clippedContent.length ? `${clippedContent.length} field${clippedContent.length === 1 ? '' : 's'} clipped` : contentFitIssues.length ? 'Tight — review text' : 'Fits printable zones'}
+              </span>
+            </div>
+            <div className="preflight-item"><strong>Sheet stock</strong><span>PLS780 · US Letter</span></div>
+            <div className="preflight-item"><strong>Print setup</strong><span>Actual Size · offsets {settings?.sheetOffsetXIn || '0.000'}, {settings?.sheetOffsetYIn || '0.000'} in</span></div>
+          </div>
+          {contentFitIssues.length > 0 && (
+            <div className={clippedContent.length ? 'content-fit-callout clipped' : 'content-fit-callout tight'} role={clippedContent.length ? 'alert' : 'status'}>
+              <strong>{clippedContent.length ? 'Printed content will be clipped' : 'Printed content is close to the limit'}</strong>
+              <ul>
+                {contentFitIssues.map((issue) => <li key={`${issue.field}-${issue.status}`}>{issue.message}</li>)}
+              </ul>
+              <span>{clippedContent.length ? 'Shorten the field or choose another label before printing or exporting PDF.' : 'Check the preview carefully before output.'}</span>
+            </div>
+          )}
         </div>
 
-        {/* Form panel — 1/3 width */}
-        <div style={{ flex: 1, overflowY: 'auto', background: 'white', padding: '28px 24px' }}>
+        {/* Working inspector */}
+        <div className="editor-form-pane" style={{ overflowY: 'auto', background: 'var(--color-surface)', padding: '28px 24px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             {/* Product name */}
             <div>
-              <label className="label-text">Product Name {requiresName ? '*' : '(optional)'}</label>
+              <label className="label-text" htmlFor="product-name">Product Name {requiresName ? '*' : '(optional)'}</label>
               <input
+                id="product-name"
                 className="input"
                 placeholder="e.g. Fresh Mozzarella"
                 value={product.name ?? ''}
                 onChange={(e) => update('name', e.target.value)}
                 maxLength={80}
-                autoFocus={isNew}
               />
             </div>
 
-            {/* Template */}
-            <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <label className="label-text" style={{ marginBottom: 0 }}>Template</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select
-                  className="input"
-                  style={{ flex: 1 }}
-                  value={product.templateId ?? 'avery5821'}
-                  onChange={(e) => update('templateId', e.target.value)}
-                >
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>{template.name}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="btn-outline"
-                  title={isDeletableTemplate ? 'Remove this template from the list' : 'Built-in templates cannot be removed'}
-                  disabled={!isDeletableTemplate}
-                  onClick={handleDeleteTemplate}
-                  style={{ padding: '0 10px' }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-              <button type="button" className="btn-outline" onClick={handleImportTemplate} disabled={importingTemplate}>
-                <Upload size={13} /> {importingTemplate ? 'Creating template…' : 'Import label design'}
-              </button>
-              {onOpenDesigner && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {isDesignTemplate && (
-                    <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => onOpenDesigner(product.templateId)}>
-                      Edit in Designer
-                    </button>
-                  )}
-                  <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => onOpenDesigner(null)}>
-                    New design…
-                  </button>
-                </div>
-              )}
-              <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
-                {isDesignTemplate
-                  ? 'A design template built in the Designer. Fields bind to this product’s data automatically.'
-                  : product.templateId?.startsWith('custom-')
-                    ? 'Your artwork is used as the full-label background. Product name, price, and barcode remain editable above it.'
-                    : templateNote}
-              </p>
+            <div>
+              <label className="label-text" htmlFor="product-template">Choose Label</label>
+              <select
+                id="product-template"
+                className="input"
+                value={product.templateId ?? 'avery5821'}
+                onChange={(e) => update('templateId', e.target.value)}
+              >
+                {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+              </select>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: '5px 0 0' }}>{templateNote}</p>
             </div>
 
+            <details className="editor-disclosure">
+              <summary>Customize this label only</summary>
+              <div className="editor-disclosure-body">
             {/* Per-label design image slots */}
             {isDesignTemplate && designImageSlots.length > 0 && (
               <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <label className="label-text" style={{ marginBottom: 0 }}>Design Images</label>
+                <div>
+                  <div className="section-label" style={{ marginBottom: 0 }}>Customize this label only</div>
+                  <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: '5px 0 0' }}>Image changes below affect only this product. The reusable template stays unchanged.</p>
+                </div>
                 {designImageSlots.map((slot) => {
                   const overridden = Boolean(product.designImageOverrides?.[slot.id])
                   return (
                     <div key={slot.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ flex: 1, fontSize: 12, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ flex: 1, fontSize: 12, color: 'var(--color-text-strong-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {slot.label}
-                        {overridden && <span style={{ color: '#16a34a' }}> — custom</span>}
+                        {overridden && <span style={{ color: 'var(--color-success-text)' }}> — custom</span>}
                       </span>
                       <button type="button" className="btn-outline btn-sm" onClick={() => handlePickDesignImage(slot.id)}>
                         <Upload size={12} /> {overridden ? 'Replace…' : 'Change…'}
@@ -583,24 +636,26 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                     </div>
                   )
                 })}
-                <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: 0 }}>
                   Swap this design’s images for this label only. Other products using the template keep the design’s images.
                 </p>
               </div>
             )}
 
             <div>
-              <label className="label-text">Label Background</label>
+              <label className="label-text" htmlFor="label-background-hex">Label Background</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <input
+                  id="label-background-hex"
                   type="color"
                   value={product.labelBackgroundColor || globalLabelBackground || activeTemplate.shellColor}
                   onChange={(e) => update('labelBackgroundColor', e.target.value)}
                   aria-label="Label background color"
-                  style={{ width: 44, height: 36, padding: 2, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', cursor: 'pointer' }}
+                  style={{ width: 44, height: 36, padding: 2, border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-surface)', cursor: 'pointer' }}
                 />
                 <input
                   className="input"
+                  aria-label="Label background hex value"
                   value={product.labelBackgroundColor || ''}
                   onChange={(e) => update('labelBackgroundColor', e.target.value)}
                   placeholder="Using global default"
@@ -613,22 +668,26 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                   </button>
                 )}
               </div>
-              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
-                Leave blank to use the global label color from Settings.
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
+                Inheritance: reusable template → global color in Settings → this-label override. Leave blank to inherit the global color.
               </p>
+              {onOpenDesigner && <button type="button" className="btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => onOpenDesigner(product.templateId)}>Manage reusable templates in Designer</button>}
             </div>
+              </div>
+            </details>
 
             {/* Price */}
             <div>
-              <label className="label-text">Price {usesPrice && product.showPrice !== false ? '*' : '(optional)'}</label>
+              <label className="label-text" htmlFor="product-price">Price {usesPrice && product.showPrice !== false ? '*' : '(optional)'}</label>
               <input
+                id="product-price"
                 className="input"
                 placeholder="e.g. $9.99/lb"
                 value={product.price ?? ''}
                 onChange={(e) => update('price', e.target.value)}
                 maxLength={30}
               />
-              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
                 Include symbol and unit — e.g. $9.99/lb or $4.50 each
               </p>
               {product.tillieProductId && (
@@ -641,8 +700,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
 
             {/* Category */}
             <div>
-              <label className="label-text">Category</label>
+              <label className="label-text" htmlFor="product-category">Category</label>
               <input
+                id="product-category"
                 className="input"
                 placeholder="e.g. Grab & Go, Sauces, Cheese…"
                 value={product.category ?? ''}
@@ -659,27 +719,32 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
 
             {activeTemplate.layout === 'vertical-info' && (
               <div>
-                <label className="label-text">Customer / Order Name</label>
+                <label className="label-text" htmlFor="customer-name">Customer / Order Name</label>
                 <input
+                  id="customer-name"
                   className="input"
                   placeholder="e.g. The Smith Family"
                   value={product.customerName ?? ''}
                   onChange={(e) => update('customerName', e.target.value)}
                   maxLength={60}
                 />
-                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
                   Shown at the bottom of the catering instruction label.
                 </p>
               </div>
             )}
 
+            <details className="editor-disclosure">
+              <summary>Advanced label details</summary>
+              <div className="editor-disclosure-body">
             {/* Extra label info */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <label className="label-text" style={{ marginBottom: 0 }}>Details Panel</label>
+              <div className="section-label" style={{ marginBottom: 0 }}>Details Panel</div>
 
               <div>
-                <label className="label-text">Serving Info</label>
+                <label className="label-text" htmlFor="serving-info">Serving Info</label>
                 <textarea
+                  id="serving-info"
                   className="input"
                   rows={2}
                   placeholder="e.g. Serving Size: 1 oz | Calories 25"
@@ -690,8 +755,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </div>
 
               <div>
-                <label className="label-text">Nutrition Info</label>
+                <label className="label-text" htmlFor="nutrition-info">Nutrition Info</label>
                 <textarea
+                  id="nutrition-info"
                   className="input"
                   rows={3}
                   placeholder="e.g. Total Fat 0g | Total Carbohydrates 3g | Sodium 150mg | Protein 1g"
@@ -702,8 +768,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </div>
 
               <div>
-                <label className="label-text">Cooking Instructions</label>
+                <label className="label-text" htmlFor="cooking-instructions">Cooking Instructions</label>
                 <textarea
+                  id="cooking-instructions"
                   className="input"
                   rows={2}
                   placeholder="e.g. Fry at 365° for 5 minutes"
@@ -714,8 +781,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </div>
 
               <div>
-                <label className="label-text">Ingredients</label>
+                <label className="label-text" htmlFor="ingredients">Ingredients</label>
                 <textarea
+                  id="ingredients"
                   className="input"
                   rows={3}
                   placeholder="e.g. water, chickpea flour, salt"
@@ -726,8 +794,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </div>
 
               <div>
-                <label className="label-text">Allergen / Handling Note</label>
+                <label className="label-text" htmlFor="allergen-note">Allergen / Handling Note</label>
                 <textarea
+                  id="allergen-note"
                   className="input"
                   rows={3}
                   placeholder="e.g. Manufactured on equipment that also handles eggs, wheat..."
@@ -740,8 +809,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
 
             {/* Display options */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <label className="label-text" style={{ marginBottom: 0 }}>Display Options</label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <div className="section-label" style={{ marginBottom: 0 }}>Display Options</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={product.showPrice !== false}
@@ -750,7 +819,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 />
                 Show price on label
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={product.showBarcode !== false}
@@ -759,7 +828,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 />
                 Show barcode on label
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={product.showCookingInstructions !== false}
@@ -768,7 +837,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 />
                 Show cooking instructions
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={product.showProductName !== false}
@@ -777,7 +846,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 />
                 Show product name on label
               </label>
-              <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: 0 }}>
                 Disabled options are ignored by the selected template.
               </p>
             </div>
@@ -785,7 +854,7 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
             {/* Top image */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label className="label-text" style={{ marginBottom: 0 }}>Top Image</label>
+                <div className="section-label" style={{ marginBottom: 0 }}>Top Image</div>
               </div>
 
               {logoDataUri ? (
@@ -793,9 +862,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                   <img
                     src={logoDataUri}
                     alt="Uploaded top image"
-                    style={{ width: 88, height: 44, objectFit: 'contain', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 4 }}
+                    style={{ width: 88, height: 44, objectFit: 'contain', background: 'var(--color-neutral-soft)', border: '1px solid var(--color-border)', borderRadius: 6, padding: 4 }}
                   />
-                  <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>
                     Fills the image area at the top of the label.
                   </span>
                   <button onClick={handleRemoveLogo} className="btn-ghost btn-sm" style={{ color: '#f87171' }}>
@@ -808,15 +877,15 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 </button>
               )}
 
-              <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>
-                If you leave this empty, the default Grazia's logo is used. Uploading an image overrides it for this product only.
+              <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: 0 }}>
+                Leave this empty to use the selected template’s default logo. An uploaded image overrides it for this product only.
               </p>
             </div>
 
             {/* Barcode */}
             <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label className="label-text" style={{ marginBottom: 0 }}>Barcode (Code 128)</label>
+                <div className="section-label" style={{ marginBottom: 0 }}>Barcode (Code 128)</div>
                 {regenConfirm ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: '#d97706' }}>Confirm?</span>
@@ -831,8 +900,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </div>
 
               <div>
-                <label className="label-text">Barcode Number</label>
+                <label className="label-text" htmlFor="barcode-number">Barcode Number</label>
                 <input
+                  id="barcode-number"
                   className="input"
                   placeholder="Type barcode value"
                   value={product.barcodeValue ?? ''}
@@ -840,16 +910,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                   maxLength={80}
                   style={{ fontFamily: 'monospace', letterSpacing: '0.04em' }}
                 />
-                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
                   You can type your own barcode or regenerate one automatically.
                 </p>
                 {usesBarcode && product.showBarcode !== false && barcodeValidity === false && (
-                  <p style={{ fontSize: 11, color: '#dc2626', marginTop: 5 }}>
+                  <p style={{ fontSize: 11, color: 'var(--color-danger-text)', marginTop: 5 }}>
                     This value cannot be rendered as Code 128.
                   </p>
                 )}
                 {usesBarcode && product.showBarcode !== false && barcodeValidity === true && (
-                  <p style={{ fontSize: 11, color: '#16a34a', marginTop: 5 }}>
+                  <p style={{ fontSize: 11, color: 'var(--color-success-text)', marginTop: 5 }}>
                     Valid Code 128 value.
                   </p>
                 )}
@@ -860,9 +930,9 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                   <img
                     src={barcodeOverrideDataUri}
                     alt="Uploaded barcode"
-                    style={{ height: 36, objectFit: 'contain', background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, padding: 4 }}
+                    style={{ height: 36, objectFit: 'contain', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 6, padding: 4 }}
                   />
-                  <span style={{ fontSize: 12, color: '#64748b', flex: 1 }}>
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', flex: 1 }}>
                     Custom uploaded image (overrides typed/generated barcode)
                   </span>
                   <button onClick={handleRemoveBarcodeImage} className="btn-ghost btn-sm" style={{ color: '#f87171' }}>
@@ -875,11 +945,13 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 </button>
               )}
             </div>
+              </div>
+            </details>
 
             {/* Print warning */}
             <div style={{
               fontSize: 12, color: '#78716c',
-              background: '#fffbeb', border: '1px solid #fde68a',
+              background: 'var(--color-warning-surface)', border: '1px solid var(--color-warning-border)',
               borderRadius: 8, padding: '10px 14px'
             }}>
               When printing, set scale to <strong>100% / Actual Size</strong>. Do not use "Fit to page."

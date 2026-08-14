@@ -34,6 +34,8 @@ const api = {
     get: (): Promise<IpcResult<AppSettings>> => ipcRenderer.invoke('settings:get'),
     set: (key: string, value: string): Promise<IpcResult<boolean>> =>
       ipcRenderer.invoke('settings:set', key, value),
+    setMany: (patch: Partial<Record<keyof AppSettings, string>>): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('settings:setMany', patch),
   },
 
   // File operations
@@ -52,6 +54,8 @@ const api = {
     ): Promise<IpcResult<string>> => ipcRenderer.invoke('file:saveLogoImage', sourcePath, productId),
     readImageAsBase64: (filePath: string): Promise<IpcResult<string>> =>
       ipcRenderer.invoke('file:readImageAsBase64', filePath),
+    deleteManagedImage: (filePath: string): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('file:deleteManagedImage', filePath),
     getTemplatePNG: (templateId?: string | null): Promise<IpcResult<string>> =>
       ipcRenderer.invoke('file:getTemplatePNG', templateId),
     listTemplates: (): Promise<IpcResult<LabelTemplate[]>> =>
@@ -100,14 +104,15 @@ const api = {
       ipcRenderer.invoke('export:singlePDF', product),
     singleSVG: (product: Product): Promise<IpcResult<string | null>> =>
       ipcRenderer.invoke('export:singleSVG', product),
-    sheetPDF: (products: Product[], startSlot: number): Promise<IpcResult<string | null>> =>
-      ipcRenderer.invoke('export:sheetPDF', products, startSlot),
+    sheetPDF: (slots: Array<Product | null>): Promise<IpcResult<string | null>> =>
+      ipcRenderer.invoke('export:sheetPDF', slots),
   },
 
   // Print
   print: {
-    sheet: (products: Product[], startSlot: number): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke('print:sheet', products, startSlot),
+    sheet: (slots: Array<Product | null>): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('print:sheet', slots),
+    calibrationSheet: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('print:calibrationSheet'),
     listPrinters: (): Promise<IpcResult<Array<{ name: string; displayName: string; isDefault: boolean }>>> =>
       ipcRenderer.invoke('print:listPrinters'),
     rollLabel: (

@@ -125,6 +125,11 @@ export function setSetting(key: string, value: string): void {
   saveSettings()
 }
 
+export function setSettings(patch: Partial<Record<keyof AppSettings, string>>): void {
+  _settings = { ..._settings!, ...patch } as AppSettings
+  saveSettings()
+}
+
 function normalizeProduct(product: Product): Product {
   const now = new Date().toISOString()
   return {

@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import Nav from './components/Nav'
 import Library from './screens/Library'
-import Editor from './screens/Editor'
-import SheetBuilder from './screens/SheetBuilder'
-import Settings from './screens/Settings'
-import HowTo from './screens/HowTo'
-import Designer from './screens/Designer'
 import type { Product } from './types'
 import { applyFontSettings, installFonts } from './lib/fonts'
+
+const Editor = lazy(() => import('./screens/Editor'))
+const SheetBuilder = lazy(() => import('./screens/SheetBuilder'))
+const Settings = lazy(() => import('./screens/Settings'))
+const HowTo = lazy(() => import('./screens/HowTo'))
+const Designer = lazy(() => import('./screens/Designer'))
 
 export type Screen = 'library' | 'editor' | 'sheet' | 'designer' | 'settings' | 'how-to'
 
@@ -16,6 +17,7 @@ export default function App(): JSX.Element {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
   const [designerTarget, setDesignerTarget] = useState<string | null>(null)
+  const [hasUnsavedWork, setHasUnsavedWork] = useState(false)
 
   useEffect(() => {
     Promise.all([window.api.settings.get(), window.api.font.list()]).then(([settings, fonts]) => {
@@ -26,22 +28,70 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  useEffect(() => {
+    function protectWindowClose(event: BeforeUnloadEvent): void {
+      if (!hasUnsavedWork) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', protectWindowClose)
+    return () => window.removeEventListener('beforeunload', protectWindowClose)
+  }, [hasUnsavedWork])
+
+  useEffect(() => {
+    function handleGlobalShortcut(event: KeyboardEvent): void {
+      if (!(event.metaKey || event.ctrlKey)) return
+      const key = event.key.toLowerCase()
+      if (key === 'n') {
+        event.preventDefault()
+        openEditor()
+      }
+      if (key === 'k') {
+        event.preventDefault()
+        if (screen !== 'library') navigateTo('library')
+        window.requestAnimationFrame(() => document.getElementById('product-search')?.focus())
+      }
+    }
+    window.addEventListener('keydown', handleGlobalShortcut)
+    return () => window.removeEventListener('keydown', handleGlobalShortcut)
+  })
+
+  function canLeaveWorkspace(): boolean {
+    return !hasUnsavedWork || window.confirm('Discard your unsaved changes? This cannot be undone.')
+  }
+
+  function navigateTo(next: Screen): void {
+    if (next === screen || !canLeaveWorkspace()) return
+    setHasUnsavedWork(false)
+    if (next === 'editor') {
+      setEditingProduct(null)
+    }
+    setScreen(next)
+  }
+
   function openEditor(product?: Product): void {
+    if (screen !== 'library' && !canLeaveWorkspace()) return
+    setHasUnsavedWork(false)
     setEditingProduct(product ?? null)
     setScreen('editor')
   }
 
   function openSheet(products: Product[]): void {
+    setHasUnsavedWork(false)
     setSheetProducts(products)
     setScreen('sheet')
   }
 
   function openDesigner(designId?: string | null): void {
+    if (!canLeaveWorkspace()) return
+    setHasUnsavedWork(false)
     setDesignerTarget(designId ?? null)
     setScreen('designer')
   }
 
   function backToLibrary(): void {
+    if (!canLeaveWorkspace()) return
+    setHasUnsavedWork(false)
     setEditingProduct(null)
     setScreen('library')
   }
@@ -51,32 +101,34 @@ export default function App(): JSX.Element {
       <Nav
         current={screen}
         onNavigate={(s) => {
-          if (s === 'editor') openEditor()
-          else setScreen(s)
+          navigateTo(s)
         }}
       />
-      <div className="content-area">
-        {screen === 'library' && (
-          <Library onEdit={openEditor} onOpenSheet={openSheet} />
-        )}
-        {screen === 'editor' && (
-          <Editor
-            initialProduct={editingProduct}
-            onBack={backToLibrary}
-            onOpenSheet={(p) => openSheet([p])}
-            onOpenDesigner={openDesigner}
-          />
-        )}
-        {screen === 'designer' && <Designer initialDesignId={designerTarget} />}
-        {screen === 'sheet' && (
-          <SheetBuilder
-            initialProducts={sheetProducts}
-            onBack={() => setScreen('library')}
-          />
-        )}
-        {screen === 'settings' && <Settings />}
-        {screen === 'how-to' && <HowTo onNavigate={setScreen} />}
-      </div>
+      <main className="content-area" id="main-content">
+        <Suspense fallback={<div role="status" className="screen app-loading">Loading workspace…</div>}>
+          {screen === 'library' && (
+            <Library onEdit={openEditor} onOpenSheet={openSheet} />
+          )}
+          {screen === 'editor' && (
+            <Editor
+              initialProduct={editingProduct}
+              onBack={backToLibrary}
+              onOpenSheet={(p) => openSheet([p])}
+              onOpenDesigner={openDesigner}
+              onDirtyChange={setHasUnsavedWork}
+            />
+          )}
+          {screen === 'designer' && <Designer initialDesignId={designerTarget} onDirtyChange={setHasUnsavedWork} />}
+          {screen === 'sheet' && (
+            <SheetBuilder
+              initialProducts={sheetProducts}
+              onBack={() => setScreen('library')}
+            />
+          )}
+          {screen === 'settings' && <Settings onDirtyChange={setHasUnsavedWork} onOpenCalibration={() => { if (!canLeaveWorkspace()) return; setSheetProducts([]); setHasUnsavedWork(false); setScreen('sheet') }} />}
+          {screen === 'how-to' && <HowTo onNavigate={setScreen} />}
+        </Suspense>
+      </main>
     </div>
   )
 }

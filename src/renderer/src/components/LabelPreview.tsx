@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import JsBarcode from 'jsbarcode'
 import type { Product, DesignTemplate } from '../types'
@@ -54,7 +54,10 @@ export default function LabelPreview({
     }
   }, [designTemplateId])
   const labelBackground = product.labelBackgroundColor || globalLabelBackground || template.shellColor
-  const resolvedProduct = { ...product, labelBackgroundColor: labelBackground }
+  const resolvedProduct = useMemo(
+    () => ({ ...product, labelBackgroundColor: labelBackground }),
+    [product, labelBackground]
+  )
 
   useEffect(() => {
     window.api.settings.get().then((result) => {

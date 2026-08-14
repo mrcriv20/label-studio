@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Printer, X } from 'lucide-react'
 import type { Product, PrinterInfo } from '../types'
 
@@ -18,6 +18,9 @@ interface Props {
 }
 
 export default function RollPrintDialog({ product, onClose }: Props): JSX.Element {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const printerSelectRef = useRef<HTMLSelectElement>(null)
   const [printers, setPrinters] = useState<PrinterInfo[]>([])
   const [printerName, setPrinterName] = useState('')
   const [presetId, setPresetId] = useState('4x2.5')
@@ -47,6 +50,23 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
       }
     })
   }, [])
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    printerSelectRef.current?.focus()
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled])'))
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => { document.removeEventListener('keydown', onKeyDown); previouslyFocused?.focus() }
+  }, [onClose])
 
   const preset = PRESETS.find((p) => p.id === presetId)
   const widthIn = preset ? preset.w : Number.parseFloat(customW)
@@ -79,22 +99,27 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="roll-print-title"
+        aria-describedby="roll-print-product"
         className="card"
-        style={{ width: 420, padding: '20px 20px 24px', background: 'white' }}
+        style={{ width: 'min(420px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', padding: '20px 20px 24px', background: 'var(--color-surface)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#1a2332', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <h2 id="roll-print-title" style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-workbench-navy)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Printer size={15} /> Print to Roll
           </h2>
-          <button onClick={onClose} className="btn btn-icon" title="Close"><X size={14} /></button>
+          <button ref={closeButtonRef} onClick={onClose} className="btn btn-icon" aria-label="Close print dialog" title="Close"><X size={14} /></button>
         </div>
-        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>{product.name}</p>
+        <p id="roll-print-product" style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: '0 0 16px' }}>{product.name}</p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <label className="label-text">Printer</label>
-            <select className="input" value={printerName} onChange={(e) => setPrinterName(e.target.value)}>
+            <label className="label-text" htmlFor="roll-printer">Printer</label>
+            <select ref={printerSelectRef} id="roll-printer" className="input" value={printerName} onChange={(e) => setPrinterName(e.target.value)}>
               <option value="">Ask each time (system print dialog)</option>
               {printers.map((p) => (
                 <option key={p.name} value={p.name}>
@@ -102,34 +127,35 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
                 </option>
               ))}
             </select>
-            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
               Pick your roll printer (e.g. UniNet iColor) to print directly with no dialog.
             </p>
           </div>
 
           <div>
-            <label className="label-text">Label size</label>
-            <select className="input" value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+            <label className="label-text" htmlFor="roll-size">Label size</label>
+            <select id="roll-size" className="input" value={presetId} onChange={(e) => setPresetId(e.target.value)}>
               {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               <option value="custom">Custom…</option>
             </select>
             {presetId === 'custom' && (
               <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                <input className="input" style={{ maxWidth: 90 }} inputMode="decimal" value={customW} onChange={(e) => setCustomW(e.target.value)} placeholder="W" />
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>×</span>
-                <input className="input" style={{ maxWidth: 90 }} inputMode="decimal" value={customH} onChange={(e) => setCustomH(e.target.value)} placeholder="H" />
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>inches</span>
+                <input aria-label="Custom label width in inches" className="input" style={{ maxWidth: 90 }} inputMode="decimal" value={customW} onChange={(e) => setCustomW(e.target.value)} placeholder="Width" />
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>×</span>
+                <input aria-label="Custom label height in inches" className="input" style={{ maxWidth: 90 }} inputMode="decimal" value={customH} onChange={(e) => setCustomH(e.target.value)} placeholder="Height" />
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>inches</span>
               </div>
             )}
-            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
               The label design scales to fit and rotates automatically if the media orientation differs.
               Set the same size as the media loaded in the printer.
             </p>
           </div>
 
           <div>
-            <label className="label-text">Copies</label>
+            <label className="label-text" htmlFor="roll-copies">Copies</label>
             <input
+              id="roll-copies"
               className="input"
               style={{ maxWidth: 90 }}
               inputMode="numeric"
@@ -139,13 +165,13 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
           </div>
 
           {error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#dc2626' }}>
+            <div role="alert" className="status-message" style={{ background: 'var(--color-danger-surface)', border: '1px solid var(--color-danger-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--color-danger-text)' }}>
               {error}
             </div>
           )}
           {done && (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#166534' }}>
-              Sent to printer.
+            <div role="status" aria-live="polite" className="status-message" style={{ background: 'var(--color-success-surface)', border: '1px solid var(--color-success-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--color-success-text)' }}>
+              Print request completed. Check the printer to confirm the label finished successfully.
             </div>
           )}
 

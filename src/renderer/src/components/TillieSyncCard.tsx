@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, Plug, Unplug, ChevronDown, ChevronRight, Store } from 'lucide-react'
+import { RefreshCw, Plug, Unplug, ChevronDown, ChevronRight, Store, Search } from 'lucide-react'
 import type { TillieCategory, TillieConfig, TillieProductSummary } from '../types'
 
 export default function TillieSyncCard(): JSX.Element {
@@ -15,6 +15,9 @@ export default function TillieSyncCard(): JSX.Element {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [showPicker, setShowPicker] = useState(false)
+  const [showCategories, setShowCategories] = useState(false)
+  const [categoryQuery, setCategoryQuery] = useState('')
+  const [configSaving, setConfigSaving] = useState(false)
 
   const refreshCategories = useCallback(async () => {
     const result = await window.api.tillie.getCategories()
@@ -68,9 +71,13 @@ export default function TillieSyncCard(): JSX.Element {
   }
 
   async function applyConfig(patch: Partial<TillieConfig>): Promise<void> {
+    setConfigSaving(true)
+    setError('')
     const result = await window.api.tillie.setConfig(patch)
-    if (!result.ok) { setError(result.error); return }
+    setConfigSaving(false)
+    if (!result.ok) { setError(result.error); setNotice(''); return }
     setConfig(result.data)
+    setNotice('Sync settings saved.')
     if (products) refreshProducts()
   }
 
@@ -144,6 +151,17 @@ export default function TillieSyncCard(): JSX.Element {
   }
   const productCountFor = (name: string): number | null =>
     products ? products.filter((p) => p.category === name).length : null
+  const selectedCategoryCount = config?.subscribedCategories.length ?? 0
+  const visibleCategories = (categories ?? []).filter((category) =>
+    category.name.toLocaleLowerCase().includes(categoryQuery.trim().toLocaleLowerCase())
+  )
+
+  function setAllCategories(selected: boolean): void {
+    if (!categories) return
+    applyConfig({
+      subscribedCategories: selected ? categories.map(({ id, name }) => ({ id, name })) : [],
+    })
+  }
 
   const pickerGroups = (() => {
     if (!products) return []
@@ -158,17 +176,17 @@ export default function TillieSyncCard(): JSX.Element {
 
   return (
     <div className="card" style={{ padding: '20px 20px 24px' }}>
-      <h2 style={{ fontSize: 13, fontWeight: 600, color: '#1a2332', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Store size={14} /> Tillie POS Sync
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-workbench-navy)', margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Store size={14} /> Tillie POS · Optional integration
       </h2>
-      <p style={{ fontSize: 11, color: '#64748b', margin: '0 0 16px', lineHeight: 1.5 }}>
+      <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
         Pull products from your Tillie register. Labels linked to Tillie get their name, price, and
-        category updated automatically — Tillie is the source of truth for those fields.
+        category updated automatically — Tillie is the source of truth for those fields. Changes in this integration section save immediately.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {dbMode ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#16a34a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-success-text)' }}>
             <Plug size={14} />
             Connected directly to Tillie&apos;s database
             <button
@@ -183,9 +201,10 @@ export default function TillieSyncCard(): JSX.Element {
           <>
             {/* Register (HTTP) connection */}
             <div>
-              <label className="label-text">Tillie address</label>
+              <label className="label-text" htmlFor="tillie-address">Tillie address</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
+                  id="tillie-address"
                   className="input"
                   value={baseUrlDraft}
                   onChange={(e) => setBaseUrlDraft(e.target.value)}
@@ -203,7 +222,7 @@ export default function TillieSyncCard(): JSX.Element {
             </div>
 
             {connected ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#16a34a' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--color-success-text)' }}>
                 <Plug size={14} />
                 Connected as {config?.connectedUserName}
                 <button className="btn-outline btn-sm" onClick={disconnect} style={{ marginLeft: 'auto' }}>
@@ -212,9 +231,10 @@ export default function TillieSyncCard(): JSX.Element {
               </div>
             ) : (
               <div>
-                <label className="label-text">Tillie PIN</label>
+                <label className="label-text" htmlFor="tillie-pin">Tillie PIN</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
+                    id="tillie-pin"
                     className="input"
                     style={{ maxWidth: 160 }}
                     type="password"
@@ -228,7 +248,7 @@ export default function TillieSyncCard(): JSX.Element {
                     <Plug size={13} /> {busy ? 'Connecting…' : 'Connect'}
                   </button>
                 </div>
-                <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
                   Use the same PIN you sign in with at the register. The PIN itself is never stored.
                 </p>
               </div>
@@ -238,16 +258,19 @@ export default function TillieSyncCard(): JSX.Element {
             <div>
               <button
                 type="button"
+                className="disclosure-button"
+                aria-expanded={showDbSetup}
                 onClick={() => setShowDbSetup((v) => !v)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', padding: 0, fontSize: 12, fontWeight: 500, color: '#2563eb', cursor: 'pointer' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: 'var(--color-action-blue)', cursor: 'pointer' }}
               >
                 {showDbSetup ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                Connect directly to the database instead
+                Administrator database connection
               </button>
               {showDbSetup && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
+                      aria-label="Tillie database connection string"
                       className="input"
                       type="password"
                       value={mongoUriDraft}
@@ -263,7 +286,7 @@ export default function TillieSyncCard(): JSX.Element {
                       Connect
                     </button>
                   </div>
-                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 5 }}>
+                  <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
                     Uses the same MongoDB Atlas connection string as the register (in its tillie.env
                     file). Works from any computer with internet — no PIN or register connection
                     needed. Keep this string private; it grants full access to store data.
@@ -276,77 +299,108 @@ export default function TillieSyncCard(): JSX.Element {
 
         {/* Category subscriptions */}
         <div>
-          <label className="label-text">Categories to sync</label>
+          <button
+            type="button"
+            aria-expanded={showCategories}
+            onClick={() => setShowCategories((open) => !open)}
+            className="btn-outline"
+            style={{ width: '100%', justifyContent: 'space-between' }}
+          >
+            <span>Categories to sync · {selectedCategoryCount} selected</span>
+            {showCategories ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
           {categories === null ? (
-            <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
               Waiting for Tillie — check the address above and make sure the register app is running.
             </p>
           ) : categories.length === 0 ? (
-            <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>No categories found in Tillie.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-              {categories.map((cat) => {
+            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>No categories found in Tillie.</p>
+          ) : showCategories ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={13} style={{ position: 'absolute', insetInlineStart: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    className="input"
+                    aria-label="Search Tillie categories"
+                    value={categoryQuery}
+                    onChange={(event) => setCategoryQuery(event.target.value)}
+                    placeholder="Search categories…"
+                    style={{ paddingInlineStart: 32 }}
+                  />
+                </div>
+                <button className="btn-ghost btn-sm" onClick={() => setAllCategories(true)} disabled={configSaving}>Select all</button>
+                <button className="btn-ghost btn-sm" onClick={() => setAllCategories(false)} disabled={configSaving}>Clear</button>
+              </div>
+              <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, border: '1px solid var(--color-border)', borderRadius: 8, padding: 10 }}>
+              {visibleCategories.map((cat) => {
                 const subscribed = config?.subscribedCategories.some((c) => c.id === cat.id) ?? false
                 const count = productCountFor(cat.name)
                 return (
                   <label
                     key={cat.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}
                   >
-                    <input type="checkbox" checked={subscribed} onChange={() => toggleCategory(cat)} />
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: cat.color || '#cbd5e1', flexShrink: 0 }} />
+                    <input type="checkbox" checked={subscribed} disabled={configSaving} onChange={() => toggleCategory(cat)} />
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: cat.color || 'var(--color-border-strong)', flexShrink: 0 }} />
                     {cat.name}
                     {count !== null && (
-                      <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                         {count} product{count !== 1 ? 's' : ''}
                       </span>
                     )}
                   </label>
                 )
               })}
+              {visibleCategories.length === 0 && (
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>No categories match “{categoryQuery}”.</p>
+              )}
+              </div>
             </div>
-          )}
-          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
-            All products in checked categories are pulled in on each sync. Labels you already linked
-            keep syncing even if their category is unchecked.
+          ) : null}
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 6 }}>
+            New products are imported from selected categories. Products already linked to Tillie keep syncing even if their category is later cleared.
           </p>
+          <span role="status" aria-live="polite" className="sr-only">{configSaving ? 'Saving sync settings' : ''}</span>
         </div>
 
         {/* Per-product picker */}
         <div>
           <button
             type="button"
+            className="disclosure-button"
+            aria-expanded={showPicker}
             onClick={() => { setShowPicker((v) => !v); if (!products) refreshProducts() }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', padding: 0, fontSize: 12, fontWeight: 500, color: '#2563eb', cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', fontSize: 12, fontWeight: 500, color: 'var(--color-action-blue)', cursor: 'pointer' }}
           >
             {showPicker ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             Choose individual products
           </button>
           {showPicker && (
             products === null ? (
-              <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>
+              <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6 }}>
                 {connected ? 'Loading products…' : 'Connect with your PIN to browse Tillie products.'}
               </p>
             ) : (
               <div style={{ maxHeight: 260, overflow: 'auto', border: '1px solid #f1f5f9', borderRadius: 8, marginTop: 8, padding: '6px 10px' }}>
                 {pickerGroups.map(([category, items]) => (
                   <div key={category} style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '6px 0 4px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '6px 0 4px' }}>
                       {category}
                     </div>
                     {items.map((p) => (
                       <label
                         key={p.id}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#334155', padding: '3px 0', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--color-text-strong-secondary)', padding: '3px 0', cursor: 'pointer' }}
                       >
                         <input type="checkbox" checked={p.inScope} onChange={() => toggleProduct(p)} />
                         <span style={{ flex: 1 }}>{p.name}</span>
                         {p.linked && (
-                          <span style={{ fontSize: 10, color: '#16a34a', border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 10, padding: '1px 7px' }}>
+                          <span style={{ fontSize: 11, color: 'var(--color-success-text)', border: '1px solid var(--color-success-border)', background: 'var(--color-success-surface)', borderRadius: 10, padding: '2px 7px' }}>
                             linked
                           </span>
                         )}
-                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#94a3b8' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--color-text-muted)' }}>
                           ${p.price.toFixed(2)}
                         </span>
                       </label>
@@ -359,7 +413,7 @@ export default function TillieSyncCard(): JSX.Element {
         </div>
 
         {/* Auto-sync + sync now */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-strong-secondary)', cursor: 'pointer' }}>
           <input
             type="checkbox"
             checked={config?.autoSyncOnLaunch ?? true}
@@ -374,19 +428,19 @@ export default function TillieSyncCard(): JSX.Element {
             {syncing ? 'Syncing…' : 'Sync Now'}
           </button>
           {config?.lastSyncAt && (
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
               Last synced {new Date(config.lastSyncAt).toLocaleString()}
             </span>
           )}
         </div>
 
         {notice && (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#166534' }}>
+          <div role="status" aria-live="polite" className="status-message" style={{ background: 'var(--color-success-surface)', border: '1px solid var(--color-success-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--color-success-text)' }}>
             {notice}
           </div>
         )}
         {error && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#dc2626' }}>
+          <div role="alert" className="status-message" style={{ background: 'var(--color-danger-surface)', border: '1px solid var(--color-danger-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--color-danger-text)' }}>
             {error}
           </div>
         )}

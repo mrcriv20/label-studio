@@ -1,7 +1,6 @@
 // Renderer-side painter for design templates. Resolves the layout with the
 // exact same shared code the PDF exporter uses, then paints it as SVG.
 import { useEffect, useMemo, useState } from 'react'
-import { toCanvas } from 'bwip-js/browser'
 import type { Product, DesignTemplate } from '../../types'
 import type { ResolvedBarcode, ResolvedImage } from '../../../../shared/design/types'
 import type { TextMeasurer } from '../../../../shared/design/metrics'
@@ -53,14 +52,33 @@ function dataUriToBytes(dataUri: string): Uint8Array | null {
 }
 
 const barcodeUriCache = new Map<string, string>()
+let toCanvasImpl: typeof import('bwip-js/browser').toCanvas | null = null
+
+export function useBarcodeRenderer(enabled: boolean): boolean {
+  const [ready, setReady] = useState(() => !enabled || Boolean(toCanvasImpl))
+  useEffect(() => {
+    let alive = true
+    if (!enabled || toCanvasImpl) {
+      setReady(true)
+      return () => { alive = false }
+    }
+    import('bwip-js/browser').then((module) => {
+      toCanvasImpl = module.toCanvas
+      if (alive) setReady(true)
+    })
+    return () => { alive = false }
+  }, [enabled])
+  return ready
+}
 
 function barcodeDataUri(barcode: ResolvedBarcode): string | null {
+  if (!toCanvasImpl) return null
   const key = `${barcode.value}|${barcode.showText}|${barcode.color}`
   const cached = barcodeUriCache.get(key)
   if (cached) return cached
   try {
     const canvas = document.createElement('canvas')
-    toCanvas(canvas, designBarcodeOptions(barcode.value, barcode.showText, barcode.color))
+    toCanvasImpl(canvas, designBarcodeOptions(barcode.value, barcode.showText, barcode.color))
     const uri = canvas.toDataURL('image/png')
     barcodeUriCache.set(key, uri)
     return uri
@@ -213,11 +231,13 @@ export default function DesignLabelSvg({
 }: Props): JSX.Element {
   const measurer = useTextMeasurer()
   const images = useDesignImages(design, logoDataUri, product.designImageOverrides)
+  const hasBarcode = useMemo(() => design.elements.some((element) => element.type === 'barcode'), [design])
+  const barcodeReady = useBarcodeRenderer(hasBarcode)
 
   const svg = useMemo(() => {
-    if (!measurer) return ''
+    if (!measurer || !barcodeReady) return ''
     return paintDesignSVG(design, product, measurer, images)
-  }, [design, product, measurer, images])
+  }, [design, product, measurer, images, barcodeReady])
 
   return (
     <div

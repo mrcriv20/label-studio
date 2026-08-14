@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-11T00:00:00-04:00",
+  "title": "Design System: Tillie Print",
+  "extensions": {
+    "colorMeta": {
+      "workbench-navy": {
+        "role": "primary",
+        "displayName": "Workbench Navy",
+        "canonical": "#1a2332",
+        "tonalRamp": ["#0b1017", "#111923", "#1a2332", "#2a3850", "#526079", "#818b9c", "#b8bec8", "#eef0f3"]
+      },
+      "workbench-navy-hover": {
+        "role": "primary",
+        "displayName": "Workbench Navy Hover",
+        "canonical": "#2a3850",
+        "tonalRamp": ["#0d121b", "#172131", "#2a3850", "#40516c", "#65738a", "#909aa9", "#c1c6ce", "#f0f1f3"]
+      },
+      "market-green": {
+        "role": "primary",
+        "displayName": "Market Green",
+        "canonical": "#2d8f2d",
+        "tonalRamp": ["#0d2b0e", "#154b17", "#1f6c22", "#2d8f2d", "#55aa55", "#85c985", "#b8e0b8", "#f0f9f0"]
+      },
+      "market-green-bright": {
+        "role": "primary",
+        "displayName": "Market Green Bright",
+        "canonical": "#4cad4c",
+        "tonalRamp": ["#102f11", "#1c521e", "#2a792c", "#4cad4c", "#70c170", "#99d499", "#c7e8c7", "#f1faf1"]
+      },
+      "paper-gray": {
+        "role": "neutral",
+        "displayName": "Paper Gray",
+        "canonical": "#f4f5f7",
+        "tonalRamp": ["#202226", "#3b3e44", "#5c6068", "#80858e", "#a8acb3", "#ced1d6", "#e5e7ea", "#f4f5f7"]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "Counter White",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#262626", "#494949", "#6d6d6d", "#929292", "#b7b7b7", "#d5d5d5", "#ededed", "#ffffff"]
+      },
+      "slate-body": {
+        "role": "neutral",
+        "displayName": "Slate Body",
+        "canonical": "#64748b",
+        "tonalRamp": ["#141922", "#27313f", "#3f4b60", "#64748b", "#8491a3", "#a9b1bd", "#d1d5dc", "#f2f4f6"]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "#526173",
+        "tonalRamp": ["#17202c", "#27313f", "#394858", "#526173", "#788595", "#a0a9b5", "#cdd2d8", "#f4f6f8"]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Cool Border",
+        "canonical": "#e2e8f0",
+        "tonalRamp": ["#1c222a", "#36414d", "#566473", "#7d8a98", "#a4afb9", "#c6ced6", "#e2e8f0", "#f7f9fb"]
+      },
+      "action-blue": {
+        "role": "secondary",
+        "displayName": "Action Blue",
+        "canonical": "#2563eb",
+        "tonalRamp": ["#0c1c44", "#123479", "#194daf", "#2563eb", "#5788f0", "#8aacf5", "#bed0fa", "#eff5ff"]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Counter Red",
+        "canonical": "#e5484d",
+        "tonalRamp": ["#421113", "#771d21", "#ac2d32", "#e5484d", "#eb7478", "#f1a1a4", "#f8ced0", "#fff1f2"]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Success Green",
+        "canonical": "#16a34a",
+        "tonalRamp": ["#07321a", "#0a572a", "#0f7c39", "#16a34a", "#49b974", "#7fd09e", "#b9e7c9", "#f0fdf4"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Screen Headline", "purpose": "Top-level titles for operational screens." },
+      "title": { "displayName": "Working Title", "purpose": "Cards, product names, and local section hierarchy." },
+      "body": { "displayName": "Operational Body", "purpose": "Controls, data, descriptions, and status messages." },
+      "label": { "displayName": "Field Label", "purpose": "Uppercase form labels and table headings." },
+      "supporting": { "displayName": "Supporting Copy", "purpose": "Compact helper text, metadata, and secondary descriptions." },
+      "control-large": { "displayName": "Large Control", "purpose": "Prominent compact controls that need slightly stronger legibility." },
+      "label-display": { "displayName": "Label Display", "purpose": "Serif display copy inside printed label documents only." },
+      "label-script": { "displayName": "Label Script", "purpose": "Expressive script copy inside printed label documents only." },
+      "label-condensed": { "displayName": "Label Condensed", "purpose": "Space-efficient copy inside printed label documents only." }
+    },
+    "shadows": [
+      { "name": "accessible-focus", "value": "0 0 0 2px #fff, 0 0 0 4px rgba(76, 173, 76, 0.55)", "purpose": "Keyboard focus on buttons." },
+      { "name": "field-focus", "value": "0 0 0 3px rgba(45, 143, 45, 0.12)", "purpose": "Active field reinforcement." },
+      { "name": "brand-mark", "value": "0 5px 10px rgba(0, 0, 0, 0.28)", "purpose": "Sidebar logo only." }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "100ms ease", "purpose": "Button and chip color feedback." },
+      { "name": "field-state", "value": "150ms ease", "purpose": "Input border and focus-ring feedback." },
+      { "name": "sync-spin", "value": "1s linear infinite", "purpose": "Active synchronization indicator." }
+    ],
+    "breakpoints": [
+      { "name": "compact-shell", "value": "980px", "purpose": "Collapses the sidebar and tightens desktop workspaces." },
+      { "name": "compact-workspace", "value": "760px", "purpose": "Stacks editor and sheet panes and turns Designer side panels into drawers." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The confident primary action for saving, creating, and progressing work.",
+      "html": "<button class=\"ds-btn-primary\">New Product</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 16px;border:1px solid transparent;border-radius:9999px;background:#1a2332;color:#fff;font:500 13px/1 Inter,system-ui,sans-serif;letter-spacing:-.006em;cursor:pointer;transition:background .1s ease}.ds-btn-primary:hover{background:#2a3850}.ds-btn-primary:active{background:#10161f}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(76,173,76,.55)}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A quiet supporting action on paper-like work surfaces.",
+      "html": "<button class=\"ds-btn-outline\">Import</button>",
+      "css": ".ds-btn-outline{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 16px;border:1px solid #ececec;border-radius:9999px;background:#fff;color:#111827;font:500 13px/1 Inter,system-ui,sans-serif;cursor:pointer;transition:background .1s ease,border-color .1s ease}.ds-btn-outline:hover{border-color:#d4d4d8}.ds-btn-outline:active{background:#f6f6f7}.ds-btn-outline:focus-visible{outline:none;box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(76,173,76,.55)}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A compact field with a clear green active state.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search by name, price, or barcode…\">",
+      "css": ".ds-input{width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#1a2332;font:400 13px/1.5 Inter,system-ui,sans-serif;outline:none;transition:border-color .15s ease,box-shadow .15s ease}.ds-input::placeholder{color:#94a3b8}.ds-input:hover{border-color:#cbd5e1}.ds-input:focus{border-color:#4cad4c;box-shadow:0 0 0 3px rgba(45,143,45,.12)}"
+    },
+    {
+      "name": "Workbench Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A flat bordered working surface for forms, tables, and settings.",
+      "html": "<section class=\"ds-card\"><h3>Label Formatting</h3><p>Configure the defaults used for printed labels.</p></section>",
+      "css": ".ds-card{padding:20px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;color:#1a2332;font-family:Inter,system-ui,sans-serif}.ds-card h3{margin:0 0 6px;font-size:13px;line-height:1.4;font-weight:600}.ds-card p{margin:0;color:#64748b;font-size:11px;line-height:1.5}"
+    },
+    {
+      "name": "Sidebar Navigation Item",
+      "kind": "nav",
+      "description": "A compact orientation control within the stable navy app shell.",
+      "html": "<button class=\"ds-nav-item ds-nav-item-active\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/></svg><span>Products</span></button>",
+      "css": ".ds-nav-item{display:flex;width:176px;align-items:center;gap:9px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:rgba(255,255,255,.5);font:500 13px/1.2 Inter,system-ui,sans-serif;text-align:left;cursor:pointer;transition:background .12s ease,color .12s ease}.ds-nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.88)}.ds-nav-item:focus-visible{outline:2px solid #4cad4c;outline-offset:2px}.ds-nav-item-active{background:rgba(255,255,255,.14);color:#fff}"
+    },
+    {
+      "name": "Category Chip",
+      "kind": "chip",
+      "description": "A compact filter that makes selection explicit without adding visual weight.",
+      "html": "<button class=\"ds-chip ds-chip-selected\">Prepared Foods <span>12</span></button>",
+      "css": ".ds-chip{padding:3px 12px;border:1px solid #e2e8f0;border-radius:20px;background:#fff;color:#64748b;font:500 12px/1.4 Inter,system-ui,sans-serif;cursor:pointer;transition:background .1s ease,border-color .1s ease,color .1s ease}.ds-chip span{margin-left:5px;opacity:.7}.ds-chip:hover{border-color:#2563eb;color:#2563eb}.ds-chip:focus-visible{outline:2px solid #4cad4c;outline-offset:2px}.ds-chip-selected{border-color:#2563eb;background:#2563eb;color:#fff}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Market Workbench",
+    "overview": "Tillie Print should feel like dependable equipment on a well-kept market counter: grounded, efficient, and approachable. The interface favors clear working surfaces, direct controls, and compact information hierarchy so staff can move from product data to a correctly printed label without ceremony.\n\nThe construction is mostly flat and border-led. Tactile pill controls and crisp state changes provide confidence without visual bulk. Brand expression comes from Workbench Navy, selective Market Green, and the practical rhythm of the app shell—not from glossy dashboards, excessive decoration, or austere industrial styling.",
+    "keyCharacteristics": [
+      "Grounded navy frame around bright, paper-like work surfaces.",
+      "Compact, legible operational typography.",
+      "Mostly flat containers separated by fine cool-gray borders.",
+      "Tactile, confident pill actions with fast state feedback.",
+      "Friendly clarity without corporate SaaS gloss or industrial harshness."
+    ],
+    "rules": [
+      { "name": "The Working Color Rule", "body": "Green, blue, and red communicate brand, selection, or state; they do not compete as ambient decoration.", "section": "colors" },
+      { "name": "The Counter Glance Rule", "body": "A screen title, working action, field label, and supporting explanation must remain distinguishable at a glance without relying on oversized type.", "section": "typography" },
+      { "name": "The Flat Counter Rule", "body": "Resting work surfaces use tonal contrast and borders; shadow appears only for focus, overlays, or the brand mark.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do preserve Workbench Navy as the stable shell and highest-emphasis action color.",
+      "Do keep operational screens compact, scannable, and aligned to the established spacing rhythm.",
+      "Do use borders and tonal layering before adding shadow.",
+      "Do reserve semantic colors for clear actions, selections, connection states, warnings, and errors.",
+      "Do keep controls tactile through pill geometry, clear hover states, and visible keyboard focus."
+    ],
+    "donts": [
+      "Don't turn task screens into glossy corporate SaaS dashboards with floating cards, gradients, or ornamental metrics.",
+      "Don't introduce industrial harshness through black slabs, hard-edged controls, dense rule lines, or aggressive condensed type in the app chrome.",
+      "Don't use the label-artwork fonts as general interface typography.",
+      "Don't scatter multiple accent colors across a surface without operational meaning.",
+      "Don't use oversized marketing typography or excessive whitespace inside daily workflows."
+    ]
+  }
+}

@@ -135,6 +135,7 @@ declare global {
       settings: {
         get(): Promise<IpcResult<AppSettings>>
         set(key: string, value: string): Promise<IpcResult<boolean>>
+        setMany(patch: Partial<Record<keyof AppSettings, string>>): Promise<IpcResult<boolean>>
       }
       file: {
         pickBarcodeImage(): Promise<IpcResult<string | null>>
@@ -142,6 +143,7 @@ declare global {
         pickLogoImage(): Promise<IpcResult<string | null>>
         saveLogoImage(sourcePath: string, productId: string): Promise<IpcResult<string>>
         readImageAsBase64(filePath: string): Promise<IpcResult<string>>
+        deleteManagedImage(filePath: string): Promise<IpcResult<boolean>>
         getTemplatePNG(templateId?: string | null): Promise<IpcResult<string>>
         listTemplates(): Promise<IpcResult<LabelTemplate[]>>
         pickTemplateImage(): Promise<IpcResult<string | null>>
@@ -158,10 +160,11 @@ declare global {
       export: {
         singlePDF(product: Product): Promise<IpcResult<string | null>>
         singleSVG(product: Product): Promise<IpcResult<string | null>>
-        sheetPDF(products: Product[], startSlot: number): Promise<IpcResult<string | null>>
+        sheetPDF(slots: Array<Product | null>): Promise<IpcResult<string | null>>
       }
       print: {
-        sheet(products: Product[], startSlot: number): Promise<IpcResult<boolean>>
+        sheet(slots: Array<Product | null>): Promise<IpcResult<boolean>>
+        calibrationSheet(): Promise<IpcResult<boolean>>
         listPrinters(): Promise<IpcResult<PrinterInfo[]>>
         rollLabel(
           product: Product,

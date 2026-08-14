@@ -27,6 +27,7 @@ export default function BarcodeCanvas({
         fontSize: 10,
         margin: 4,
         background: 'transparent',
+        // bwip-js renders to canvas and requires a concrete color value.
         lineColor: '#1a2332',
       })
     } catch {

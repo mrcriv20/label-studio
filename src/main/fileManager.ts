@@ -1,5 +1,5 @@
 import { app, BrowserWindow, nativeImage } from 'electron'
-import { join, extname, basename } from 'path'
+import { join, extname, basename, resolve, sep } from 'path'
 import { existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync, unlinkSync } from 'fs'
 import { writeFileSync } from 'fs'
 import { execFileSync } from 'child_process'
@@ -34,6 +34,20 @@ export function initFileManager(): void {
   mkdirSync(DESIGN_SLOT_DIR, { recursive: true })
   mkdirSync(TEMPLATE_DIR, { recursive: true })
   copyBundledAssets()
+}
+
+const MANAGED_IMAGE_DIRS = [BARCODE_DIR, LOGO_DIR, DESIGN_SLOT_DIR]
+
+function isManagedImagePath(filePath: string): boolean {
+  const candidate = resolve(filePath)
+  return MANAGED_IMAGE_DIRS.some((directory) => candidate.startsWith(`${resolve(directory)}${sep}`))
+}
+
+/** Delete only renderer-managed product images; arbitrary filesystem paths are refused. */
+export function deleteManagedImage(filePath: string): boolean {
+  if (!filePath || !isManagedImagePath(filePath)) return false
+  if (existsSync(filePath)) unlinkSync(filePath)
+  return true
 }
 
 /** Copy the template files bundled with the app into userData on first launch. */
@@ -275,7 +289,7 @@ function svgDimensions(svg: string): { width: number; height: number } | null {
 /** Save an uploaded barcode image into the managed barcodes folder. Returns the stored path. */
 export function saveBarcodeImage(sourcePath: string, productId: string): string {
   const ext = extname(sourcePath) || '.png'
-  const destName = `barcode-${productId}${ext}`
+  const destName = `barcode-${productId}-${Date.now()}${ext}`
   const destPath = join(BARCODE_DIR, destName)
   copyFileSync(sourcePath, destPath)
   return destPath
@@ -296,7 +310,7 @@ export function saveDesignSlotImage(sourcePath: string, productId: string, eleme
 
 export function saveLogoImage(sourcePath: string, productId: string): string {
   const ext = extname(sourcePath) || '.png'
-  const destName = `logo-${productId}${ext}`
+  const destName = `logo-${productId}-${Date.now()}${ext}`
   const destPath = join(LOGO_DIR, destName)
   copyFileSync(sourcePath, destPath)
   return destPath

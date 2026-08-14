@@ -755,7 +755,7 @@ export async function exportSingleLabelPDF(product: Product, outputPath: string)
   return outputPath
 }
 
-export async function buildSheetPDF(products: Product[], startSlot: number): Promise<Uint8Array> {
+export async function buildSheetPDF(slots: Array<Product | null>): Promise<Uint8Array> {
   const barcodeCache = new Map<string, Buffer | null>()
   const imageCache = new Map<string, Buffer | null>()
   const settings = getSettings()
@@ -764,7 +764,8 @@ export async function buildSheetPDF(products: Product[], startSlot: number): Pro
     toInches(settings.sheetOffsetYIn)
   )
 
-  for (const product of products) {
+  for (const product of slots) {
+    if (!product) continue
     if (!barcodeCache.has(product.id)) barcodeCache.set(product.id, await getBarcodePNG(product))
     if (!imageCache.has(product.id)) imageCache.set(product.id, getTopImageBytes(product))
   }
@@ -781,9 +782,7 @@ export async function buildSheetPDF(products: Product[], startSlot: number): Pro
   })
 
   for (let slot = 1; slot <= sheetLayout.cols * sheetLayout.rows; slot++) {
-    const productIndex = slot - startSlot
-    if (productIndex < 0 || productIndex >= products.length) continue
-    const product = products[productIndex]
+    const product = slots[slot - 1]
     if (!product) continue
 
     const col = (slot - 1) % sheetLayout.cols
@@ -828,8 +827,31 @@ export async function buildSheetPDF(products: Product[], startSlot: number): Pro
   return sheetDoc.save()
 }
 
-export async function exportSheetPDF(products: Product[], startSlot: number, outputPath: string): Promise<string> {
-  const bytes = await buildSheetPDF(products, startSlot)
+export async function buildCalibrationSheetPDF(): Promise<Uint8Array> {
+  const settings = getSettings()
+  const layout = getSheetLayoutPoints(toInches(settings.sheetOffsetXIn), toInches(settings.sheetOffsetYIn))
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([layout.pageW, layout.pageH])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  page.drawText('Tillie Print · PLS780 alignment test', { x: 18, y: layout.pageH - 22, size: 10, font: bold, color: rgb(0.1, 0.14, 0.2) })
+  page.drawText('Print at 100% / Actual Size. Measure each outline against the physical label edge.', { x: 18, y: 8, size: 7, font, color: rgb(0.25, 0.3, 0.36) })
+  for (let slot = 1; slot <= layout.cols * layout.rows; slot++) {
+    const col = (slot - 1) % layout.cols
+    const row = Math.floor((slot - 1) / layout.cols)
+    const x = layout.marginLeft + layout.offsetX + col * (layout.slotW + layout.gapX)
+    const y = layout.pageH - layout.marginTop - layout.offsetY - (row + 1) * layout.slotH - row * layout.gapY
+    page.drawRectangle({ x, y, width: layout.slotW, height: layout.slotH, borderWidth: 0.75, borderColor: rgb(0.1, 0.14, 0.2) })
+    page.drawLine({ start: { x: x - 5, y }, end: { x: x + 5, y }, thickness: 0.5, color: rgb(0.15, 0.45, 0.2) })
+    page.drawLine({ start: { x, y: y - 5 }, end: { x, y: y + 5 }, thickness: 0.5, color: rgb(0.15, 0.45, 0.2) })
+    page.drawText(String(slot), { x: x + 8, y: y + layout.slotH - 18, size: 12, font: bold, color: rgb(0.1, 0.14, 0.2) })
+    page.drawText('TOP LEFT', { x: x + 8, y: y + layout.slotH - 29, size: 5, font, color: rgb(0.3, 0.35, 0.4) })
+  }
+  return doc.save()
+}
+
+export async function exportSheetPDF(slots: Array<Product | null>, outputPath: string): Promise<string> {
+  const bytes = await buildSheetPDF(slots)
   writeFileSync(outputPath, bytes)
   return outputPath
 }
