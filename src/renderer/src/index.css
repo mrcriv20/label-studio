@@ -460,6 +460,10 @@ input[type="checkbox"] {
   color: var(--color-warning-text);
 }
 
+.fit-status.checking {
+  color: var(--color-text-secondary);
+}
+
 .fit-status.clipped {
   color: var(--color-danger-text);
 }
@@ -528,9 +532,118 @@ input[type="checkbox"] {
 }
 
 .sheet-draft-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   color: var(--color-text-muted);
   font-size: 11px;
+}
+
+.sheet-draft-status > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sheet-draft-status.is-warning,
+.sheet-draft-status.is-unavailable {
+  color: var(--color-warning-text);
+}
+
+.sheet-draft-status .btn-sm {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+.sync-freshness {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.sync-freshness > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sync-freshness.is-stale {
+  color: var(--color-warning-text);
+  background: var(--color-warning-surface);
+  border-color: var(--color-warning-border);
+}
+
+.sync-freshness.is-fresh {
+  align-self: flex-start;
+  color: var(--color-success-text);
+  background: var(--color-success-surface);
+  border-color: var(--color-success-border);
+}
+
+.sync-audit-summary,
+.sync-result-summary {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-neutral-canvas);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.sync-audit-summary ul {
+  margin: 6px 0 0;
+  padding-inline-start: 18px;
+}
+
+.sync-result-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-result-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sync-result-summary .is-success strong {
+  color: var(--color-success-text);
+}
+
+.sync-result-summary .is-warning {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
+}
+
+.admin-credential-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-danger-border);
+  border-radius: 8px;
+  background: var(--color-danger-surface);
+  color: var(--color-danger-text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.admin-credential-warning label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--color-text-strong-secondary);
+  font-weight: 600;
 }
 
 .repair-field-focus {

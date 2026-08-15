@@ -9,6 +9,7 @@ import {
   toInches,
 } from '../../../shared/sheetLayout'
 import { assessProductContentFit, outputEligibilityError } from '../../../shared/contentFit'
+import { confirmUsingSavedTillieData } from '../lib/tillieFreshness'
 
 interface SlotAssignment {
   product: Product | null
@@ -33,6 +34,24 @@ interface SheetDraft {
 }
 
 const SHEET_DRAFT_KEY = 'tillie:sheet-draft-v1'
+const CALIBRATION_CACHE_KEY = 'tillie:sheet-calibration-cache-v1'
+type DraftStatus = 'loading' | 'saving' | 'saved' | 'restored' | 'warning' | 'unavailable'
+type PreflightStatus = 'checking' | 'checked' | 'unavailable'
+type CalibrationSource = 'loading' | 'live' | 'cached' | 'unavailable'
+
+function isSheetDraft(value: unknown): value is SheetDraft {
+  if (!value || typeof value !== 'object') return false
+  const draft = value as Partial<SheetDraft>
+  return draft.version === 1
+    && (draft.mode === 'fill' || draft.mode === 'manual')
+    && Array.isArray(draft.slotIds)
+    && draft.slotIds.length === PLS_780.labelsPerSheet
+    && draft.slotIds.every((id) => id === null || typeof id === 'string')
+    && (draft.fillProductId === null || typeof draft.fillProductId === 'string')
+    && Number.isFinite(draft.startSlot) && Number.isFinite(draft.fillCount)
+    && (draft.reviewAction === 'print' || draft.reviewAction === 'export')
+    && typeof draft.updatedAt === 'string'
+}
 
 interface Props {
   initialProducts: Product[]
@@ -46,6 +65,9 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   )
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [cachedCalibration, setCachedCalibration] = useState<{ x: string; y: string; savedAt: string } | null>(null)
+  const [calibrationSource, setCalibrationSource] = useState<CalibrationSource>('loading')
+  const [settingsLoadError, setSettingsLoadError] = useState('')
   const [startSlot, setStartSlot] = useState(1)
   const [fillProduct, setFillProduct] = useState<Product | null>(null)
   const [fillCount, setFillCount] = useState<number>(PLS_780.labelsPerSheet)
@@ -72,7 +94,16 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   const [horizontalDistance, setHorizontalDistance] = useState('0.000')
   const [verticalDistance, setVerticalDistance] = useState('0.000')
   const [draftReady, setDraftReady] = useState(false)
+  const [draftStatus, setDraftStatus] = useState<DraftStatus>('loading')
+  const [draftMessage, setDraftMessage] = useState('Loading automatic draft…')
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null)
+  const [draftRetryNonce, setDraftRetryNonce] = useState(0)
+  const [draftRestoreWarning, setDraftRestoreWarning] = useState('')
+  const restoredCalibrationRef = useRef(false)
+  const preflightRequestRef = useRef(0)
   const [renderedSheetFitIssues, setRenderedSheetFitIssues] = useState<Array<{ field: keyof Product; label: string; status: 'tight' | 'clipped'; message: string; product: Product; productName: string; slot: number }> | null>(null)
+  const [preflightStatus, setPreflightStatus] = useState<PreflightStatus>('checking')
+  const [preflightError, setPreflightError] = useState('')
 
   useEffect(() => {
     if (!reviewOpen) return
@@ -106,7 +137,10 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
     window.api.product.list().then((r) => {
       if (r.ok) {
         setAllProducts(r.data)
-        try { setLastSheetIds(JSON.parse(localStorage.getItem('tillie:last-sheet') || '[]')) } catch { setLastSheetIds([]) }
+        try {
+          const previous = JSON.parse(localStorage.getItem('tillie:last-sheet') || '[]')
+          setLastSheetIds(Array.isArray(previous) ? previous.slice(0, PLS_780.labelsPerSheet) : [])
+        } catch { setLastSheetIds([]) }
         if (initialProducts.length === 1) {
           setFillProduct(initialProducts[0])
           setMode('fill')
@@ -117,10 +151,12 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
           setMode('manual')
         } else {
           try {
-            const draft = JSON.parse(localStorage.getItem(SHEET_DRAFT_KEY) || 'null') as SheetDraft | null
-            if (draft?.version === 1) {
+            const storedDraft = JSON.parse(localStorage.getItem(SHEET_DRAFT_KEY) || 'null') as unknown
+            if (isSheetDraft(storedDraft)) {
+              const draft = storedDraft
               const byId = new Map(r.data.map((product) => [product.id, product]))
               const restored = Array.from({ length: PLS_780.labelsPerSheet }, (_, index) => ({ product: draft.slotIds[index] ? byId.get(draft.slotIds[index] as string) ?? null : null }))
+              const missingSlots = draft.slotIds.flatMap((id, index) => id && !byId.has(id) ? [index + 1] : [])
               setSlots(restored)
               setMode(draft.mode)
               setFillProduct(draft.fillProductId ? byId.get(draft.fillProductId) ?? null : null)
@@ -130,30 +166,86 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
               setCalibrationOpen(draft.calibrationOpen)
               setCalibrationX(draft.calibrationX)
               setCalibrationY(draft.calibrationY)
+              restoredCalibrationRef.current = true
               setHorizontalDirection(draft.horizontalDirection)
               setVerticalDirection(draft.verticalDirection)
               setHorizontalDistance(draft.horizontalDistance)
               setVerticalDistance(draft.verticalDistance)
-              setOutcome('Restored your automatic draft sheet.')
+              const savedAt = new Date(draft.updatedAt)
+              setDraftSavedAt(Number.isNaN(savedAt.getTime()) ? null : savedAt)
+              if (missingSlots.length) {
+                setDraftStatus('warning')
+                setDraftMessage(`Draft restored, but unavailable products left slot${missingSlots.length === 1 ? '' : 's'} ${missingSlots.join(', ')} empty.`)
+                setDraftRestoreWarning(`Some products in the saved draft are no longer available. Physical slot${missingSlots.length === 1 ? '' : 's'} ${missingSlots.join(', ')} remain empty; review them before output.`)
+              } else {
+                setDraftStatus('restored')
+                setDraftMessage('Automatic draft restored with all eight slot positions preserved.')
+              }
             }
           } catch {
-            localStorage.removeItem(SHEET_DRAFT_KEY)
+            try { localStorage.removeItem(SHEET_DRAFT_KEY) } catch { /* storage may be unavailable */ }
+            setDraftStatus('warning')
+            setDraftMessage('The saved draft was unreadable and was not restored. This sheet will replace it when saving is available.')
+            setDraftRestoreWarning('The previous automatic draft was unreadable. Review this sheet before output; a new valid draft will replace it.')
           }
         }
+        if (initialProducts.length > 0) {
+          setDraftStatus('saving')
+          setDraftMessage('Preparing automatic draft…')
+        }
         setDraftReady(true)
+      } else {
+        setDraftStatus('unavailable')
+        setDraftMessage('Products could not be loaded, so the automatic draft is paused.')
       }
     })
-    window.api.settings.get().then((r) => {
-      if (!r.ok) return
-      setSettings(r.data)
-      setCalibrationX(r.data.sheetOffsetXIn || '0')
-      setCalibrationY(r.data.sheetOffsetYIn || '0')
-    })
+    void loadSheetSettings()
   }, [initialProducts])
+
+  async function loadSheetSettings(): Promise<void> {
+    setCalibrationSource('loading')
+    setSettingsLoadError('')
+    let result
+    try {
+      result = await window.api.settings.get()
+    } catch {
+      result = { ok: false as const, error: 'Settings service could not be reached.' }
+    }
+    if (result.ok) {
+      setSettings(result.data)
+      const cache = { x: result.data.sheetOffsetXIn || '0', y: result.data.sheetOffsetYIn || '0', savedAt: new Date().toISOString() }
+      setCachedCalibration(cache)
+      try { localStorage.setItem(CALIBRATION_CACHE_KEY, JSON.stringify(cache)) } catch { /* live settings remain authoritative */ }
+      setCalibrationSource('live')
+      if (!restoredCalibrationRef.current) {
+        setCalibrationX(cache.x)
+        setCalibrationY(cache.y)
+      }
+      return
+    }
+    setSettingsLoadError(result.error)
+    try {
+      const cached = JSON.parse(localStorage.getItem(CALIBRATION_CACHE_KEY) || 'null') as { x?: unknown; y?: unknown; savedAt?: unknown } | null
+      if (cached && typeof cached.x === 'string' && typeof cached.y === 'string' && typeof cached.savedAt === 'string') {
+        setCachedCalibration({ x: cached.x, y: cached.y, savedAt: cached.savedAt })
+        setCalibrationSource('cached')
+        if (!restoredCalibrationRef.current) {
+          setCalibrationX(cached.x)
+          setCalibrationY(cached.y)
+        }
+        return
+      }
+    } catch { /* invalid cache is treated as unavailable */ }
+    setCalibrationSource('unavailable')
+  }
 
   useEffect(() => {
     if (!draftReady) return
-    const draft: SheetDraft = {
+    setDraftStatus('saving')
+    setDraftMessage('Saving draft…')
+    const timer = window.setTimeout(() => {
+      const savedAt = new Date()
+      const draft: SheetDraft = {
       version: 1,
       mode,
       slotIds: buildDisplaySlots().map((product) => product?.id ?? null),
@@ -168,10 +260,32 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
       verticalDirection,
       horizontalDistance,
       verticalDistance,
-      updatedAt: new Date().toISOString(),
+        updatedAt: savedAt.toISOString(),
+      }
+      try {
+        localStorage.setItem(SHEET_DRAFT_KEY, JSON.stringify(draft))
+        setDraftSavedAt(savedAt)
+        setDraftStatus('saved')
+        setDraftMessage(`Draft saved at ${savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`)
+      } catch {
+        setDraftStatus('unavailable')
+        setDraftMessage('Automatic draft could not be saved. Keep this window open and retry before leaving.')
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [draftReady, draftRetryNonce, mode, slots, fillProduct, startSlot, fillCount, reviewAction, calibrationOpen, calibrationX, calibrationY, horizontalDirection, verticalDirection, horizontalDistance, verticalDistance])
+
+  function discardDraft(): void {
+    try {
+      localStorage.removeItem(SHEET_DRAFT_KEY)
+      setDraftSavedAt(null)
+      setDraftStatus('saved')
+      setDraftMessage('Saved draft discarded. New changes will save automatically.')
+    } catch {
+      setDraftStatus('unavailable')
+      setDraftMessage('The saved draft could not be discarded because local storage is unavailable.')
     }
-    localStorage.setItem(SHEET_DRAFT_KEY, JSON.stringify(draft))
-  }, [draftReady, mode, slots, fillProduct, startSlot, fillCount, reviewAction, calibrationOpen, calibrationX, calibrationY, horizontalDirection, verticalDirection, horizontalDistance, verticalDistance])
+  }
 
   function setSlotProduct(slotIndex: number, product: Product | null): void {
     setSlots((prev) => {
@@ -184,15 +298,21 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   async function handleExport(): Promise<void> {
     const outputSlots = buildDisplaySlots()
     if (!outputSlots.some(Boolean)) { setPrintError('Assign at least one product before exporting a sheet.'); return }
+    if (!calibrationKnown) { setPrintError('Calibration settings are unavailable. Retry settings before exporting.'); return }
+    if (preflightStatus !== 'checked') { setPrintError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before exporting.'); return }
     const eligibilityError = outputEligibilityError(outputSlots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet PDF export')
     if (eligibilityError) { setPrintError(eligibilityError); return }
+    if (!confirmUsingSavedTillieData(outputSlots.filter((product): product is Product => Boolean(product)))) return
     setPrintError('')
     setExporting(true)
     const result = await window.api.export.sheetPDF(outputSlots)
     if (!result.ok) setPrintError(`Sheet export failed: ${result.error}. Check the export folder and try again.`)
     else if (result.data) {
       const ids = outputSlots.map((product) => product?.id ?? null)
-      localStorage.setItem('tillie:last-sheet', JSON.stringify(ids))
+      try { localStorage.setItem('tillie:last-sheet', JSON.stringify(ids)) } catch {
+        setDraftStatus('warning')
+        setDraftMessage('The PDF was exported, but Repeat Last Sheet could not be saved.')
+      }
       setLastSheetIds(ids)
       setOutcome('Print-sheet PDF exported and ready to print at actual size.')
       setReviewOpen(false)
@@ -203,8 +323,11 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   async function handlePrintDirect(kind: 'final' | 'test' = 'final'): Promise<void> {
     const outputSlots = buildDisplaySlots()
     if (!outputSlots.some(Boolean)) { setPrintError('Assign at least one product before printing a sheet.'); return }
+    if (!calibrationKnown) { setPrintError('Calibration settings are unavailable. Retry settings before printing.'); return }
+    if (preflightStatus !== 'checked') { setPrintError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before printing.'); return }
     const eligibilityError = outputEligibilityError(outputSlots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet printing')
     if (eligibilityError) { setPrintError(eligibilityError); return }
+    if (!confirmUsingSavedTillieData(outputSlots.filter((product): product is Product => Boolean(product)))) return
     setPrintError('')
     setPrinting(true)
     const result = await window.api.print.sheet(outputSlots)
@@ -212,7 +335,10 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
       setPrintError(`Print setup could not open: ${result.error}. Check the printer connection and try again.`)
     } else if (result.data) {
       const ids = outputSlots.map((product) => product?.id ?? null)
-      localStorage.setItem('tillie:last-sheet', JSON.stringify(ids))
+      try { localStorage.setItem('tillie:last-sheet', JSON.stringify(ids)) } catch {
+        setDraftStatus('warning')
+        setDraftMessage('The print dialog opened, but Repeat Last Sheet could not be saved.')
+      }
       setLastSheetIds(ids)
       setOutcome(kind === 'test'
         ? 'Test-sheet print dialog opened. Measure the result before changing calibration.'
@@ -252,6 +378,10 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
       return
     }
     setSettings((current) => current ? { ...current, sheetOffsetXIn: x.toFixed(3), sheetOffsetYIn: y.toFixed(3) } : current)
+    const cache = { x: x.toFixed(3), y: y.toFixed(3), savedAt: new Date().toISOString() }
+    setCachedCalibration(cache)
+    setCalibrationSource('live')
+    try { localStorage.setItem(CALIBRATION_CACHE_KEY, JSON.stringify(cache)) } catch { /* saved settings remain authoritative */ }
     setOutcome('Calibration saved for PLS780 sheets.')
     setCalibrationOpen(false)
   }
@@ -292,25 +422,76 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   }, [displaySignature])
   const sheetFitIssues = renderedSheetFitIssues ?? estimatedSheetFitIssues
   const clippedSheetIssues = sheetFitIssues.filter((issue) => issue.status === 'clipped')
-  const offsetX = toInches(settings?.sheetOffsetXIn)
-  const offsetY = toInches(settings?.sheetOffsetYIn)
+  const offsetX = toInches(settings?.sheetOffsetXIn ?? cachedCalibration?.x)
+  const offsetY = toInches(settings?.sheetOffsetYIn ?? cachedCalibration?.y)
+  const calibrationKnown = calibrationSource === 'live' || calibrationSource === 'cached'
   const proposedX = toInches(calibrationX)
   const proposedY = toInches(calibrationY)
   const calibrationHasProposal = Math.abs(proposedX - offsetX) > 0.0005 || Math.abs(proposedY - offsetY) > 0.0005
 
-  useEffect(() => {
+  async function runSheetPreflight(): Promise<void> {
+    const requestId = ++preflightRequestRef.current
+    const currentSlots = buildDisplaySlots()
+    const entries = currentSlots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : [])
+    if (!entries.length) {
+      setRenderedSheetFitIssues([])
+      setPreflightStatus('checked')
+      setPreflightError('')
+      return
+    }
+    setPreflightStatus('checking')
+    setPreflightError('')
     setRenderedSheetFitIssues(null)
+    let result
+    try {
+      result = await window.api.output.preflight(entries)
+    } catch {
+      if (requestId !== preflightRequestRef.current) return
+      setPreflightStatus('unavailable')
+      setPreflightError('Tillie Print could not reach the output verifier. Check the app connection and retry.')
+      return
+    }
+    if (requestId !== preflightRequestRef.current) return
+    if (!result.ok) {
+      setPreflightStatus('unavailable')
+      setPreflightError('Tillie Print could not verify the rendered sheet. Print and PDF remain blocked until the check succeeds.')
+      return
+    }
+    const mapped = result.data.flatMap((issue) => {
+        const slot = issue.slot ?? 0
+        const product = slot ? currentSlots[slot - 1] : currentSlots.find((candidate) => candidate?.id === issue.productId)
+        return product ? [{ ...issue, product, productName: product.name || `Slot ${slot}`, slot }] : []
+    })
+    setRenderedSheetFitIssues(mapped)
+    setPreflightStatus('checked')
+  }
+
+  useEffect(() => {
+    const requestId = ++preflightRequestRef.current
+    setRenderedSheetFitIssues(null)
+    setPreflightStatus('checking')
+    setPreflightError('')
     const entries = displaySlots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : [])
-    if (!entries.length) { setRenderedSheetFitIssues([]); return }
+    if (!entries.length) { setRenderedSheetFitIssues([]); setPreflightStatus('checked'); return }
     let alive = true
     window.api.output.preflight(entries).then((result) => {
-      if (!alive || !result.ok) return
+      if (!alive || requestId !== preflightRequestRef.current) return
+      if (!result.ok) {
+        setPreflightStatus('unavailable')
+        setPreflightError('Tillie Print could not verify the rendered sheet. Print and PDF remain blocked until the check succeeds.')
+        return
+      }
       const mapped = result.data.flatMap((issue) => {
         const slot = issue.slot ?? 0
         const product = slot ? displaySlots[slot - 1] : displaySlots.find((candidate) => candidate?.id === issue.productId)
         return product ? [{ ...issue, product, productName: product.name || `Slot ${slot}`, slot }] : []
       })
       setRenderedSheetFitIssues(mapped)
+      setPreflightStatus('checked')
+    }).catch(() => {
+      if (!alive || requestId !== preflightRequestRef.current) return
+      setPreflightStatus('unavailable')
+      setPreflightError('Tillie Print could not reach the output verifier. Check the app connection and retry.')
     })
     return () => { alive = false }
   }, [displaySignature])
@@ -375,12 +556,18 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
         <span className="sheet-stock-badge" style={{ fontSize: 11, background: 'var(--color-neutral-subtle)', color: 'var(--color-text-secondary)', borderRadius: 20, padding: '2px 10px', marginLeft: 4 }}>
           PLS780 · 8 labels
         </span>
-        {draftReady && <span className="sheet-draft-status" role="status">Draft saved automatically</span>}
+        {draftReady && (
+          <div className={`sheet-draft-status is-${draftStatus}`} role="status" title={draftSavedAt ? `Last saved ${draftSavedAt.toLocaleString()}` : undefined}>
+            <span>{draftMessage}</span>
+            {draftStatus === 'unavailable' && <button type="button" className="btn-ghost btn-sm" onClick={() => setDraftRetryNonce((value) => value + 1)}>Retry</button>}
+            {draftSavedAt && <button type="button" className="btn-ghost btn-sm" onClick={discardDraft}>Discard draft</button>}
+          </div>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button ref={printTriggerRef} onClick={() => { activeReviewTriggerRef.current = printTriggerRef.current; setReviewAction('print'); setReviewOpen(true) }} disabled={printing || !readyToPrint} className="btn-green btn-sm" title={!readyToPrint ? 'Assign at least one product before printing' : 'Review physical print setup'}>
+          <button ref={printTriggerRef} onClick={() => { activeReviewTriggerRef.current = printTriggerRef.current; setReviewAction('print'); setReviewOpen(true) }} disabled={printing || !readyToPrint || preflightStatus !== 'checked' || !calibrationKnown} className="btn-green btn-sm" title={!readyToPrint ? 'Assign at least one product before printing' : !calibrationKnown ? 'Load calibration settings before output' : preflightStatus === 'checking' ? 'Checking rendered output' : preflightStatus === 'unavailable' ? 'Retry output verification first' : 'Review physical print setup'}>
             <Printer size={13} /> Review & Print
           </button>
-          <button ref={exportTriggerRef} onClick={() => { activeReviewTriggerRef.current = exportTriggerRef.current; setReviewAction('export'); setReviewOpen(true) }} disabled={exporting || !readyToPrint} className="btn-outline btn-sm" title={!readyToPrint ? 'Assign at least one product before exporting' : 'Review setup before exporting'}>
+          <button ref={exportTriggerRef} onClick={() => { activeReviewTriggerRef.current = exportTriggerRef.current; setReviewAction('export'); setReviewOpen(true) }} disabled={exporting || !readyToPrint || preflightStatus !== 'checked' || !calibrationKnown} className="btn-outline btn-sm" title={!readyToPrint ? 'Assign at least one product before exporting' : !calibrationKnown ? 'Load calibration settings before output' : preflightStatus === 'checking' ? 'Checking rendered output' : preflightStatus === 'unavailable' ? 'Retry output verification first' : 'Review setup before exporting'}>
             <FileText size={13} /> Export PDF
           </button>
         </div>
@@ -395,6 +582,12 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
         <div role="alert" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'var(--color-danger-surface)', color: 'var(--color-danger-text)', fontSize: 12 }}>
           <AlertCircle size={14} /><span style={{ flex: 1 }}>{printError}</span>
           <button className="btn-ghost btn-sm" onClick={() => setPrintError('')}>Dismiss</button>
+        </div>
+      )}
+      {draftRestoreWarning && (
+        <div role="alert" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'var(--color-warning-surface)', color: 'var(--color-warning-text)', fontSize: 12 }}>
+          <AlertCircle size={14} /><span style={{ flex: 1 }}>{draftRestoreWarning}</span>
+          <button className="btn-ghost btn-sm" onClick={() => setDraftRestoreWarning('')}>Dismiss</button>
         </div>
       )}
 
@@ -415,9 +608,12 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
                 <div className="preflight-item"><strong>Page</strong><span>US Letter · portrait</span></div>
                 <div className="preflight-item"><strong>Scale</strong><span>100% / Actual Size</span></div>
                 <div className="preflight-item"><strong>Assigned</strong><span>{filled} of 8 slots</span></div>
-                <div className="preflight-item"><strong>Calibration</strong><span>X {offsetX >= 0 ? '+' : ''}{offsetX.toFixed(3)} · Y {offsetY >= 0 ? '+' : ''}{offsetY.toFixed(3)} in</span></div>
+                <div className="preflight-item"><strong>Calibration</strong><span className={calibrationSource === 'cached' ? 'fit-status tight' : calibrationSource === 'unavailable' ? 'fit-status clipped' : ''}>{calibrationSource === 'loading' ? 'Loading saved calibration…' : calibrationSource === 'unavailable' ? 'Unavailable — output blocked' : `X ${offsetX >= 0 ? '+' : ''}${offsetX.toFixed(3)} · Y ${offsetY >= 0 ? '+' : ''}${offsetY.toFixed(3)} in${calibrationSource === 'cached' ? ` · cached ${cachedCalibration ? new Date(cachedCalibration.savedAt).toLocaleString() : ''}` : ''}`}</span></div>
                 <div className="preflight-item"><strong>Slot map</strong><span>{readyToPrint ? `${displaySlots.map((product, index) => product ? index + 1 : null).filter(Boolean).join(', ')} occupied` : 'Assign at least one label'}</span></div>
+                <div className="preflight-item"><strong>Output check</strong><span className={preflightStatus === 'unavailable' ? 'fit-status clipped' : preflightStatus === 'checking' ? 'fit-status checking' : clippedSheetIssues.length ? 'fit-status clipped' : sheetFitIssues.length ? 'fit-status tight' : 'fit-status fits'}>{preflightStatus === 'checking' ? 'Checking rendered sheet…' : preflightStatus === 'unavailable' ? 'Verification unavailable' : clippedSheetIssues.length ? 'Blocked — repair clipped text' : sheetFitIssues.length ? 'Verified — review tight text' : 'Verified for output'}</span></div>
               </div>
+              {(calibrationSource === 'cached' || calibrationSource === 'unavailable') && <div className={calibrationSource === 'cached' ? 'content-fit-callout tight' : 'content-fit-callout clipped'} role="alert" style={{ marginTop: 12 }}><strong>{calibrationSource === 'cached' ? 'Using cached calibration' : 'Calibration could not be loaded'}</strong><span>{calibrationSource === 'cached' ? 'The saved calibration service is unavailable. These last-known offsets remain labeled as cached throughout review and output.' : 'No trusted calibration value is available, so physical output is blocked.'} {settingsLoadError}</span><button type="button" className="btn-outline btn-sm" onClick={() => void loadSheetSettings()}>Retry settings</button></div>}
+              {preflightStatus === 'unavailable' && <div className="content-fit-callout clipped" role="alert" style={{ marginTop: 12 }}><strong>Output verification did not finish</strong><span>{preflightError}</span><button type="button" className="btn-outline btn-sm" onClick={() => void runSheetPreflight()}>Retry verification</button></div>}
               <button type="button" className="btn-outline btn-sm" style={{ marginTop: 12 }} onClick={() => setCalibrationOpen((open) => !open)} aria-expanded={calibrationOpen}>
                 {calibrationOpen ? 'Close calibration' : 'Calibrate or test this sheet'}
               </button>
@@ -631,6 +827,7 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
               <div className="preflight-item"><strong>Output target</strong><span>{reviewAction === 'print' ? 'macOS system print dialog' : 'Reviewed PDF file'}</span></div>
               <div className="preflight-item"><strong>Scale</strong><span>Choose 100% / Actual Size; never Fit to Page</span></div>
               <div className="preflight-item"><strong>Completion</strong><span>{reviewAction === 'print' ? 'The app can confirm the dialog opened, not that paper printed.' : 'The app confirms when the PDF file is created.'}</span></div>
+              <div className="preflight-item"><strong>Calibration source</strong><span className={calibrationSource === 'cached' ? 'fit-status tight' : ''}>{calibrationSource === 'cached' ? `Cached from ${cachedCalibration ? new Date(cachedCalibration.savedAt).toLocaleString() : 'last successful load'}` : 'Current saved settings'}</span></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
               <button className="btn-outline" onClick={() => { setReviewOpen(false); setCalibrationOpen(true) }}>Adjust calibration</button>

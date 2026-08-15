@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Plug, Unplug, ChevronDown, ChevronRight, Store, Search } from 'lucide-react'
 import type { TillieCategory, TillieConfig, TillieProductSummary } from '../types'
+import { recordTillieSyncFailure, recordTillieSyncSuccess } from '../lib/tillieFreshness'
 
 export default function TillieSyncCard(): JSX.Element {
   const [config, setConfig] = useState<TillieConfig | null>(null)
@@ -18,6 +19,9 @@ export default function TillieSyncCard(): JSX.Element {
   const [showCategories, setShowCategories] = useState(false)
   const [categoryQuery, setCategoryQuery] = useState('')
   const [configSaving, setConfigSaving] = useState(false)
+  const [auditSummary, setAuditSummary] = useState<string[]>([])
+  const [syncSummary, setSyncSummary] = useState<{ created: number; updated: number; unchanged: number; pushed: number; pushSkipped: string[]; duplicateBarcodes: string[] } | null>(null)
+  const [adminCredentialAcknowledged, setAdminCredentialAcknowledged] = useState(false)
 
   const refreshCategories = useCallback(async () => {
     const result = await window.api.tillie.getCategories()
@@ -66,18 +70,20 @@ export default function TillieSyncCard(): JSX.Element {
 
   async function disconnect(): Promise<void> {
     const result = await window.api.tillie.disconnect()
-    if (result.ok) setConfig(result.data)
+    if (result.ok) { setConfig(result.data); setNotice('Tillie register disconnected. Saved labels remain available offline.') }
+    else { setError(`Tillie could not be disconnected: ${result.error}`); return }
     setProducts(null)
   }
 
-  async function applyConfig(patch: Partial<TillieConfig>): Promise<void> {
+  async function applyConfig(patch: Partial<TillieConfig>, summary: string[]): Promise<void> {
     setConfigSaving(true)
     setError('')
     const result = await window.api.tillie.setConfig(patch)
     setConfigSaving(false)
     if (!result.ok) { setError(result.error); setNotice(''); return }
     setConfig(result.data)
-    setNotice('Sync settings saved.')
+    setAuditSummary(summary)
+    setNotice('Sync scope saved immediately.')
     if (products) refreshProducts()
   }
 
@@ -87,7 +93,11 @@ export default function TillieSyncCard(): JSX.Element {
     const next = subscribed
       ? config.subscribedCategories.filter((c) => c.id !== cat.id)
       : [...config.subscribedCategories, { id: cat.id, name: cat.name }]
-    applyConfig({ subscribedCategories: next })
+    applyConfig({ subscribedCategories: next }, [
+      `${subscribed ? 'Removed' : 'Added'} category: ${cat.name}.`,
+      `${next.length} categor${next.length === 1 ? 'y' : 'ies'} will import new Tillie products.`,
+      ...(subscribed ? ['Products already linked from this category remain linked and continue syncing.'] : []),
+    ])
   }
 
   function toggleProduct(p: TillieProductSummary): void {
@@ -99,7 +109,7 @@ export default function TillieSyncCard(): JSX.Element {
         excludedProductIds: excluded
           ? config.excludedProductIds.filter((id) => id !== p.id)
           : [...config.excludedProductIds, p.id],
-      })
+      }, [`${excluded ? 'Restored' : 'Excluded'} product: ${p.name}.`, excluded ? 'This product will resume syncing through its selected category.' : 'This linked product will stop receiving Tillie updates.'])
     } else {
       const included = config.includedProductIds.includes(p.id)
       applyConfig({
@@ -108,7 +118,7 @@ export default function TillieSyncCard(): JSX.Element {
           : [...config.includedProductIds, p.id],
         // Re-adding a previously deleted label should work again.
         excludedProductIds: config.excludedProductIds.filter((id) => id !== p.id),
-      })
+      }, [`${included ? 'Removed individual inclusion for' : 'Added individual inclusion for'} ${p.name}.`, included ? 'It will sync only if its category is selected.' : 'It will sync even though its category is not selected.'])
     }
   }
 
@@ -116,21 +126,14 @@ export default function TillieSyncCard(): JSX.Element {
     setSyncing(true)
     setError('')
     setNotice('')
+    setSyncSummary(null)
     const result = await window.api.tillie.sync()
     setSyncing(false)
-    if (!result.ok) { setError(result.error); return }
+    if (!result.ok) { recordTillieSyncFailure(result.error); setError(`Sync failed: ${result.error}. Saved labels remain available offline.`); return }
     const { created, updated, unchanged, pushed, pushSkipped, duplicateBarcodes } = result.data
-    let msg = `Sync complete — ${created} new label${created !== 1 ? 's' : ''}, ${updated} updated, ${unchanged} already up to date.`
-    if (pushed) {
-      msg += ` Added ${pushed} label${pushed !== 1 ? 's' : ''} to Tillie's inventory.`
-    }
-    if (pushSkipped.length) {
-      msg += ` Couldn't add ${pushSkipped.length} label${pushSkipped.length !== 1 ? 's' : ''} (no readable price): ${pushSkipped.slice(0, 5).join(', ')}${pushSkipped.length > 5 ? '…' : ''}.`
-    }
-    if (duplicateBarcodes.length) {
-      msg += ` Skipped ${duplicateBarcodes.length} duplicate barcode${duplicateBarcodes.length !== 1 ? 's' : ''} in Tillie: ${duplicateBarcodes.join(', ')}.`
-    }
-    setNotice(msg)
+    recordTillieSyncSuccess()
+    setSyncSummary({ created, updated, unchanged, pushed, pushSkipped, duplicateBarcodes })
+    setNotice(pushSkipped.length || duplicateBarcodes.length ? 'Sync finished with items that need attention.' : 'Sync complete.')
     const cfg = await window.api.tillie.getConfig()
     if (cfg.ok) setConfig(cfg.data)
     refreshProducts()
@@ -160,7 +163,9 @@ export default function TillieSyncCard(): JSX.Element {
     if (!categories) return
     applyConfig({
       subscribedCategories: selected ? categories.map(({ id, name }) => ({ id, name })) : [],
-    })
+    }, selected
+      ? [`Selected all ${categories.length} categories.`, 'New products from every category will be imported; linked products remain linked.']
+      : ['Cleared all category subscriptions.', 'No new category products will be imported; products already linked to Tillie remain linked and continue syncing.'])
   }
 
   const pickerGroups = (() => {
@@ -281,16 +286,16 @@ export default function TillieSyncCard(): JSX.Element {
                       className="btn-outline"
                       style={{ flexShrink: 0 }}
                       onClick={() => saveMongoUri(mongoUriDraft.trim())}
-                      disabled={!mongoUriDraft.trim()}
+                      disabled={!mongoUriDraft.trim() || !adminCredentialAcknowledged}
                     >
                       Connect
                     </button>
                   </div>
-                  <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
-                    Uses the same MongoDB Atlas connection string as the register (in its tillie.env
-                    file). Works from any computer with internet — no PIN or register connection
-                    needed. Keep this string private; it grants full access to store data.
-                  </p>
+                  <div className="admin-credential-warning" role="alert">
+                    <strong>Administrator-only credential</strong>
+                    <span>This connection string grants broad access to store data. Use a dedicated least-privilege account, never share or paste it into support messages, and rotate it immediately if exposed.</span>
+                    <label><input type="checkbox" checked={adminCredentialAcknowledged} onChange={(event) => setAdminCredentialAcknowledged(event.target.checked)} /> I am authorized to connect this store database.</label>
+                  </div>
                 </div>
               )}
             </div>
@@ -393,7 +398,7 @@ export default function TillieSyncCard(): JSX.Element {
                         key={p.id}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--color-text-strong-secondary)', padding: '3px 0', cursor: 'pointer' }}
                       >
-                        <input type="checkbox" checked={p.inScope} onChange={() => toggleProduct(p)} />
+                        <input type="checkbox" checked={p.inScope} disabled={configSaving} onChange={() => toggleProduct(p)} />
                         <span style={{ flex: 1 }}>{p.name}</span>
                         {p.linked && (
                           <span style={{ fontSize: 11, color: 'var(--color-success-text)', border: '1px solid var(--color-success-border)', background: 'var(--color-success-surface)', borderRadius: 10, padding: '2px 7px' }}>
@@ -417,7 +422,7 @@ export default function TillieSyncCard(): JSX.Element {
           <input
             type="checkbox"
             checked={config?.autoSyncOnLaunch ?? true}
-            onChange={(e) => applyConfig({ autoSyncOnLaunch: e.target.checked })}
+            onChange={(e) => applyConfig({ autoSyncOnLaunch: e.target.checked }, [e.target.checked ? 'Enabled automatic sync when Tillie Print opens.' : 'Disabled automatic sync on launch.', 'This change was saved immediately.'])}
           />
           Sync automatically when the app opens
         </label>
@@ -437,6 +442,16 @@ export default function TillieSyncCard(): JSX.Element {
         {notice && (
           <div role="status" aria-live="polite" className="status-message" style={{ background: 'var(--color-success-surface)', border: '1px solid var(--color-success-border)', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: 'var(--color-success-text)' }}>
             {notice}
+          </div>
+        )}
+        {auditSummary.length > 0 && (
+          <div className="sync-audit-summary" role="status" aria-live="polite"><strong>Saved change</strong><ul>{auditSummary.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        )}
+        {syncSummary && (
+          <div className="sync-result-summary" aria-label="Tillie sync result">
+            <div className="is-success"><strong>Updated</strong><span>{syncSummary.created} new · {syncSummary.updated} changed · {syncSummary.pushed} sent to Tillie</span></div>
+            <div><strong>Unchanged</strong><span>{syncSummary.unchanged} already current</span></div>
+            {(syncSummary.pushSkipped.length > 0 || syncSummary.duplicateBarcodes.length > 0) && <div className="is-warning"><strong>Needs attention</strong><span>{syncSummary.pushSkipped.length ? `Unreadable price: ${syncSummary.pushSkipped.join(', ')}. ` : ''}{syncSummary.duplicateBarcodes.length ? `Duplicate barcode: ${syncSummary.duplicateBarcodes.join(', ')}.` : ''}</span></div>}
           </div>
         )}
         {error && (

@@ -10,6 +10,7 @@ import { generateBarcodeValue } from '../lib/barcode'
 import type { Product, LabelTemplate, DesignTemplate, AppSettings } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
 import { assessProductContentFit, outputEligibilityError } from '../../../shared/contentFit'
+import { confirmUsingSavedTillieData } from '../lib/tillieFreshness'
 
 interface Props {
   initialProduct: Product | null
@@ -22,6 +23,7 @@ interface Props {
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+type PreflightStatus = 'checking' | 'checked' | 'unavailable'
 
 const EMPTY_PRODUCT = (): Omit<Product, 'id' | 'createdAt' | 'updatedAt'> => ({
   name: '',
@@ -67,11 +69,14 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   const [outputError, setOutputError] = useState('')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [renderedFitIssues, setRenderedFitIssues] = useState<Array<{ field: keyof Product; label: string; status: 'tight' | 'clipped'; message: string }> | null>(null)
+  const [preflightStatus, setPreflightStatus] = useState<PreflightStatus>('checking')
+  const [preflightError, setPreflightError] = useState('')
   const saveInFlight = useRef<Promise<Product | null> | null>(null)
   const savedProductRef = useRef(JSON.stringify(product))
   const draftAssetIdRef = useRef(`draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const newAssetPathsRef = useRef(new Set<string>())
   const replacedAssetPathsRef = useRef(new Set<string>())
+  const preflightRequestRef = useRef(0)
   const dirty = useMemo(() => JSON.stringify(product) !== savedProductRef.current, [product, saveStatus])
   const estimatedFitIssues = useMemo(() => assessProductContentFit(product), [product])
   const contentFitIssues = renderedFitIssues ?? estimatedFitIssues
@@ -113,13 +118,53 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
     return () => window.clearTimeout(timer)
   }, [repairField])
 
+  async function runOutputPreflight(): Promise<void> {
+    const requestId = ++preflightRequestRef.current
+    setPreflightStatus('checking')
+    setPreflightError('')
+    setRenderedFitIssues(null)
+    let result
+    try {
+      result = await window.api.output.preflight([{ product: product as Product }])
+    } catch {
+      if (requestId !== preflightRequestRef.current) return
+      setPreflightStatus('unavailable')
+      setPreflightError('Tillie Print could not reach the output verifier. Check the app connection and retry.')
+      return
+    }
+    if (requestId !== preflightRequestRef.current) return
+    if (!result.ok) {
+      setPreflightStatus('unavailable')
+      setPreflightError('Tillie Print could not verify the rendered label. Output stays blocked until the check succeeds.')
+      return
+    }
+    setRenderedFitIssues(result.data)
+    setPreflightStatus('checked')
+  }
+
   useEffect(() => {
+    const requestId = ++preflightRequestRef.current
+    let alive = true
+    setPreflightStatus('checking')
+    setPreflightError('')
+    setRenderedFitIssues(null)
     const timer = window.setTimeout(() => {
       window.api.output.preflight([{ product: product as Product }]).then((result) => {
-        if (result.ok) setRenderedFitIssues(result.data)
+        if (!alive || requestId !== preflightRequestRef.current) return
+        if (!result.ok) {
+          setPreflightStatus('unavailable')
+          setPreflightError('Tillie Print could not verify the rendered label. Output stays blocked until the check succeeds.')
+          return
+        }
+        setRenderedFitIssues(result.data)
+        setPreflightStatus('checked')
+      }).catch(() => {
+        if (!alive || requestId !== preflightRequestRef.current) return
+        setPreflightStatus('unavailable')
+        setPreflightError('Tillie Print could not reach the output verifier. Check the app connection and retry.')
       })
     }, 180)
-    return () => window.clearTimeout(timer)
+    return () => { alive = false; window.clearTimeout(timer) }
   }, [product])
 
   function stageAssetReplacement(previousPath: string | null | undefined, nextPath: string): void {
@@ -398,11 +443,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   }
 
   async function handleExportPDF(): Promise<void> {
+    if (preflightStatus !== 'checked') {
+      setOutputError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before exporting.')
+      return
+    }
     const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
     if (eligibilityError) {
       setOutputError(eligibilityError)
       return
     }
+    if (!confirmUsingSavedTillieData([product])) return
     const saved = await handleSave()
     if (!saved) return
     setExporting(true)
@@ -413,11 +463,16 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   }
 
   async function handleExportSVG(): Promise<void> {
+    if (preflightStatus !== 'checked') {
+      setOutputError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before exporting.')
+      return
+    }
     const eligibilityError = outputEligibilityError([{ product }], 'SVG export')
     if (eligibilityError) {
       setOutputError(eligibilityError)
       return
     }
+    if (!confirmUsingSavedTillieData([product])) return
     const saved = await handleSave()
     if (!saved) return
     setExporting(true)
@@ -428,22 +483,32 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
   }
 
   async function handlePrint(): Promise<void> {
+    if (preflightStatus !== 'checked') {
+      setOutputError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before opening Print Sheet.')
+      return
+    }
     const eligibilityError = outputEligibilityError([{ product }], 'Sheet printing')
     if (eligibilityError) {
       setOutputError(eligibilityError)
       return
     }
+    if (!confirmUsingSavedTillieData([product])) return
     const saved = await handleSave()
     if (!saved) return
     onOpenSheet(saved)
   }
 
   async function handleRollPrint(): Promise<void> {
+    if (preflightStatus !== 'checked') {
+      setOutputError(preflightStatus === 'checking' ? 'Wait for rendered-output verification to finish.' : 'Retry rendered-output verification before roll printing.')
+      return
+    }
     const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
     if (eligibilityError) {
       setOutputError(eligibilityError)
       return
     }
+    if (!confirmUsingSavedTillieData([product])) return
     const saved = await handleSave()
     if (!saved) return
     setRollProduct(saved)
@@ -604,8 +669,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
             <div className="preflight-item"><strong>Barcode</strong><span>{product.showBarcode === false || !usesBarcode ? 'Not printed' : barcodeValidity ? 'Ready' : 'Needs attention'}</span></div>
             <div className="preflight-item">
               <strong>Content fit</strong>
-              <span className={clippedContent.length ? 'fit-status clipped' : contentFitIssues.length ? 'fit-status tight' : 'fit-status fits'}>
-                {clippedContent.length ? `${clippedContent.length} field${clippedContent.length === 1 ? '' : 's'} clipped` : contentFitIssues.length ? 'Tight — review text' : 'Fits printable zones'}
+              <span className={preflightStatus === 'unavailable' ? 'fit-status clipped' : preflightStatus === 'checking' ? 'fit-status checking' : clippedContent.length ? 'fit-status clipped' : contentFitIssues.length ? 'fit-status tight' : 'fit-status fits'}>
+                {preflightStatus === 'checking' ? 'Checking rendered output…' : preflightStatus === 'unavailable' ? 'Verification unavailable' : clippedContent.length ? `${clippedContent.length} field${clippedContent.length === 1 ? '' : 's'} clipped` : contentFitIssues.length ? 'Tight — review text' : 'Verified for output'}
               </span>
             </div>
             <div className="preflight-item"><strong>Sheet stock</strong><span>PLS780 · US Letter</span></div>
@@ -618,6 +683,13 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
                 {contentFitIssues.map((issue) => <li key={`${issue.field}-${issue.status}`}>{issue.message}</li>)}
               </ul>
               <span>{clippedContent.length ? 'Shorten the field or choose another label before printing or exporting PDF.' : 'Check the preview carefully before output.'}</span>
+            </div>
+          )}
+          {preflightStatus === 'unavailable' && (
+            <div className="content-fit-callout clipped" role="alert">
+              <strong>Output verification did not finish</strong>
+              <span>{preflightError}</span>
+              <button type="button" className="btn-outline btn-sm" onClick={() => void runOutputPreflight()}>Retry verification</button>
             </div>
           )}
         </div>

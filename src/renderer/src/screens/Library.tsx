@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker, MoreHorizontal, Store } from 'lucide-react'
+import { Search, Plus, Edit2, Copy, Trash2, FileText, Printer, RefreshCw, Upload, Tag, ArrowUpDown, ArrowUp, ArrowDown, Sticker, MoreHorizontal, Store, AlertCircle, CheckCircle2 } from 'lucide-react'
 import type { Product } from '../types'
 import RollPrintDialog from '../components/RollPrintDialog'
 import { assessProductContentFit, outputEligibilityError } from '../../../shared/contentFit'
+import { confirmUsingSavedTillieData, readTillieFreshness, recordTillieSyncFailure, recordTillieSyncSuccess, type TillieFreshness } from '../lib/tillieFreshness'
 
 interface Props {
   onEdit: (product?: Product) => void
@@ -28,6 +29,8 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [selectionNotice, setSelectionNotice] = useState('')
   const [operationNotice, setOperationNotice] = useState('')
   const [operationError, setOperationError] = useState('')
+  const [freshness, setFreshness] = useState<TillieFreshness | null>(() => readTillieFreshness())
+  const [syncRetrying, setSyncRetrying] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -39,27 +42,41 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
 
   useEffect(() => { load() }, [load])
 
-  // Quietly pull fresh prices from Tillie whenever the library opens.
+  const syncTillie = useCallback(async (cancelled?: () => boolean) => {
+    setSyncRetrying(true)
+    try {
+      const cfg = await window.api.tillie.getConfig()
+      if (cancelled?.()) return
+      if (!cfg.ok) {
+        setFreshness(recordTillieSyncFailure('Tillie configuration could not be checked.'))
+        return
+      }
+      if (!cfg.data.autoSyncOnLaunch || (!cfg.data.lastSyncAt && !cfg.data.connectedUserName && !cfg.data.mongoUri)) return
+      const result = await window.api.tillie.sync()
+      if (cancelled?.()) return
+      if (!result.ok) {
+        setFreshness(recordTillieSyncFailure(result.error))
+        return
+      }
+      setFreshness(recordTillieSyncSuccess())
+      const { created, updated, pushed } = result.data
+      if (created + updated + pushed > 0) {
+        const parts = [updated ? `${updated} price/name update${updated !== 1 ? 's' : ''}` : '', created ? `${created} new label${created !== 1 ? 's' : ''}` : '', pushed ? `${pushed} label${pushed !== 1 ? 's' : ''} added to Tillie` : ''].filter(Boolean)
+        setTillieNotice(`Synced from Tillie: ${parts.join(', ')}.`)
+        await load()
+      }
+    } catch {
+      if (!cancelled?.()) setFreshness(recordTillieSyncFailure('Tillie could not be reached.'))
+    } finally {
+      if (!cancelled?.()) setSyncRetrying(false)
+    }
+  }, [load])
+
   useEffect(() => {
     let cancelled = false
-    window.api.tillie.getConfig().then(async (cfg) => {
-      if (!cfg.ok || !cfg.data.autoSyncOnLaunch) return
-      // Skip until Tillie sync has been set up at least once.
-      if (!cfg.data.lastSyncAt && !cfg.data.connectedUserName) return
-      const result = await window.api.tillie.sync()
-      if (cancelled || !result.ok) return
-      const { created, updated, pushed } = result.data
-      if (created + updated + pushed === 0) return
-      const parts = [
-        updated ? `${updated} price/name update${updated !== 1 ? 's' : ''}` : '',
-        created ? `${created} new label${created !== 1 ? 's' : ''}` : '',
-        pushed ? `${pushed} label${pushed !== 1 ? 's' : ''} added to Tillie` : '',
-      ].filter(Boolean)
-      setTillieNotice(`Synced from Tillie: ${parts.join(', ')}.`)
-      load()
-    })
+    void syncTillie(() => cancelled)
     return () => { cancelled = true }
-  }, [load])
+  }, [syncTillie])
 
   const filtered = products.filter(
     (p) =>
@@ -136,6 +153,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   }
 
   const selectedProducts = products.filter(({ id }) => selectedIds.has(id))
+  const hasTillieLinkedProducts = products.some((product) => Boolean(product.tillieProductId))
 
   function renderSortIcon(key: SortKey): JSX.Element {
     if (sortKey !== key) return <ArrowUpDown size={12} />
@@ -180,6 +198,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   async function handleExportPDF(product: Product): Promise<void> {
     const eligibilityError = outputEligibilityError([{ product }], 'PDF export')
     if (eligibilityError) { setOperationError(eligibilityError); return }
+    if (!confirmUsingSavedTillieData([product])) return
     setExporting(product.id)
     const result = await window.api.export.singlePDF(product)
     if (!result.ok) setOperationError(`Label PDF export failed: ${result.error}. Check the export folder and try again.`)
@@ -190,7 +209,13 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   function openRollPrint(product: Product): void {
     const eligibilityError = outputEligibilityError([{ product }], 'Roll printing')
     if (eligibilityError) { setOperationError(eligibilityError); return }
+    if (!confirmUsingSavedTillieData([product])) return
     setRollProduct(product)
+  }
+
+  function openSheet(productsToPrint: Product[]): void {
+    if (!confirmUsingSavedTillieData(productsToPrint)) return
+    onOpenSheet(productsToPrint)
   }
 
   function fmtDate(iso: string): string {
@@ -215,7 +240,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
           <button onClick={handleImport} disabled={importing} className="btn-outline btn-sm" title="Import from CSV / Excel">
             <Upload size={13} /> {importing ? 'Importing…' : 'Import'}
           </button>
-          <button onClick={() => onOpenSheet(selectedProducts)} className="btn-outline btn-sm">
+          <button onClick={() => openSheet(selectedProducts)} className="btn-outline btn-sm">
             <Printer size={13} /> {selectedProducts.length ? `Print Sheet (${selectedProducts.length})` : 'Blank Print Sheet'}
           </button>
           <button onClick={() => onEdit()} className="btn-primary">
@@ -239,6 +264,16 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
         <div role="alert" className="status-message" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', background: 'var(--color-danger-surface)', color: 'var(--color-danger-text)', border: '1px solid var(--color-danger-border)', borderRadius: 8, fontSize: 12 }}>
           <span style={{ flex: 1 }}>{operationError}</span><button className="btn-ghost btn-sm" onClick={() => setOperationError('')}>Dismiss</button>
         </div>
+      )}
+      {hasTillieLinkedProducts && freshness?.state === 'stale' && (
+        <div role="alert" className="status-message sync-freshness is-stale">
+          <AlertCircle size={15} />
+          <div><strong>Offline — using saved Tillie data</strong><span>{freshness.lastSuccessAt ? `Last successful sync: ${new Date(freshness.lastSuccessAt).toLocaleString()}.` : 'No successful sync time is available.'} Output from linked products requires acknowledgment.</span></div>
+          <button type="button" className="btn-outline btn-sm" onClick={() => void syncTillie()} disabled={syncRetrying}><RefreshCw size={12} className={syncRetrying ? 'spin' : undefined} />{syncRetrying ? 'Retrying…' : 'Retry sync'}</button>
+        </div>
+      )}
+      {hasTillieLinkedProducts && freshness?.state === 'fresh' && freshness.lastSuccessAt && (
+        <div role="status" className="sync-freshness is-fresh"><CheckCircle2 size={14} /><span>POS data verified {new Date(freshness.lastSuccessAt).toLocaleString()}.</span></div>
       )}
       <div style={{ position: 'relative' }}>
         <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
@@ -409,7 +444,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
                     <td style={{ padding: '11px 16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}>
                         <button onClick={() => onEdit(p)} className="btn-ghost btn-sm"><Edit2 size={13} /> Edit</button>
-                        <button onClick={() => onOpenSheet([p])} className="btn-outline btn-sm" title={assessProductContentFit(p).some((issue) => issue.status === 'clipped') ? 'Open the sheet and repair content before printing' : 'Build a print sheet'}><Printer size={13} /> Print</button>
+                        <button onClick={() => openSheet([p])} className="btn-outline btn-sm" title={assessProductContentFit(p).some((issue) => issue.status === 'clipped') ? 'Open the sheet and repair content before printing' : 'Build a print sheet'}><Printer size={13} /> Print</button>
                         <details className="row-actions-menu">
                           <summary className="btn btn-icon" aria-label={`More actions for ${p.name}`} title="More actions"><MoreHorizontal size={14} /></summary>
                           <div className="row-actions-popover">
