@@ -14,7 +14,8 @@ const api = {
   // Settings
   settings: {
     get: () => electron.ipcRenderer.invoke("settings:get"),
-    set: (key, value) => electron.ipcRenderer.invoke("settings:set", key, value)
+    set: (key, value) => electron.ipcRenderer.invoke("settings:set", key, value),
+    setMany: (patch) => electron.ipcRenderer.invoke("settings:setMany", patch)
   },
   // File operations
   file: {
@@ -23,6 +24,7 @@ const api = {
     pickLogoImage: () => electron.ipcRenderer.invoke("file:pickLogoImage"),
     saveLogoImage: (sourcePath, productId) => electron.ipcRenderer.invoke("file:saveLogoImage", sourcePath, productId),
     readImageAsBase64: (filePath) => electron.ipcRenderer.invoke("file:readImageAsBase64", filePath),
+    deleteManagedImage: (filePath) => electron.ipcRenderer.invoke("file:deleteManagedImage", filePath),
     getTemplatePNG: (templateId) => electron.ipcRenderer.invoke("file:getTemplatePNG", templateId),
     listTemplates: () => electron.ipcRenderer.invoke("file:listTemplates"),
     pickTemplateImage: () => electron.ipcRenderer.invoke("file:pickTemplateImage"),
@@ -50,14 +52,18 @@ const api = {
     importFile: () => electron.ipcRenderer.invoke("design:import")
   },
   // Export
+  output: {
+    preflight: (entries) => electron.ipcRenderer.invoke("output:preflight", entries)
+  },
   export: {
     singlePDF: (product) => electron.ipcRenderer.invoke("export:singlePDF", product),
     singleSVG: (product) => electron.ipcRenderer.invoke("export:singleSVG", product),
-    sheetPDF: (products, startSlot) => electron.ipcRenderer.invoke("export:sheetPDF", products, startSlot)
+    sheetPDF: (slots) => electron.ipcRenderer.invoke("export:sheetPDF", slots)
   },
   // Print
   print: {
-    sheet: (products, startSlot) => electron.ipcRenderer.invoke("print:sheet", products, startSlot),
+    sheet: (slots, opts) => electron.ipcRenderer.invoke("print:sheet", slots, opts),
+    calibrationSheet: (opts) => electron.ipcRenderer.invoke("print:calibrationSheet", opts),
     listPrinters: () => electron.ipcRenderer.invoke("print:listPrinters"),
     rollLabel: (product, opts) => electron.ipcRenderer.invoke("print:rollLabel", product, opts)
   },

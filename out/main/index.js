@@ -4,7 +4,6 @@ const path = require("path");
 const utils = require("@electron-toolkit/utils");
 const fs = require("fs");
 const child_process = require("child_process");
-const url = require("url");
 const nanoid = require("nanoid");
 const XLSX = require("xlsx");
 const pdfLib = require("pdf-lib");
@@ -71,6 +70,7 @@ function loadSettings() {
     titleFontId: "bundled:lora",
     priceFontId: "bundled:genty",
     bodyFontId: "bundled:avenir",
+    sheetPrinterName: "",
     rollPrinterName: "",
     rollLabelWidthIn: "4",
     rollLabelHeightIn: "2.5"
@@ -119,6 +119,10 @@ function getSettings() {
 }
 function setSetting(key, value) {
   _settings = { ..._settings, [key]: value };
+  saveSettings();
+}
+function setSettings(patch) {
+  _settings = { ..._settings, ...patch };
   saveSettings();
 }
 function normalizeProduct(product) {
@@ -269,6 +273,16 @@ function initFileManager() {
   fs.mkdirSync(DESIGN_SLOT_DIR, { recursive: true });
   fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
   copyBundledAssets();
+}
+const MANAGED_IMAGE_DIRS = [BARCODE_DIR, LOGO_DIR, DESIGN_SLOT_DIR];
+function isManagedImagePath(filePath) {
+  const candidate = path.resolve(filePath);
+  return MANAGED_IMAGE_DIRS.some((directory) => candidate.startsWith(`${path.resolve(directory)}${path.sep}`));
+}
+function deleteManagedImage(filePath) {
+  if (!filePath || !isManagedImagePath(filePath)) return false;
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  return true;
 }
 function copyBundledAssets() {
   const sourceDir = getBundledAssetsDir();
@@ -466,7 +480,7 @@ function svgDimensions(svg) {
 }
 function saveBarcodeImage(sourcePath, productId) {
   const ext = path.extname(sourcePath) || ".png";
-  const destName = `barcode-${productId}${ext}`;
+  const destName = `barcode-${productId}-${Date.now()}${ext}`;
   const destPath = path.join(BARCODE_DIR, destName);
   fs.copyFileSync(sourcePath, destPath);
   return destPath;
@@ -481,7 +495,7 @@ function saveDesignSlotImage(sourcePath, productId, elementId) {
 }
 function saveLogoImage(sourcePath, productId) {
   const ext = path.extname(sourcePath) || ".png";
-  const destName = `logo-${productId}${ext}`;
+  const destName = `logo-${productId}-${Date.now()}${ext}`;
   const destPath = path.join(LOGO_DIR, destName);
   fs.copyFileSync(sourcePath, destPath);
   return destPath;
@@ -964,6 +978,36 @@ function substituteTokens(content, product) {
     return typeof value === "string" ? value : "";
   });
 }
+function assessDesignTextFit(design, product, measurer) {
+  const issues = [];
+  for (const element of design.elements) {
+    if (element.type !== "text" || !isVisible(element, product)) continue;
+    const text = applyTextCase(substituteTokens(element.content, product).trim(), element.textCase);
+    if (!text) continue;
+    const fontId = element.fontId || DEFAULT_DESIGN_FONT_ID;
+    const fitAt = (size2) => text.split(/\n/).map((paragraph) => wrapLine(paragraph, fontId, size2, element.w, measurer));
+    let size = element.size;
+    let paragraphs = fitAt(size);
+    if (element.autoFit) {
+      while (size > MIN_AUTO_FIT_SIZE && !fits(paragraphs, element, fontId, size, measurer)) {
+        size = Math.max(MIN_AUTO_FIT_SIZE, size - 0.5);
+        paragraphs = fitAt(size);
+      }
+    }
+    const lines = paragraphs.flat();
+    const lineStep = size * element.lineHeight;
+    const maxByHeight = Math.max(1, Math.floor((element.h + lineStep - size) / lineStep));
+    const maxLines = Math.min(element.maxLines ?? Infinity, maxByHeight);
+    const clipped = lines.length > maxLines || !fits(paragraphs, element, fontId, size, measurer);
+    const field = element.content.match(/\{([a-zA-Z]+)\}/)?.[1] ?? element.label ?? "Text";
+    if (clipped) {
+      issues.push({ elementId: element.id, field, status: "clipped", message: `${field} does not fit the “${element.label || "text"}” template area.` });
+    } else if (element.autoFit && size <= Math.max(MIN_AUTO_FIT_SIZE + 1, element.size * 0.65)) {
+      issues.push({ elementId: element.id, field, status: "tight", message: `${field} fits only at ${size.toFixed(1)} pt in “${element.label || "text"}”.` });
+    }
+  }
+  return issues;
+}
 function resolveText(element, product, measurer, opacity) {
   const text = applyTextCase(substituteTokens(element.content, product).trim(), element.textCase);
   if (!text) return null;
@@ -1166,6 +1210,9 @@ function collectFontBytes(design) {
 function resolveDesign(design, product) {
   const measurer = createTextMeasurer(collectFontBytes(design));
   return resolveLayout(design, product, measurer);
+}
+function assessDesignFit(design, product) {
+  return assessDesignTextFit(design, product, createTextMeasurer(collectFontBytes(design)));
 }
 function imageSourcePath(image, product) {
   if (image.overridePath && fs.existsSync(image.overridePath)) return image.overridePath;
@@ -1558,6 +1605,81 @@ function wrapText(text, font, size, maxWidth) {
   if (current) lines.push(current);
   return lines.length ? lines : [text];
 }
+async function assessRenderedContentFit(product) {
+  const design = isDesignTemplateId(product.templateId) ? getDesign(product.templateId) : null;
+  if (design) {
+    const knownFields = /* @__PURE__ */ new Set(["name", "price", "category", "ingredients", "allergenStatement", "servingInfo", "nutritionInfo", "cookingInstructions", "customerName"]);
+    return assessDesignFit(design, product).map((issue) => ({
+      field: knownFields.has(issue.field) ? issue.field : "templateId",
+      label: issue.field,
+      status: issue.status,
+      message: issue.message
+    }));
+  }
+  const template = getLabelTemplate(product.templateId);
+  if (template.layout === "logo-only") return [];
+  const doc = await pdfLib.PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const fonts = await embedFonts(doc);
+  const issues = [];
+  const clipped = (field, label, message) => {
+    issues.push({ field, label, status: "clipped", message });
+  };
+  if (template.layout === "front" || product.templateId.startsWith("custom-")) {
+    const name = product.name || "Product Name";
+    const nameSize = name.length > 30 ? 15 : name.length > 18 ? 18 : 22;
+    if (wrapText(name, fonts.name, nameSize, LABEL_ZONES.name.w).length > 3) clipped("name", "Product name", "Product name exceeds the three printable lines.");
+    if (product.showPrice && fonts.price.widthOfTextAtSize(product.price || "$13.99", (product.price || "").length > 10 ? 22 : 28) > LABEL_ZONES.price.w) clipped("price", "Price", "Price exceeds the printable price area.");
+    return issues;
+  }
+  if (template.layout === "vertical-info") {
+    const name = product.name || "Product Title";
+    const nameSize = name.length > 26 ? 17 : name.length > 16 ? 20 : 24;
+    if (wrapText(name, fonts.name, nameSize, VERTICAL_INFO_LABEL_ZONES.title.w).length > 3) clipped("name", "Product name", "Product name exceeds the three printable lines.");
+    if (product.customerName.trim()) {
+      const order = `Order: ${product.customerName.trim()}`;
+      const size = order.length > 34 ? 7 : 8;
+      if (fonts.bodyBold.widthOfTextAtSize(order, size) > VERTICAL_INFO_LABEL_ZONES.customerName.w) clipped("customerName", "Customer name", "Customer name exceeds the printable order line.");
+    }
+    if (product.showCookingInstructions !== false && wrapText(product.cookingInstructions || "Add cooking instructions", fonts.ingredients, 8, VERTICAL_INFO_LABEL_ZONES.cookingBody.w).length > 4) clipped("cookingInstructions", "Cooking instructions", "Cooking instructions exceed the four printable lines.");
+    return issues;
+  }
+  const nameLines = wrapText(product.name || "Product Name", fonts.name, 12, INFO_LABEL_ZONES.leftName.w);
+  if (nameLines.length > 2) clipped("name", "Product name", "Product name exceeds the two printable lines.");
+  let y = INFO_LABEL_ZONES.infoText.y + INFO_LABEL_ZONES.infoText.h - 6;
+  const bottomY = INFO_LABEL_ZONES.infoText.y;
+  const sections = [
+    { field: "nutritionInfo", label: "Serving and nutrition", body: joinInfo(product.servingInfo, product.nutritionInfo) },
+    { field: "cookingInstructions", label: "Cooking instructions", body: product.showCookingInstructions ? product.cookingInstructions : "" },
+    { field: "ingredients", label: "Ingredients", body: product.ingredients }
+  ];
+  for (const section of sections) {
+    if (!section.body) continue;
+    if (y <= bottomY + 7.2) {
+      clipped(section.field, section.label, `${section.label} falls outside the printable information panel.`);
+      break;
+    }
+    y -= 7.2 * 1.45;
+    const lines = wrapText(section.body, fonts.ingredients, 8, INFO_LABEL_ZONES.infoText.w);
+    let printed = 0;
+    for (const _line of lines) {
+      if (y <= bottomY + 8) break;
+      y -= 8 * 1.2;
+      printed += 1;
+    }
+    if (printed < lines.length) {
+      clipped(section.field, section.label, `${section.label} is clipped in the printable information panel.`);
+      break;
+    }
+    y -= 8 * 0.5;
+  }
+  if (!issues.length && product.allergenStatement) {
+    const lines = wrapText(product.allergenStatement, fonts.ingredients, 8, INFO_LABEL_ZONES.infoText.w);
+    const available = Math.max(0, Math.floor((y - bottomY - 8) / (8 * 1.2)) + 1);
+    if (lines.length > available) clipped("allergenStatement", "Allergen statement", "Allergen statement is clipped in the printable information panel.");
+  }
+  return issues;
+}
 function splitLines(text, maxChars, maxLines) {
   const words = text.trim().split(/\s+/);
   const lines = [];
@@ -1913,7 +2035,7 @@ async function exportSingleLabelPDF(product, outputPath) {
   fs.writeFileSync(outputPath, bytes);
   return outputPath;
 }
-async function buildSheetPDF(products, startSlot) {
+async function buildSheetPDF(slots) {
   const barcodeCache = /* @__PURE__ */ new Map();
   const imageCache = /* @__PURE__ */ new Map();
   const settings = getSettings();
@@ -1921,7 +2043,8 @@ async function buildSheetPDF(products, startSlot) {
     toInches(settings.sheetOffsetXIn),
     toInches(settings.sheetOffsetYIn)
   );
-  for (const product of products) {
+  for (const product of slots) {
+    if (!product) continue;
     if (!barcodeCache.has(product.id)) barcodeCache.set(product.id, await getBarcodePNG(product));
     if (!imageCache.has(product.id)) imageCache.set(product.id, getTopImageBytes(product));
   }
@@ -1936,9 +2059,7 @@ async function buildSheetPDF(products, startSlot) {
     borderWidth: 0
   });
   for (let slot = 1; slot <= sheetLayout.cols * sheetLayout.rows; slot++) {
-    const productIndex = slot - startSlot;
-    if (productIndex < 0 || productIndex >= products.length) continue;
-    const product = products[productIndex];
+    const product = slots[slot - 1];
     if (!product) continue;
     const col = (slot - 1) % sheetLayout.cols;
     const row = Math.floor((slot - 1) / sheetLayout.cols);
@@ -1971,8 +2092,30 @@ async function buildSheetPDF(products, startSlot) {
   }
   return sheetDoc.save();
 }
-async function exportSheetPDF(products, startSlot, outputPath) {
-  const bytes = await buildSheetPDF(products, startSlot);
+async function buildCalibrationSheetPDF() {
+  const settings = getSettings();
+  const layout = getSheetLayoutPoints(toInches(settings.sheetOffsetXIn), toInches(settings.sheetOffsetYIn));
+  const doc = await pdfLib.PDFDocument.create();
+  const page = doc.addPage([layout.pageW, layout.pageH]);
+  const font = await doc.embedFont(pdfLib.StandardFonts.Helvetica);
+  const bold = await doc.embedFont(pdfLib.StandardFonts.HelveticaBold);
+  page.drawText("Tillie Print · PLS780 alignment test", { x: 18, y: layout.pageH - 22, size: 10, font: bold, color: pdfLib.rgb(0.1, 0.14, 0.2) });
+  page.drawText("Print at 100% / Actual Size. Measure each outline against the physical label edge.", { x: 18, y: 8, size: 7, font, color: pdfLib.rgb(0.25, 0.3, 0.36) });
+  for (let slot = 1; slot <= layout.cols * layout.rows; slot++) {
+    const col = (slot - 1) % layout.cols;
+    const row = Math.floor((slot - 1) / layout.cols);
+    const x = layout.marginLeft + layout.offsetX + col * (layout.slotW + layout.gapX);
+    const y = layout.pageH - layout.marginTop - layout.offsetY - (row + 1) * layout.slotH - row * layout.gapY;
+    page.drawRectangle({ x, y, width: layout.slotW, height: layout.slotH, borderWidth: 0.75, borderColor: pdfLib.rgb(0.1, 0.14, 0.2) });
+    page.drawLine({ start: { x: x - 5, y }, end: { x: x + 5, y }, thickness: 0.5, color: pdfLib.rgb(0.15, 0.45, 0.2) });
+    page.drawLine({ start: { x, y: y - 5 }, end: { x, y: y + 5 }, thickness: 0.5, color: pdfLib.rgb(0.15, 0.45, 0.2) });
+    page.drawText(String(slot), { x: x + 8, y: y + layout.slotH - 18, size: 12, font: bold, color: pdfLib.rgb(0.1, 0.14, 0.2) });
+    page.drawText("TOP LEFT", { x: x + 8, y: y + layout.slotH - 29, size: 5, font, color: pdfLib.rgb(0.3, 0.35, 0.4) });
+  }
+  return doc.save();
+}
+async function exportSheetPDF(slots, outputPath) {
+  const bytes = await buildSheetPDF(slots);
   fs.writeFileSync(outputPath, bytes);
   return outputPath;
 }
@@ -2166,6 +2309,15 @@ function hexToRgb(hex) {
     (intValue >> 8 & 255) / 255,
     (intValue & 255) / 255
   );
+}
+function formatOutputEligibilityIssues(issues, action) {
+  if (!issues.length) return null;
+  const shown = issues.slice(0, 3).map((issue) => {
+    const location = issue.slot ? `slot ${issue.slot}, ${issue.productName}` : issue.productName;
+    return `${location}: ${issue.label.toLowerCase()}`;
+  });
+  const remainder = issues.length > shown.length ? ` and ${issues.length - shown.length} more` : "";
+  return `${action} is blocked because printable content will be clipped (${shown.join("; ")}${remainder}). Shorten the flagged content or choose another label template.`;
 }
 const TOKEN_TTL_MS = 11.5 * 60 * 60 * 1e3;
 const FETCH_TIMEOUT_MS = 6e3;
@@ -2583,6 +2735,22 @@ function ok(data) {
 function fail(error) {
   return { ok: false, error };
 }
+async function renderedEligibilityError(entries, action) {
+  return formatOutputEligibilityIssues(await renderedEligibilityIssues(entries), action);
+}
+async function renderedEligibilityIssues(entries) {
+  const issues = [];
+  for (const { product, slot } of entries) {
+    const fitIssues = await assessRenderedContentFit(product);
+    issues.push(...fitIssues.filter((issue) => issue.status === "clipped").map((issue) => ({
+      ...issue,
+      productId: product.id,
+      productName: product.name || (slot ? `Slot ${slot}` : "Untitled label"),
+      slot
+    })));
+  }
+  return issues;
+}
 function registerIpcHandlers() {
   electron.ipcMain.handle("product:list", () => {
     try {
@@ -2747,6 +2915,14 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
+  electron.ipcMain.handle("settings:setMany", (_e, patch) => {
+    try {
+      setSettings(patch);
+      return ok(true);
+    } catch (e) {
+      return fail(String(e));
+    }
+  });
   electron.ipcMain.handle("font:list", () => {
     try {
       return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) })));
@@ -2828,6 +3004,13 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
+  electron.ipcMain.handle("file:deleteManagedImage", (_e, filePath) => {
+    try {
+      return ok(deleteManagedImage(filePath));
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
   electron.ipcMain.handle("file:getTemplatePNG", (_e, templateId) => {
     try {
       return ok(readTemplatePNGBase64(templateId || void 0));
@@ -2904,7 +3087,7 @@ function registerIpcHandlers() {
       const result = await electron.dialog.showSaveDialog({
         title: "Export Design",
         defaultPath: `${fileName}.tilliedesign`,
-        filters: [{ name: "Label Studio Design", extensions: ["tilliedesign"] }]
+        filters: [{ name: "Tillie Print Design", extensions: ["tilliedesign"] }]
       });
       if (result.canceled || !result.filePath) return ok(null);
       exportDesignToFile(design, result.filePath);
@@ -2917,7 +3100,7 @@ function registerIpcHandlers() {
     try {
       const result = await electron.dialog.showOpenDialog({
         title: "Import Design",
-        filters: [{ name: "Label Studio Design", extensions: ["tilliedesign", "json"] }],
+        filters: [{ name: "Tillie Print Design", extensions: ["tilliedesign", "json"] }],
         properties: ["openFile"]
       });
       if (result.canceled || !result.filePaths.length) return ok(null);
@@ -2994,8 +3177,17 @@ function registerIpcHandlers() {
       return fail(String(e));
     }
   });
+  electron.ipcMain.handle("output:preflight", async (_e, entries) => {
+    try {
+      return ok(await renderedEligibilityIssues(entries));
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  });
   electron.ipcMain.handle("export:singlePDF", async (_e, product) => {
     try {
+      const eligibilityError = await renderedEligibilityError([{ product }], "PDF export");
+      if (eligibilityError) return fail(eligibilityError);
       const settings = getSettings();
       const result = await electron.dialog.showSaveDialog({
         title: "Save Label PDF",
@@ -3012,6 +3204,8 @@ function registerIpcHandlers() {
   });
   electron.ipcMain.handle("export:singleSVG", async (_e, product) => {
     try {
+      const eligibilityError = await renderedEligibilityError([{ product }], "SVG export");
+      if (eligibilityError) return fail(eligibilityError);
       const settings = getSettings();
       const svgContent = await exportSingleLabelSVG(product);
       const outPath = path.join(settings.exportFolder, `${sanitizeFilename(product.name)}.svg`);
@@ -3024,8 +3218,10 @@ function registerIpcHandlers() {
   });
   electron.ipcMain.handle(
     "export:sheetPDF",
-    async (_e, products, startSlot) => {
+    async (_e, slots) => {
       try {
+        const eligibilityError = await renderedEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), "Sheet PDF export");
+        if (eligibilityError) return fail(eligibilityError);
         const settings = getSettings();
         const result = await electron.dialog.showSaveDialog({
           title: "Save Sheet PDF",
@@ -3033,7 +3229,7 @@ function registerIpcHandlers() {
           filters: [{ name: "PDF", extensions: ["pdf"] }]
         });
         if (result.canceled || !result.filePath) return ok(null);
-        const outPath = await exportSheetPDF(products, startSlot, result.filePath);
+        const outPath = await exportSheetPDF(slots, result.filePath);
         electron.shell.openPath(outPath);
         return ok(outPath);
       } catch (e) {
@@ -3041,16 +3237,30 @@ function registerIpcHandlers() {
       }
     }
   );
-  electron.ipcMain.handle("print:sheet", async (_e, products, startSlot) => {
+  electron.ipcMain.handle("print:sheet", async (_e, slots, opts) => {
     const tempPath = path.join(electron.app.getPath("temp"), `label-sheet-print-${Date.now()}-${nanoid.nanoid(8)}.pdf`);
     try {
-      const pdfBytes = await buildSheetPDF(products, startSlot);
+      const eligibilityError = await renderedEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), "Sheet printing");
+      if (eligibilityError) return fail(eligibilityError);
+      const pdfBytes = await buildSheetPDF(slots);
       fs.writeFileSync(tempPath, pdfBytes);
-      const printed = await printPdfWithDialog(tempPath);
-      scheduleTempFileCleanup(tempPath);
+      const printed = await printSheetPdf(tempPath, opts?.printerName);
       return ok(printed);
     } catch (e) {
-      return fail(String(e));
+      return fail(e instanceof Error ? e.message : String(e));
+    } finally {
+      scheduleTempFileCleanup(tempPath);
+    }
+  });
+  electron.ipcMain.handle("print:calibrationSheet", async (_e, opts) => {
+    const tempPath = path.join(electron.app.getPath("temp"), `label-calibration-${Date.now()}-${nanoid.nanoid(8)}.pdf`);
+    try {
+      fs.writeFileSync(tempPath, await buildCalibrationSheetPDF());
+      return ok(await printSheetPdf(tempPath, opts?.printerName));
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    } finally {
+      scheduleTempFileCleanup(tempPath);
     }
   });
   electron.ipcMain.handle("print:getTemplatePNG", () => {
@@ -3082,13 +3292,16 @@ function registerIpcHandlers() {
       const tempPath = path.join(electron.app.getPath("temp"), `roll-label-print-${Date.now()}-${nanoid.nanoid(8)}.pdf`);
       try {
         if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail("Label size must be positive numbers.");
+        const eligibilityError = await renderedEligibilityError([{ product }], "Roll printing");
+        if (eligibilityError) return fail(eligibilityError);
         const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn);
         fs.writeFileSync(tempPath, pdfBytes);
         const printed = await printPdfToRoll(tempPath, opts);
-        scheduleTempFileCleanup(tempPath);
         return ok(printed);
       } catch (e) {
-        return fail(String(e));
+        return fail(e instanceof Error ? e.message : String(e));
+      } finally {
+        scheduleTempFileCleanup(tempPath);
       }
     }
   );
@@ -3146,120 +3359,46 @@ function generateBarcode() {
   const num2 = Math.floor(Math.random() * 9e11) + 1e11;
   return String(num2);
 }
+async function printPdfNative(pdfPath, opts) {
+  const args = [];
+  if (opts.printerName) args.push("-d", opts.printerName);
+  const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1);
+  if (copies > 1) args.push("-n", String(copies));
+  args.push("-o", `media=${opts.media}`, "-o", "print-scaling=none", pdfPath);
+  await new Promise((resolve, reject) => {
+    child_process.execFile("lp", args, (error, _stdout, stderr) => {
+      if (error) {
+        const detail = (stderr || error.message).trim();
+        reject(new Error(
+          /no default destination/i.test(detail) ? "No default printer is set. Pick a printer in the print options." : `Printing failed: ${detail}`
+        ));
+      } else {
+        resolve();
+      }
+    });
+  });
+  return true;
+}
 async function printPdfToRoll(pdfPath, opts) {
-  const silent = Boolean(opts.printerName);
-  return new Promise((resolve, reject) => {
-    const printWin = new electron.BrowserWindow({
-      width: 700,
-      height: 500,
-      show: !silent,
-      autoHideMenuBar: true,
-      webPreferences: { sandbox: false }
-    });
-    let settled = false;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      if (!printWin.isDestroyed()) printWin.close();
-      resolve(result);
-    };
-    printWin.webContents.once("did-finish-load", () => {
-      setTimeout(() => {
-        if (settled || printWin.isDestroyed()) return;
-        const options = {
-          silent,
-          deviceName: opts.printerName || void 0,
-          printBackground: true,
-          // Exact roll media size, in microns.
-          pageSize: {
-            width: Math.round(opts.widthIn * 25400),
-            height: Math.round(opts.heightIn * 25400)
-          },
-          landscape: false,
-          margins: { marginType: "none" },
-          copies: Math.max(1, Math.floor(opts.copies) || 1)
-        };
-        printWin.webContents.print(options, (success, failureReason) => {
-          if (!success && failureReason && failureReason !== "cancelled") {
-            if (!settled) {
-              settled = true;
-              if (!printWin.isDestroyed()) printWin.close();
-              reject(new Error(`Print failed: ${failureReason}`));
-            }
-            return;
-          }
-          finish(success);
-        });
-      }, 400);
-    });
-    printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
-      if (!settled) {
-        settled = true;
-        if (!printWin.isDestroyed()) printWin.destroy();
-        reject(new Error(`Failed to load printable PDF: ${desc}`));
-      }
-    });
-    printWin.loadURL(url.pathToFileURL(pdfPath).toString()).catch((err) => {
-      if (!settled) {
-        settled = true;
-        if (!printWin.isDestroyed()) printWin.destroy();
-        reject(err);
-      }
-    });
+  return printPdfNative(pdfPath, {
+    printerName: opts.printerName || void 0,
+    copies: opts.copies,
+    // Exact roll media size, in inches.
+    media: `Custom.${opts.widthIn}x${opts.heightIn}in`
   });
 }
-async function printPdfWithDialog(pdfPath) {
-  return new Promise((resolve, reject) => {
-    const printWin = new electron.BrowserWindow({
-      width: 900,
-      height: 700,
-      show: true,
-      autoHideMenuBar: true,
-      webPreferences: { sandbox: false }
-    });
-    let settled = false;
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      if (!printWin.isDestroyed()) printWin.close();
-      resolve(result);
-    };
-    printWin.webContents.once("did-finish-load", () => {
-      setTimeout(() => {
-        if (settled || printWin.isDestroyed()) return;
-        const options = {
-          silent: false,
-          printBackground: true,
-          pageSize: "Letter",
-          landscape: false,
-          margins: { marginType: "none" }
-        };
-        printWin.webContents.print(options, (success) => finish(success));
-      }, 400);
-    });
-    printWin.webContents.once("did-fail-load", (_event, _code, desc) => {
-      if (!settled) {
-        settled = true;
-        if (!printWin.isDestroyed()) printWin.destroy();
-        reject(new Error(`Failed to load printable PDF: ${desc}`));
-      }
-    });
-    printWin.loadURL(url.pathToFileURL(pdfPath).toString()).catch((err) => {
-      if (!settled) {
-        settled = true;
-        if (!printWin.isDestroyed()) printWin.destroy();
-        reject(err);
-      }
-    });
-  });
+async function printSheetPdf(pdfPath, printerName) {
+  return printPdfNative(pdfPath, { printerName: printerName || void 0, media: "Letter" });
 }
 function scheduleTempFileCleanup(filePath) {
-  setTimeout(() => {
+  const remove = (attempt) => setTimeout(() => {
     try {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch {
+      if (attempt < 3) remove(attempt + 1);
     }
-  }, 6e4);
+  }, attempt === 1 ? 6e4 : 15e3 * attempt);
+  remove(1);
 }
 function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9_\-. ]/gi, "_").trim().slice(0, 60);
@@ -3269,8 +3408,8 @@ function createWindow() {
   const win = new electron.BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 960,
-    minHeight: 660,
+    minWidth: 720,
+    minHeight: 560,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: "hiddenInset",
@@ -3284,8 +3423,8 @@ function createWindow() {
   win.on("ready-to-show", () => {
     win.show();
   });
-  win.webContents.setWindowOpenHandler(({ url: url2 }) => {
-    electron.shell.openExternal(url2);
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    electron.shell.openExternal(url);
     return { action: "deny" };
   });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {

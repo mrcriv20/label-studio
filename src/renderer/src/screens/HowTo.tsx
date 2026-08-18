@@ -36,7 +36,7 @@ const steps = [
   {
     number: '04',
     title: 'Print at actual size',
-    description: 'Review the physical setup, then print or export a PDF. In the print dialog, choose US Letter and 100% / Actual Size.',
+    description: 'Review the physical setup, then print or export a PDF. Printing from the app sends the sheet at 100% / Actual Size automatically; if you print an exported PDF yourself, choose US Letter and 100% / Actual Size.',
     Icon: Printer,
   },
 ]

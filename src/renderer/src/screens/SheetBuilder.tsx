@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { ArrowLeft, FileText, Printer, RotateCcw, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import LabelPreview from '../components/LabelPreview'
-import type { AppSettings, Product } from '../types'
+import type { AppSettings, PrinterInfo, Product } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
 import {
   getSlotBoundsIn,
@@ -85,6 +85,9 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   const [lastSheetIds, setLastSheetIds] = useState<Array<string | null>>([])
   const [reviewOpen, setReviewOpen] = useState(false)
   const [reviewAction, setReviewAction] = useState<'print' | 'export'>('print')
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [sheetPrinterName, setSheetPrinterName] = useState('')
+  const sheetPrinterInitRef = useRef(false)
   const reviewRef = useRef<HTMLElement | null>(null)
   const printTriggerRef = useRef<HTMLButtonElement | null>(null)
   const exportTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -104,6 +107,19 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   const [renderedSheetFitIssues, setRenderedSheetFitIssues] = useState<Array<{ field: keyof Product; label: string; status: 'tight' | 'clipped'; message: string; product: Product; productName: string; slot: number }> | null>(null)
   const [preflightStatus, setPreflightStatus] = useState<PreflightStatus>('checking')
   const [preflightError, setPreflightError] = useState('')
+
+  useEffect(() => {
+    window.api.print.listPrinters().then((r) => {
+      if (r.ok) setPrinters(r.data)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (settings && !sheetPrinterInitRef.current) {
+      sheetPrinterInitRef.current = true
+      setSheetPrinterName(settings.sheetPrinterName ?? '')
+    }
+  }, [settings])
 
   useEffect(() => {
     if (!reviewOpen) return
@@ -330,22 +346,24 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
     if (!confirmUsingSavedTillieData(outputSlots.filter((product): product is Product => Boolean(product)))) return
     setPrintError('')
     setPrinting(true)
-    const result = await window.api.print.sheet(outputSlots)
+    window.api.settings.set('sheetPrinterName', sheetPrinterName)
+    const result = await window.api.print.sheet(outputSlots, { printerName: sheetPrinterName })
     if (!result.ok) {
-      setPrintError(`Print setup could not open: ${result.error}. Check the printer connection and try again.`)
+      setPrintError(`The sheet could not be sent to the printer: ${result.error}`)
     } else if (result.data) {
       const ids = outputSlots.map((product) => product?.id ?? null)
       try { localStorage.setItem('tillie:last-sheet', JSON.stringify(ids)) } catch {
         setDraftStatus('warning')
-        setDraftMessage('The print dialog opened, but Repeat Last Sheet could not be saved.')
+        setDraftMessage('The sheet was sent to the printer, but Repeat Last Sheet could not be saved.')
       }
       setLastSheetIds(ids)
+      const printerLabel = sheetPrinterLabel()
       setOutcome(kind === 'test'
-        ? 'Test-sheet print dialog opened. Measure the result before changing calibration.'
-        : 'System print dialog opened. Tillie Print cannot confirm whether the printer completed the job.')
+        ? `Test sheet sent to ${printerLabel} at 100% scale. Measure the result before changing calibration.`
+        : `Sheet sent to ${printerLabel} at 100% scale. Check the printer to confirm it finished.`)
       if (kind === 'final') setReviewOpen(false)
     } else {
-      setOutcome('Print dialog closed without sending the sheet.')
+      setOutcome('The sheet was not sent to the printer.')
     }
     setPrinting(false)
   }
@@ -403,11 +421,17 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   async function handleCalibrationTest(): Promise<void> {
     setPrinting(true)
     setPrintError('')
-    const result = await window.api.print.calibrationSheet()
+    const result = await window.api.print.calibrationSheet({ printerName: sheetPrinterName })
     setPrinting(false)
-    if (!result.ok) setPrintError(`Calibration test could not open: ${result.error}`)
-    else if (result.data) setOutcome('Calibration-pattern print dialog opened. Print at Actual Size, then measure the outlines against the label edges.')
-    else setOutcome('Calibration print dialog closed without printing.')
+    if (!result.ok) setPrintError(`Calibration test could not print: ${result.error}`)
+    else if (result.data) setOutcome(`Calibration pattern sent to ${sheetPrinterLabel()} at 100% scale. Measure the outlines against the label edges.`)
+    else setOutcome('The calibration pattern was not sent to the printer.')
+  }
+
+  function sheetPrinterLabel(): string {
+    if (!sheetPrinterName) return 'the system default printer'
+    const printer = printers.find((p) => p.name === sheetPrinterName)
+    return printer?.displayName || sheetPrinterName
   }
 
   const displaySlots = buildDisplaySlots()
@@ -824,14 +848,27 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
               <button className="btn-icon" aria-label="Close print review" onClick={() => setReviewOpen(false)}><X size={15} /></button>
             </div>
             <div className="print-preflight" style={{ marginTop: 18 }}>
-              <div className="preflight-item"><strong>Output target</strong><span>{reviewAction === 'print' ? 'macOS system print dialog' : 'Reviewed PDF file'}</span></div>
-              <div className="preflight-item"><strong>Scale</strong><span>Choose 100% / Actual Size; never Fit to Page</span></div>
-              <div className="preflight-item"><strong>Completion</strong><span>{reviewAction === 'print' ? 'The app can confirm the dialog opened, not that paper printed.' : 'The app confirms when the PDF file is created.'}</span></div>
+              <div className="preflight-item"><strong>Output target</strong><span>{reviewAction === 'print' ? sheetPrinterLabel() : 'Reviewed PDF file'}</span></div>
+              <div className="preflight-item"><strong>Scale</strong><span>{reviewAction === 'print' ? 'Printed at 100% / Actual Size automatically' : 'Choose 100% / Actual Size when printing; never Fit to Page'}</span></div>
+              <div className="preflight-item"><strong>Completion</strong><span>{reviewAction === 'print' ? 'The app confirms the job reached the printer queue, not that paper printed.' : 'The app confirms when the PDF file is created.'}</span></div>
               <div className="preflight-item"><strong>Calibration source</strong><span className={calibrationSource === 'cached' ? 'fit-status tight' : ''}>{calibrationSource === 'cached' ? `Cached from ${cachedCalibration ? new Date(cachedCalibration.savedAt).toLocaleString() : 'last successful load'}` : 'Current saved settings'}</span></div>
             </div>
+            {reviewAction === 'print' && (
+              <div style={{ marginTop: 14 }}>
+                <label className="label-text" htmlFor="sheet-printer">Printer</label>
+                <select id="sheet-printer" className="input" value={sheetPrinterName} onChange={(e) => setSheetPrinterName(e.target.value)}>
+                  <option value="">System default printer</option>
+                  {printers.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.displayName || p.name}{p.isDefault ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
               <button className="btn-outline" onClick={() => { setReviewOpen(false); setCalibrationOpen(true) }}>Adjust calibration</button>
-              {reviewAction === 'print' ? <><button className="btn-ghost" onClick={() => setReviewAction('export')}><FileText size={13} /> Switch to PDF</button><button data-primary-review-action="true" className="btn-green" onClick={() => handlePrintDirect('final')} disabled={printing || clippedSheetIssues.length > 0}><Printer size={13} /> {printing ? 'Opening…' : clippedSheetIssues.length ? 'Resolve clipped text' : 'Open Print Dialog'}</button></> : <><button className="btn-ghost" onClick={() => setReviewAction('print')}><Printer size={13} /> Switch to Print</button><button data-primary-review-action="true" className="btn-primary" onClick={handleExport} disabled={exporting || clippedSheetIssues.length > 0}><FileText size={13} /> {exporting ? 'Exporting…' : clippedSheetIssues.length ? 'Resolve clipped text' : 'Export reviewed PDF'}</button></>}
+              {reviewAction === 'print' ? <><button className="btn-ghost" onClick={() => setReviewAction('export')}><FileText size={13} /> Switch to PDF</button><button data-primary-review-action="true" className="btn-green" onClick={() => handlePrintDirect('final')} disabled={printing || clippedSheetIssues.length > 0}><Printer size={13} /> {printing ? 'Printing…' : clippedSheetIssues.length ? 'Resolve clipped text' : 'Print Sheet'}</button></> : <><button className="btn-ghost" onClick={() => setReviewAction('print')}><Printer size={13} /> Switch to Print</button><button data-primary-review-action="true" className="btn-primary" onClick={handleExport} disabled={exporting || clippedSheetIssues.length > 0}><FileText size={13} /> {exporting ? 'Exporting…' : clippedSheetIssues.length ? 'Resolve clipped text' : 'Export reviewed PDF'}</button></>}
             </div>
             {sheetFitIssues.length > 0 && (
               <div className={clippedSheetIssues.length ? 'content-fit-callout clipped' : 'content-fit-callout tight'} role={clippedSheetIssues.length ? 'alert' : 'status'} style={{ marginTop: 14 }}>

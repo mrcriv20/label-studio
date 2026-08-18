@@ -62,6 +62,7 @@ function loadSettings(): void {
     titleFontId: 'bundled:lora',
     priceFontId: 'bundled:genty',
     bodyFontId: 'bundled:avenir',
+    sheetPrinterName: '',
     rollPrinterName: '',
     rollLabelWidthIn: '4',
     rollLabelHeightIn: '2.5',

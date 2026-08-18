@@ -115,9 +115,10 @@ const api = {
 
   // Print
   print: {
-    sheet: (slots: Array<Product | null>): Promise<IpcResult<boolean>> =>
-      ipcRenderer.invoke('print:sheet', slots),
-    calibrationSheet: (): Promise<IpcResult<boolean>> => ipcRenderer.invoke('print:calibrationSheet'),
+    sheet: (slots: Array<Product | null>, opts?: { printerName?: string }): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('print:sheet', slots, opts),
+    calibrationSheet: (opts?: { printerName?: string }): Promise<IpcResult<boolean>> =>
+      ipcRenderer.invoke('print:calibrationSheet', opts),
     listPrinters: (): Promise<IpcResult<Array<{ name: string; displayName: string; isDefault: boolean }>>> =>
       ipcRenderer.invoke('print:listPrinters'),
     rollLabel: (

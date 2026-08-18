@@ -79,6 +79,7 @@ export interface AppSettings {
   titleFontId: string
   priceFontId: string
   bodyFontId: string
+  sheetPrinterName: string
   rollPrinterName: string
   rollLabelWidthIn: string
   rollLabelHeightIn: string
@@ -174,8 +175,8 @@ declare global {
         }>>>
       }
       print: {
-        sheet(slots: Array<Product | null>): Promise<IpcResult<boolean>>
-        calibrationSheet(): Promise<IpcResult<boolean>>
+        sheet(slots: Array<Product | null>, opts?: { printerName?: string }): Promise<IpcResult<boolean>>
+        calibrationSheet(opts?: { printerName?: string }): Promise<IpcResult<boolean>>
         listPrinters(): Promise<IpcResult<PrinterInfo[]>>
         rollLabel(
           product: Product,

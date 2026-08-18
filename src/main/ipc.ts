@@ -1,7 +1,7 @@
 import { app, ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
-import { pathToFileURL } from 'url'
+import { execFile } from 'child_process'
 import { nanoid } from 'nanoid'
 import * as XLSX from 'xlsx'
 import type { Product } from './types'
@@ -544,29 +544,29 @@ export function registerIpcHandlers(): void {
     }
   )
 
-  ipcMain.handle('print:sheet', async (_e, slots: Array<Product | null>) => {
+  ipcMain.handle('print:sheet', async (_e, slots: Array<Product | null>, opts?: { printerName?: string }) => {
     const tempPath = join(app.getPath('temp'), `label-sheet-print-${Date.now()}-${nanoid(8)}.pdf`)
     try {
       const eligibilityError = await renderedEligibilityError(slots.flatMap((product, index) => product ? [{ product, slot: index + 1 }] : []), 'Sheet printing')
       if (eligibilityError) return fail(eligibilityError)
       const pdfBytes = await buildSheetPDF(slots)
       writeFileSync(tempPath, pdfBytes)
-      const printed = await printPdfWithDialog(tempPath)
+      const printed = await printSheetPdf(tempPath, opts?.printerName)
       return ok(printed)
     } catch (e) {
-      return fail(String(e))
+      return fail(e instanceof Error ? e.message : String(e))
     } finally {
       scheduleTempFileCleanup(tempPath)
     }
   })
 
-  ipcMain.handle('print:calibrationSheet', async () => {
+  ipcMain.handle('print:calibrationSheet', async (_e, opts?: { printerName?: string }) => {
     const tempPath = join(app.getPath('temp'), `label-calibration-${Date.now()}-${nanoid(8)}.pdf`)
     try {
       writeFileSync(tempPath, await buildCalibrationSheetPDF())
-      return ok(await printPdfWithDialog(tempPath))
+      return ok(await printSheetPdf(tempPath, opts?.printerName))
     } catch (e) {
-      return fail(String(e))
+      return fail(e instanceof Error ? e.message : String(e))
     } finally {
       scheduleTempFileCleanup(tempPath)
     }
@@ -611,7 +611,7 @@ export function registerIpcHandlers(): void {
         const printed = await printPdfToRoll(tempPath, opts)
         return ok(printed)
       } catch (e) {
-        return fail(String(e))
+        return fail(e instanceof Error ? e.message : String(e))
       } finally {
         scheduleTempFileCleanup(tempPath)
       }
@@ -664,142 +664,50 @@ export function generateBarcode(): string {
   return String(num)
 }
 
+// Sends a PDF straight to CUPS via `lp`, which prints PDFs natively at 100%
+// scale. Rendering the PDF in a BrowserWindow and calling webContents.print()
+// captures Chromium's PDF-viewer page (toolbar, fit-to-window zoom) instead of
+// the document itself, producing blank or mis-scaled sheets.
+async function printPdfNative(
+  pdfPath: string,
+  opts: { printerName?: string; copies?: number; media: string }
+): Promise<boolean> {
+  const args: string[] = []
+  if (opts.printerName) args.push('-d', opts.printerName)
+  const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1)
+  if (copies > 1) args.push('-n', String(copies))
+  args.push('-o', `media=${opts.media}`, '-o', 'print-scaling=none', pdfPath)
+  await new Promise<void>((resolve, reject) => {
+    execFile('lp', args, (error, _stdout, stderr) => {
+      if (error) {
+        const detail = (stderr || error.message).trim()
+        reject(new Error(
+          /no default destination/i.test(detail)
+            ? 'No default printer is set. Pick a printer in the print options.'
+            : `Printing failed: ${detail}`
+        ))
+      } else {
+        resolve()
+      }
+    })
+  })
+  return true
+}
+
 async function printPdfToRoll(
   pdfPath: string,
   opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
 ): Promise<boolean> {
-  const silent = Boolean(opts.printerName)
-  return new Promise((resolve, reject) => {
-    const printWin = new BrowserWindow({
-      width: 700,
-      height: 500,
-      show: !silent,
-      autoHideMenuBar: true,
-      webPreferences: { sandbox: false },
-    })
-
-    let settled = false
-    const finish = (result: boolean): void => {
-      if (settled) return
-      settled = true
-      if (!printWin.isDestroyed()) printWin.close()
-      resolve(result)
-    }
-
-    printWin.webContents.once('did-finish-load', () => {
-      setTimeout(() => {
-        if (settled || printWin.isDestroyed()) return
-        const options: Electron.WebContentsPrintOptions = {
-          silent,
-          deviceName: opts.printerName || undefined,
-          printBackground: true,
-          // Exact roll media size, in microns.
-          pageSize: {
-            width: Math.round(opts.widthIn * 25400),
-            height: Math.round(opts.heightIn * 25400),
-          },
-          landscape: false,
-          margins: { marginType: 'none' },
-          copies: Math.max(1, Math.floor(opts.copies) || 1),
-        }
-        printWin.webContents.print(options, (success, failureReason) => {
-          if (!success && failureReason && failureReason !== 'cancelled') {
-            if (!settled) {
-              settled = true
-              if (!printWin.isDestroyed()) printWin.close()
-              reject(new Error(`Print failed: ${failureReason}`))
-            }
-            return
-          }
-          finish(success)
-        })
-      }, 400)
-    })
-
-    printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
-      if (!settled) {
-        settled = true
-        if (!printWin.isDestroyed()) printWin.destroy()
-        reject(new Error(`Failed to load printable PDF: ${desc}`))
-      }
-    })
-
-    printWin.loadURL(pathToFileURL(pdfPath).toString()).catch((err) => {
-      if (!settled) {
-        settled = true
-        if (!printWin.isDestroyed()) printWin.destroy()
-        reject(err)
-      }
-    })
+  return printPdfNative(pdfPath, {
+    printerName: opts.printerName || undefined,
+    copies: opts.copies,
+    // Exact roll media size, in inches.
+    media: `Custom.${opts.widthIn}x${opts.heightIn}in`,
   })
 }
 
-async function printPdfWithDialog(pdfPath: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    const printWin = new BrowserWindow({
-      width: 900,
-      height: 700,
-      show: true,
-      autoHideMenuBar: true,
-      webPreferences: { sandbox: false },
-    })
-
-    let settled = false
-    const timeout = setTimeout(() => {
-      if (settled) return
-      settled = true
-      if (!printWin.isDestroyed()) printWin.destroy()
-      reject(new Error('Print setup timed out. Please try again.'))
-    }, 120_000)
-    const finish = (result: boolean): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      if (!printWin.isDestroyed()) printWin.close()
-      resolve(result)
-    }
-
-    printWin.once('closed', () => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      resolve(false)
-    })
-
-    printWin.webContents.once('did-finish-load', () => {
-      // Give Chromium's built-in PDF viewer time to fully initialise.
-      setTimeout(() => {
-        if (settled || printWin.isDestroyed()) return
-        const options: Electron.WebContentsPrintOptions = {
-          silent: false,
-          printBackground: true,
-          pageSize: 'Letter',
-          landscape: false,
-          margins: { marginType: 'none' },
-        }
-
-        printWin.webContents.print(options, (success) => finish(success))
-      }, 400)
-    })
-
-    printWin.webContents.once('did-fail-load', (_event, _code, desc) => {
-      if (!settled) {
-        settled = true
-        clearTimeout(timeout)
-        if (!printWin.isDestroyed()) printWin.destroy()
-        reject(new Error(`Failed to load printable PDF: ${desc}`))
-      }
-    })
-
-    printWin.loadURL(pathToFileURL(pdfPath).toString()).catch((err) => {
-      if (!settled) {
-        settled = true
-        clearTimeout(timeout)
-        if (!printWin.isDestroyed()) printWin.destroy()
-        reject(err)
-      }
-    })
-  })
+async function printSheetPdf(pdfPath: string, printerName?: string): Promise<boolean> {
+  return printPdfNative(pdfPath, { printerName: printerName || undefined, media: 'Letter' })
 }
 
 function scheduleTempFileCleanup(filePath: string): void {

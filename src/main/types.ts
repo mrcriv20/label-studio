@@ -40,7 +40,8 @@ export interface AppSettings {
   titleFontId: string
   priceFontId: string
   bodyFontId: string
-  rollPrinterName: string // '' = ask via system print dialog
+  sheetPrinterName: string // '' = system default printer
+  rollPrinterName: string // '' = system default printer
   rollLabelWidthIn: string // roll media width, inches
   rollLabelHeightIn: string // roll media height, inches
 }

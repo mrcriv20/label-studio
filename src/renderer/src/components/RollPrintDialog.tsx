@@ -120,7 +120,7 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
           <div>
             <label className="label-text" htmlFor="roll-printer">Printer</label>
             <select ref={printerSelectRef} id="roll-printer" className="input" value={printerName} onChange={(e) => setPrinterName(e.target.value)}>
-              <option value="">Ask each time (system print dialog)</option>
+              <option value="">System default printer</option>
               {printers.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.displayName || p.name}{p.isDefault ? ' (default)' : ''}
@@ -128,7 +128,7 @@ export default function RollPrintDialog({ product, onClose }: Props): JSX.Elemen
               ))}
             </select>
             <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 5 }}>
-              Pick your roll printer (e.g. UniNet iColor) to print directly with no dialog.
+              Pick your roll printer (e.g. UniNet iColor). Labels print directly at 100% scale.
             </p>
           </div>
 
