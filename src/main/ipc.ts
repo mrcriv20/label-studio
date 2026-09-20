@@ -142,6 +142,7 @@ export function registerIpcHandlers(): void {
         barcodeValue: generateBarcode(),
         barcodeImagePath: null,
         tillieProductId: null,
+        tillieSyncedName: null,
         createdAt: now,
         updatedAt: now,
       }

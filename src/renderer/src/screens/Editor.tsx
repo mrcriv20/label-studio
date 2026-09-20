@@ -809,8 +809,8 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
               </p>
               {product.tillieProductId && (
                 <p style={{ fontSize: 11, color: '#b45309', marginTop: 5 }}>
-                  This label is linked to Tillie — name, price, and category are overwritten by the
-                  register on each sync. Change the price in Tillie to keep them in step.
+                  This label is linked to Tillie — price and category are overwritten by the
+                  register on each sync, so change them in Tillie. A new name here is sent to Tillie on the next sync.
                 </p>
               )}
             </div>

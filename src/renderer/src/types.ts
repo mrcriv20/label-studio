@@ -24,6 +24,7 @@ export interface Product {
   showProductName?: boolean // absent = shown; toggleable only on custom artwork templates
   designImageOverrides?: Record<string, string> | null // design image element id → per-label image path
   tillieProductId: string | null
+  tillieSyncedName?: string | null // name as of the last Tillie sync; a differing local name is a rename to push
   createdAt: string
   updatedAt: string
 }

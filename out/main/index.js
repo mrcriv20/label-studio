@@ -150,6 +150,7 @@ function normalizeProduct(product) {
     showProductName: product.showProductName ?? true,
     designImageOverrides: product.designImageOverrides && Object.keys(product.designImageOverrides).length ? product.designImageOverrides : null,
     tillieProductId: product.tillieProductId ?? null,
+    tillieSyncedName: product.tillieProductId ? product.tillieSyncedName ?? null : null,
     createdAt: product.createdAt ?? now,
     updatedAt: product.updatedAt ?? now
   };
@@ -2539,6 +2540,20 @@ async function createTillieProduct(doc) {
   );
   return created.id;
 }
+async function renameTillieProduct(id, name) {
+  if (usesDb()) {
+    const db = await tillieDb();
+    const filter = mongodb.ObjectId.isValid(id) ? { _id: new mongodb.ObjectId(id) } : { id };
+    await db.collection("products").updateOne(filter, { $set: { name, lastModified: /* @__PURE__ */ new Date() } });
+    return;
+  }
+  const cfg = loadConfig();
+  await fetchTillie(
+    `/api/products?id=${encodeURIComponent(id)}`,
+    { method: "PUT", body: JSON.stringify({ name, lastModified: (/* @__PURE__ */ new Date()).toISOString() }) },
+    Boolean(cfg.token)
+  );
+}
 function formatPrice(price) {
   const prefix = getSettings().pricePrefix;
   return `${prefix}${price.toFixed(2)}`;
@@ -2638,20 +2653,26 @@ async function tillieSync() {
     const local = scope.linkedByTillieId.get(p.id) ?? (barcode ? scope.localByBarcode.get(barcode) : void 0);
     if (local) {
       const needsLink = local.tillieProductId !== p.id;
-      const changed = needsLink || local.name !== p.name || local.price !== price || local.category !== catName;
-      if (!changed) {
+      const renamedLocally = !needsLink && Boolean(local.name.trim()) && local.tillieSyncedName != null && local.name !== local.tillieSyncedName && p.name === local.tillieSyncedName;
+      if (renamedLocally) await renameTillieProduct(p.id, local.name);
+      const name = renamedLocally ? local.name : p.name;
+      const changed = needsLink || local.name !== name || local.price !== price || local.category !== catName;
+      if (!changed && local.tillieSyncedName === name) {
         summary.unchanged++;
         continue;
       }
       updateProduct({
         ...local,
-        name: p.name,
+        name,
         price,
         category: catName,
         tillieProductId: p.id,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        tillieSyncedName: name,
+        updatedAt: changed || renamedLocally ? (/* @__PURE__ */ new Date()).toISOString() : local.updatedAt
       });
-      summary.updated++;
+      if (renamedLocally) summary.pushed++;
+      else if (changed) summary.updated++;
+      else summary.unchanged++;
     } else {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       createProduct({
@@ -2674,6 +2695,7 @@ async function tillieSync() {
         showBarcode: true,
         showCookingInstructions: true,
         tillieProductId: p.id,
+        tillieSyncedName: p.name,
         createdAt: now,
         updatedAt: now
       });
@@ -2698,6 +2720,7 @@ async function tillieSync() {
         price: formatPrice(Number(existing.price) || 0),
         category: categoryName(existing, scope),
         tillieProductId: existing.id,
+        tillieSyncedName: existing.name,
         updatedAt: (/* @__PURE__ */ new Date()).toISOString()
       });
       summary.updated++;
@@ -2722,7 +2745,7 @@ async function tillieSync() {
       allowAddWhenOutOfStock: true,
       lastModified: (/* @__PURE__ */ new Date()).toISOString()
     });
-    updateProduct({ ...local, tillieProductId: createdId, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    updateProduct({ ...local, tillieProductId: createdId, tillieSyncedName: local.name, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
     summary.pushed++;
   }
   cfg.lastSyncAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -2808,6 +2831,7 @@ function registerIpcHandlers() {
         barcodeValue: generateBarcode(),
         barcodeImagePath: null,
         tillieProductId: null,
+        tillieSyncedName: null,
         createdAt: now,
         updatedAt: now
       };

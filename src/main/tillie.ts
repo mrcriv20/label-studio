@@ -10,7 +10,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { nanoid } from 'nanoid'
-import { MongoClient } from 'mongodb'
+import { MongoClient, ObjectId } from 'mongodb'
 import type {
   Product,
   TillieCategory,
@@ -310,6 +310,23 @@ async function createTillieProduct(doc: Record<string, unknown>): Promise<string
   return created.id
 }
 
+/** Rename a product in Tillie (a linked label was renamed here). */
+async function renameTillieProduct(id: string, name: string): Promise<void> {
+  if (usesDb()) {
+    const db = await tillieDb()
+    // Mirror of Tillie's buildIdFilter: ObjectId when valid, else the app-side id.
+    const filter = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { id }
+    await db.collection('products').updateOne(filter, { $set: { name, lastModified: new Date() } })
+    return
+  }
+  const cfg = loadConfig()
+  await fetchTillie<unknown>(
+    `/api/products?id=${encodeURIComponent(id)}`,
+    { method: 'PUT', body: JSON.stringify({ name, lastModified: new Date().toISOString() }) },
+    Boolean(cfg.token)
+  )
+}
+
 // ── Scope + sync ─────────────────────────────────────────────────────────────
 
 function formatPrice(price: number): string {
@@ -457,24 +474,39 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
 
     if (local) {
       const needsLink = local.tillieProductId !== p.id
+      // A linked label renamed here since the last sync, while Tillie's name
+      // stayed put, is a local rename: push it up instead of reverting it.
+      // If both sides changed, Tillie wins.
+      const renamedLocally =
+        !needsLink &&
+        Boolean(local.name.trim()) &&
+        local.tillieSyncedName != null &&
+        local.name !== local.tillieSyncedName &&
+        p.name === local.tillieSyncedName
+      if (renamedLocally) await renameTillieProduct(p.id, local.name)
+      const name = renamedLocally ? local.name : p.name
       const changed =
         needsLink ||
-        local.name !== p.name ||
+        local.name !== name ||
         local.price !== price ||
         local.category !== catName
-      if (!changed) {
+      // Recording the synced-name baseline alone doesn't count as an update.
+      if (!changed && local.tillieSyncedName === name) {
         summary.unchanged++
         continue
       }
       updateProduct({
         ...local,
-        name: p.name,
+        name,
         price,
         category: catName,
         tillieProductId: p.id,
-        updatedAt: new Date().toISOString(),
+        tillieSyncedName: name,
+        updatedAt: changed || renamedLocally ? new Date().toISOString() : local.updatedAt,
       })
-      summary.updated++
+      if (renamedLocally) summary.pushed++
+      else if (changed) summary.updated++
+      else summary.unchanged++
     } else {
       const now = new Date().toISOString()
       createProduct({
@@ -498,6 +530,7 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
         showBarcode: true,
         showCookingInstructions: true,
         tillieProductId: p.id,
+        tillieSyncedName: p.name,
         createdAt: now,
         updatedAt: now,
       })
@@ -528,6 +561,7 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
         price: formatPrice(Number(existing.price) || 0),
         category: categoryName(existing, scope),
         tillieProductId: existing.id,
+        tillieSyncedName: existing.name,
         updatedAt: new Date().toISOString(),
       })
       summary.updated++
@@ -556,7 +590,7 @@ export async function tillieSync(): Promise<TillieSyncSummary> {
       allowAddWhenOutOfStock: true,
       lastModified: new Date().toISOString(),
     })
-    updateProduct({ ...local, tillieProductId: createdId, updatedAt: new Date().toISOString() })
+    updateProduct({ ...local, tillieProductId: createdId, tillieSyncedName: local.name, updatedAt: new Date().toISOString() })
     summary.pushed++
   }
 

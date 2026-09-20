@@ -159,6 +159,7 @@ function normalizeProduct(product: Product): Product {
         ? product.designImageOverrides
         : null,
     tillieProductId: product.tillieProductId ?? null,
+    tillieSyncedName: product.tillieProductId ? product.tillieSyncedName ?? null : null,
     createdAt: product.createdAt ?? now,
     updatedAt: product.updatedAt ?? now,
   }

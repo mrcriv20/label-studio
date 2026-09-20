@@ -22,7 +22,8 @@ export interface Product {
   showCookingInstructions: boolean
   showProductName?: boolean // absent = shown; toggleable only on custom artwork templates
   designImageOverrides?: Record<string, string> | null // design image element id → per-label image path
-  tillieProductId: string | null // linked Tillie POS product; Tillie owns name/price/category when set
+  tillieProductId: string | null // linked Tillie POS product; Tillie owns price/category when set (renames sync both ways)
+  tillieSyncedName?: string | null // name as of the last Tillie sync; a differing local name is a rename to push
   createdAt: string
   updatedAt: string
 }
