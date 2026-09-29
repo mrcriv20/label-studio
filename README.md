@@ -21,6 +21,20 @@ node scripts/seed.js
 
 ## Development Commands
 
+### Windows database DNS troubleshooting
+
+If direct Tillie database sync fails with `querySrv ECONNREFUSED`, Electron
+may be using loopback DNS instead of the network's DNS server. Close the app
+and set `mongoDnsServers` in `%APPDATA%\Tillie Print\tillie.json` to the DNS
+server IP configured for this machine (comma-separated for multiple servers).
+For example, use `"mongoDnsServers": "192.168.1.1"` only when that is your
+network's DNS server. `TILLIE_DNS_SERVERS` in the launch environment overrides
+this setting. Remove or update the override when changing networks.
+
+The `mongoDb` setting must match Tillie's `MONGODB_DB`; the default `pos` is
+not correct for every deployment. These settings apply in dev and packaged
+builds and do not change Windows network settings.
+
 | Command | Description |
 |---|---|
 | `npm run dev` | Start Electron app in hot-reload dev mode |

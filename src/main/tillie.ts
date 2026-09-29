@@ -11,6 +11,7 @@ import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { nanoid } from 'nanoid'
 import { MongoClient, ObjectId } from 'mongodb'
+import { configureDatabaseDns } from './dns'
 import type {
   Product,
   TillieCategory,
@@ -33,6 +34,7 @@ const DEFAULTS: StoredConfig = {
   baseUrl: 'http://127.0.0.1:3000',
   mongoUri: '',
   mongoDb: 'pos',
+  mongoDnsServers: '',
   subscribedCategories: [],
   includedProductIds: [],
   excludedProductIds: [],
@@ -83,6 +85,7 @@ export function setTillieConfig(patch: Partial<TillieConfig>): TillieConfig {
     'baseUrl',
     'mongoUri',
     'mongoDb',
+    'mongoDnsServers',
     'subscribedCategories',
     'includedProductIds',
     'excludedProductIds',
@@ -173,18 +176,25 @@ function usesDb(): boolean {
 
 async function tillieDb() {
   const cfg = loadConfig()
-  const key = `${cfg.mongoUri}|${cfg.mongoDb}`
+  const dnsServers = process.env.TILLIE_DNS_SERVERS || cfg.mongoDnsServers
+  const key = JSON.stringify([cfg.mongoUri, cfg.mongoDb, dnsServers])
   if (_mongo && _mongoKey !== key) {
     await _mongo.close().catch(() => {})
     _mongo = null
   }
   if (!_mongo) {
+    configureDatabaseDns(dnsServers)
+    let client: MongoClient | null = null
     try {
-      const client = new MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8000 })
+      client = new MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8000 })
       await client.connect()
       _mongo = client
       _mongoKey = key
-    } catch {
+    } catch (error) {
+      await client?.close().catch(() => {})
+      if (error instanceof Error && /querySrv|queryTxt/.test(error.message)) {
+        throw new Error("Couldn't resolve Tillie's database address. Check this computer's DNS settings or configure mongoDnsServers in Tillie Print's tillie.json.")
+      }
       throw new Error(
         "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
       )

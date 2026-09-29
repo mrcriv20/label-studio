@@ -30,6 +30,7 @@ import {
   toInches,
 } from '../shared/sheetLayout'
 import { isDesignTemplateId } from '../shared/design/types'
+import { designSheetPlacement } from '../shared/design/sheetPlacement'
 import { getDesign } from './designs'
 import { assessDesignFit, drawDesignLabel, designToSVG } from './designExport'
 import type { ContentFitIssue } from '../shared/contentFit'
@@ -880,7 +881,15 @@ export async function buildSheetPDF(slots: Array<Product | null>): Promise<Uint8
 
     // Landscape labels (info layout, landscape custom artwork) fill the slot
     // directly; portrait labels are rotated into it.
-    if (embeddedLabel.width >= embeddedLabel.height) {
+    if (isDesignTemplateId(product.templateId)) {
+      const placement = designSheetPlacement(embeddedLabel.width, embeddedLabel.height, sheetLayout.slotW, sheetLayout.slotH)
+      sheetPage.drawPage(embeddedLabel, {
+        x: slotX + placement.x,
+        y: slotY + placement.y,
+        width: placement.width,
+        height: placement.height,
+      })
+    } else if (embeddedLabel.width >= embeddedLabel.height) {
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,

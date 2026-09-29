@@ -3,6 +3,8 @@ import { ArrowLeft, FileText, Printer, RotateCcw, CheckCircle2, AlertCircle, X }
 import LabelPreview from '../components/LabelPreview'
 import type { AppSettings, PrinterInfo, Product } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
+import { isDesignTemplateId } from '../../../shared/design/types'
+import { designSheetPlacement } from '../../../shared/design/sheetPlacement'
 import {
   getSlotBoundsIn,
   PLS_780,
@@ -893,8 +895,21 @@ function SheetSlotPreview({
   isActive: boolean
   onClick: () => void
 }): JSX.Element {
-  // Slot is 4"x2.5" (aspect 1.6). Scale portrait label so that after -90deg
-  // rotation it fills the slot width and keeps full content visible.
+  const designId = product?.templateId && isDesignTemplateId(product.templateId) ? product.templateId : null
+  const [canvas, setCanvas] = useState<{ width: number; height: number } | null>(null)
+  useEffect(() => {
+    let alive = true
+    setCanvas(null)
+    if (designId) {
+      window.api.design.get(designId).then(result => {
+        if (alive && result.ok) setCanvas(result.data.canvas)
+      })
+    }
+    return () => { alive = false }
+  }, [designId, product?.updatedAt])
+
+  // Built-in stock templates retain their existing fit; authored designs use
+  // the same point-based placement as the printed PDF.
   const bounds = getSlotBoundsIn(index + 1, offsetXIn, offsetYIn)
   const pageWidth = PLS_780.pageWidthIn
   const pageHeight = PLS_780.pageHeightIn
@@ -905,6 +920,9 @@ function SheetSlotPreview({
   const SLOT_ASPECT = bounds.widthIn / bounds.heightIn
   const template = product ? getLabelTemplate(product.templateId) : null
   const isInfoLayout = template?.layout === 'info'
+  const placement = designId && canvas
+    ? designSheetPlacement(canvas.width, canvas.height, bounds.widthIn * 72, bounds.heightIn * 72)
+    : null
 
   return (
     <button
@@ -938,10 +956,11 @@ function SheetSlotPreview({
         >
           <div
             style={{
-              width: isInfoLayout ? '100%' : 'auto',
-              height: isInfoLayout ? 'auto' : `${SLOT_ASPECT * 100}%`,
-              aspectRatio: isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : '181 / 289',
-              transform: isInfoLayout ? 'none' : 'rotate(-90deg)',
+              width: placement ? `${placement.width / (bounds.widthIn * 72) * 100}%` : isInfoLayout ? '100%' : 'auto',
+              height: placement ? `${placement.height / (bounds.heightIn * 72) * 100}%` : isInfoLayout ? 'auto' : `${SLOT_ASPECT * 100}%`,
+              aspectRatio: canvas && designId ? `${canvas.width} / ${canvas.height}` : isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : '181 / 289',
+              transform: designId || isInfoLayout ? 'none' : 'rotate(-90deg)',
+              visibility: designId && !placement ? 'hidden' : 'visible',
               transformOrigin: 'center',
               flexShrink: 0,
             }}

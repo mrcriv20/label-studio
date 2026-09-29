@@ -1,7 +1,7 @@
-import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, r as getLabelTemplate, t as jsxRuntimeExports, b as CircleCheck, C as CircleAlert, e as Layers, E as Ellipsis, F as FileText, i as Sticker, g as RollPrintDialog, U as Upload, X, R as RefreshCw, u as outputEligibilityError, n as confirmUsingSavedTillieData } from "./index-BxS2c6tc.js";
-import { J as JsBarcode, A as ArrowLeft, L as LabelPreview } from "./LabelPreview-CQjzg-BK.js";
-import { S as Save } from "./save-B1zdch4d.js";
-import "./DesignLabelSvg-zfcFaBcf.js";
+import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, r as getLabelTemplate, t as jsxRuntimeExports, b as CircleCheck, C as CircleAlert, e as Layers, E as Ellipsis, F as FileText, i as Sticker, g as RollPrintDialog, U as Upload, X, R as RefreshCw, u as outputEligibilityError, n as confirmUsingSavedTillieData } from "./index-BwX6qHRB.js";
+import { J as JsBarcode, A as ArrowLeft, L as LabelPreview } from "./LabelPreview-B3r3ZxCP.js";
+import { S as Save } from "./save-Y6LhUU2b.js";
+import "./DesignLabelSvg-DBLls6hC.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -761,7 +761,7 @@ function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyCh
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "var(--color-text-muted)", marginTop: 5 }, children: "Include symbol and unit — e.g. $9.99/lb or $4.50 each" }),
-          product.tillieProductId && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#b45309", marginTop: 5 }, children: "This label is linked to Tillie — name, price, and category are overwritten by the register on each sync. Change the price in Tillie to keep them in step." })
+          product.tillieProductId && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#b45309", marginTop: 5 }, children: "This label is linked to Tillie — price and category are overwritten by the register on each sync, so change them in Tillie. A new name here is sent to Tillie on the next sync." })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: "product-category", children: "Category" }),

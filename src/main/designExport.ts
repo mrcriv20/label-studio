@@ -7,6 +7,7 @@ import {
   rgb,
   pushGraphicsState,
   popGraphicsState,
+  concatTransformationMatrix,
   moveTo,
   lineTo,
   closePath,
@@ -111,6 +112,12 @@ export async function drawDesignLabel(
   })
 
   for (const primitive of resolved.primitives) {
+    if (primitive.rotation) {
+      const { degrees, cx, cy } = primitive.rotation
+      const angle = -degrees * Math.PI / 180
+      const cos = Math.cos(angle), sin = Math.sin(angle), py = H - cy
+      page.pushOperators(pushGraphicsState(), concatTransformationMatrix(cos, sin, -sin, cos, cx - cos * cx + sin * py, py - sin * cx - cos * py))
+    }
     switch (primitive.kind) {
       case 'rect': {
         if (!primitive.fill && !primitive.stroke) break
@@ -194,6 +201,7 @@ export async function drawDesignLabel(
         break
       }
     }
+    if (primitive.rotation) page.pushOperators(popGraphicsState())
   }
 }
 

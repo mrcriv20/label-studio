@@ -1,7 +1,7 @@
-import { o as createLucideIcon, v as reactExports, t as jsxRuntimeExports, P as Plus, E as Ellipsis, U as Upload, k as Trash2, b as CircleCheck, X, a as ArrowUp, A as ArrowDown, c as Copy } from "./index-BxS2c6tc.js";
-import { c as useTextMeasurer, b as useDesignImages, u as useBarcodeRenderer, p as paintDesignSVG, D as DESIGN_ID_PREFIX, B as BINDABLE_FIELDS, T as TEXT_CASE_OPTIONS } from "./DesignLabelSvg-zfcFaBcf.js";
-import { D as Download } from "./download-BDFyg3H4.js";
-import { S as Save } from "./save-B1zdch4d.js";
+import { o as createLucideIcon, v as reactExports, t as jsxRuntimeExports, P as Plus, E as Ellipsis, U as Upload, k as Trash2, b as CircleCheck, X, a as ArrowUp, A as ArrowDown, c as Copy } from "./index-BwX6qHRB.js";
+import { c as useTextMeasurer, b as useDesignImages, u as useBarcodeRenderer, p as paintDesignSVG, D as DESIGN_ID_PREFIX, B as BINDABLE_FIELDS, T as TEXT_CASE_OPTIONS } from "./DesignLabelSvg-DBLls6hC.js";
+import { D as Download } from "./download-BF4mTKe1.js";
+import { S as Save } from "./save-Y6LhUU2b.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -614,16 +614,20 @@ function Designer({ initialDesignId, onDirtyChange }) {
         patchElement(gesture.elementId, { x: round2(x), y: round2(y) });
       } else {
         const handle = gesture.handle;
+        const angle = (original.rotation ?? 0) * Math.PI / 180;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const localDx = cos * dx + sin * dy;
+        const localDy = -sin * dx + cos * dy;
         let { x, y, w, h } = original;
-        if (handle.includes("e")) w = original.w + dx;
-        if (handle.includes("s")) h = original.h + dy;
+        if (handle.includes("e")) w = original.w + localDx;
+        if (handle.includes("s")) h = original.h + localDy;
         if (handle.includes("w")) {
-          w = original.w - dx;
-          x = original.x + dx;
+          w = original.w - localDx;
+          x = original.x + localDx;
         }
         if (handle.includes("n")) {
-          h = original.h - dy;
-          y = original.y + dy;
+          h = original.h - localDy;
+          y = original.y + localDy;
         }
         if (w < MIN_ELEMENT_SIZE) {
           if (handle.includes("w")) x -= MIN_ELEMENT_SIZE - w;
@@ -633,6 +637,10 @@ function Designer({ initialDesignId, onDirtyChange }) {
           if (handle.includes("n")) y -= MIN_ELEMENT_SIZE - h;
           h = MIN_ELEMENT_SIZE;
         }
+        const shiftX = x + w / 2 - (original.x + original.w / 2);
+        const shiftY = y + h / 2 - (original.y + original.h / 2);
+        x = original.x + original.w / 2 + cos * shiftX - sin * shiftY - w / 2;
+        y = original.y + original.h / 2 + sin * shiftX + cos * shiftY - h / 2;
         patchElement(gesture.elementId, { x: round2(x), y: round2(y), w: round2(w), h: round2(h) });
       }
     };
@@ -1020,6 +1028,8 @@ function Designer({ initialDesignId, onDirtyChange }) {
                     top: element.y * zoom,
                     width: element.w * zoom,
                     height: element.h * zoom,
+                    transform: `rotate(${element.rotation ?? 0}deg)`,
+                    transformOrigin: "center",
                     cursor: element.locked ? "default" : "move",
                     outline: isSelected ? "1.5px solid #4f46e5" : "1px dashed rgba(100,116,139,0.0)",
                     outlineOffset: 0
@@ -1158,9 +1168,17 @@ function ElementInspector({
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-outline btn-sm", title: "Duplicate (⌘D)", onClick: onDuplicate, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Copy, { size: 12 }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-outline btn-sm", title: "Delete", onClick: onDelete, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { size: 12 }) })
     ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Rotation (° clockwise)", value: round2(element.rotation ?? 0), onChange: (rotation) => {
+      if (!element.locked) onChange({ rotation: (rotation % 360 + 360) % 360 });
+    } }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "designer-rotation-actions", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-outline btn-sm", disabled: element.locked, onClick: () => onChange({ rotation: ((element.rotation ?? 0) + 270) % 360 }), children: "Rotate left 90°" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-outline btn-sm", disabled: element.locked, onClick: () => onChange({ rotation: ((element.rotation ?? 0) + 90) % 360 }), children: "Rotate right 90°" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-ghost btn-sm", disabled: element.locked, onClick: () => onChange({ rotation: 0 }), children: "Reset" })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "editor-disclosure", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("summary", { children: "Advanced geometry" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "editor-disclosure-body", style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "editor-disclosure-body", style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "X (pt)", value: round2(element.x), onChange: (x) => onChange({ x }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Y (pt)", value: round2(element.y), onChange: (y) => onChange({ y }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "W (pt)", value: round2(element.w), min: MIN_ELEMENT_SIZE, onChange: (w) => onChange({ w }) }),
@@ -1170,7 +1188,7 @@ function ElementInspector({
     element.type === "box" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(ColorField, { label: "Fill", value: element.fill, allowNone: true, onChange: (fill) => onChange({ fill }) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(ColorField, { label: "Stroke", value: element.stroke, allowNone: true, onChange: (stroke) => onChange({ stroke }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Stroke width", value: element.strokeWidth, min: 0, step: 0.5, onChange: (strokeWidth) => onChange({ strokeWidth }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Corner radius", value: element.cornerRadius, min: 0, onChange: (cornerRadius) => onChange({ cornerRadius }) })
       ] })
@@ -1216,7 +1234,7 @@ function ElementInspector({
         /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: `element-font-${element.id}`, children: "Font" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("select", { id: `element-font-${element.id}`, className: "input", value: element.fontId, onChange: (e) => onChange({ fontId: e.target.value }), children: fonts.map((font) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: font.id, children: font.family }, font.id)) })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: element.autoFit ? "Max size (pt)" : "Size (pt)", value: element.size, min: 4, onChange: (size) => onChange({ size }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Line height", value: element.lineHeight, min: 0.5, max: 3, step: 0.05, onChange: (lineHeight) => onChange({ lineHeight }) })
       ] }),
@@ -1228,7 +1246,7 @@ function ElementInspector({
           onChange: (autoFit) => onChange({ autoFit })
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: `element-align-${element.id}`, children: "Align" }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { id: `element-align-${element.id}`, className: "input", value: element.align, onChange: (e) => onChange({ align: e.target.value }), children: [

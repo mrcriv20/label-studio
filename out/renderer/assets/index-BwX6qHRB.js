@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./Editor-k3gPeD61.js","./LabelPreview-CQjzg-BK.js","./DesignLabelSvg-zfcFaBcf.js","./save-B1zdch4d.js","./SheetBuilder-DdQQWupW.js","./Settings-cNjBDHzc.js","./download-BDFyg3H4.js","./Designer-AfhC6Uka.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./Editor-7QiBrHVb.js","./LabelPreview-B3r3ZxCP.js","./DesignLabelSvg-DBLls6hC.js","./save-Y6LhUU2b.js","./SheetBuilder-D6dsj-0W.js","./Settings-x92tLGKK.js","./download-BF4mTKe1.js","./Designer-BAPFkIM6.js"])))=>i.map(i=>d[i]);
 function getDefaultExportFromCjs(x2) {
   return x2 && x2.__esModule && Object.prototype.hasOwnProperty.call(x2, "default") ? x2["default"] : x2;
 }
@@ -8388,11 +8388,11 @@ function fontFamilyFor(id2) {
 function css(value) {
   return value.replace(/[^a-z0-9_-]/gi, "-");
 }
-const Editor = reactExports.lazy(() => __vitePreload(() => import("./Editor-k3gPeD61.js"), true ? __vite__mapDeps([0,1,2,3]) : void 0, import.meta.url));
-const SheetBuilder = reactExports.lazy(() => __vitePreload(() => import("./SheetBuilder-DdQQWupW.js"), true ? __vite__mapDeps([4,1,2]) : void 0, import.meta.url));
-const Settings = reactExports.lazy(() => __vitePreload(() => import("./Settings-cNjBDHzc.js"), true ? __vite__mapDeps([5,6,3]) : void 0, import.meta.url));
-const HowTo = reactExports.lazy(() => __vitePreload(() => import("./HowTo-CaaSWfl_.js"), true ? [] : void 0, import.meta.url));
-const Designer = reactExports.lazy(() => __vitePreload(() => import("./Designer-AfhC6Uka.js"), true ? __vite__mapDeps([7,2,6,3]) : void 0, import.meta.url));
+const Editor = reactExports.lazy(() => __vitePreload(() => import("./Editor-7QiBrHVb.js"), true ? __vite__mapDeps([0,1,2,3]) : void 0, import.meta.url));
+const SheetBuilder = reactExports.lazy(() => __vitePreload(() => import("./SheetBuilder-D6dsj-0W.js"), true ? __vite__mapDeps([4,1,2]) : void 0, import.meta.url));
+const Settings = reactExports.lazy(() => __vitePreload(() => import("./Settings-x92tLGKK.js"), true ? __vite__mapDeps([5,6,3]) : void 0, import.meta.url));
+const HowTo = reactExports.lazy(() => __vitePreload(() => import("./HowTo-rvuBfuCR.js"), true ? [] : void 0, import.meta.url));
+const Designer = reactExports.lazy(() => __vitePreload(() => import("./Designer-BAPFkIM6.js"), true ? __vite__mapDeps([7,2,6,3]) : void 0, import.meta.url));
 function App() {
   const [screen, setScreen] = reactExports.useState("library");
   const [editingProduct, setEditingProduct] = reactExports.useState(null);

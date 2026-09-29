@@ -26,6 +26,8 @@ export function paintSVG(resolved: ResolvedDesign, ctx: SvgPaintContext): string
   )
 
   for (const primitive of resolved.primitives) {
+    const rotation = primitive.rotation
+    if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`)
     switch (primitive.kind) {
       case 'rect': {
         if (!primitive.fill && !primitive.stroke) break
@@ -74,6 +76,7 @@ export function paintSVG(resolved: ResolvedDesign, ctx: SvgPaintContext): string
         break
       }
     }
+    if (rotation) parts.push('</g>')
   }
 
   return (

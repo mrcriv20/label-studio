@@ -1,6 +1,6 @@
-import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, t as jsxRuntimeExports, f as Printer, F as FileText, C as CircleAlert, b as CircleCheck, X, u as outputEligibilityError, n as confirmUsingSavedTillieData, r as getLabelTemplate } from "./index-BxS2c6tc.js";
-import { A as ArrowLeft, L as LabelPreview } from "./LabelPreview-CQjzg-BK.js";
-import "./DesignLabelSvg-zfcFaBcf.js";
+import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, t as jsxRuntimeExports, f as Printer, F as FileText, C as CircleAlert, b as CircleCheck, X, u as outputEligibilityError, n as confirmUsingSavedTillieData, r as getLabelTemplate } from "./index-BwX6qHRB.js";
+import { A as ArrowLeft, L as LabelPreview } from "./LabelPreview-B3r3ZxCP.js";
+import { i as isDesignTemplateId } from "./DesignLabelSvg-DBLls6hC.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -11,6 +11,12 @@ const RotateCcw = createLucideIcon("RotateCcw", [
   ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", key: "1357e3" }],
   ["path", { d: "M3 3v5h5", key: "1xhq8a" }]
 ]);
+function designSheetPlacement(width, height, slotWidth, slotHeight) {
+  const scale = Math.min(1, slotWidth / width, slotHeight / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  return { width: drawWidth, height: drawHeight, x: (slotWidth - drawWidth) / 2, y: (slotHeight - drawHeight) / 2 };
+}
 const PLS_780 = {
   id: "pls780",
   name: "Premium Label Supply PLS780",
@@ -1046,6 +1052,20 @@ function SheetSlotPreview({
   isActive,
   onClick
 }) {
+  const designId = product?.templateId && isDesignTemplateId(product.templateId) ? product.templateId : null;
+  const [canvas, setCanvas] = reactExports.useState(null);
+  reactExports.useEffect(() => {
+    let alive = true;
+    setCanvas(null);
+    if (designId) {
+      window.api.design.get(designId).then((result) => {
+        if (alive && result.ok) setCanvas(result.data.canvas);
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [designId, product?.updatedAt]);
   const bounds = getSlotBoundsIn(index + 1, offsetXIn, offsetYIn);
   const pageWidth = PLS_780.pageWidthIn;
   const pageHeight = PLS_780.pageHeightIn;
@@ -1056,6 +1076,7 @@ function SheetSlotPreview({
   const SLOT_ASPECT = bounds.widthIn / bounds.heightIn;
   const template = product ? getLabelTemplate(product.templateId) : null;
   const isInfoLayout = template?.layout === "info";
+  const placement = designId && canvas ? designSheetPlacement(canvas.width, canvas.height, bounds.widthIn * 72, bounds.heightIn * 72) : null;
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     "button",
     {
@@ -1096,10 +1117,11 @@ function SheetSlotPreview({
             "div",
             {
               style: {
-                width: isInfoLayout ? "100%" : "auto",
-                height: isInfoLayout ? "auto" : `${SLOT_ASPECT * 100}%`,
-                aspectRatio: isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : "181 / 289",
-                transform: isInfoLayout ? "none" : "rotate(-90deg)",
+                width: placement ? `${placement.width / (bounds.widthIn * 72) * 100}%` : isInfoLayout ? "100%" : "auto",
+                height: placement ? `${placement.height / (bounds.heightIn * 72) * 100}%` : isInfoLayout ? "auto" : `${SLOT_ASPECT * 100}%`,
+                aspectRatio: canvas && designId ? `${canvas.width} / ${canvas.height}` : isInfoLayout ? `${template?.width ?? 289} / ${template?.height ?? 181}` : "181 / 289",
+                transform: designId || isInfoLayout ? "none" : "rotate(-90deg)",
+                visibility: designId && !placement ? "hidden" : "visible",
                 transformOrigin: "center",
                 flexShrink: 0
               },

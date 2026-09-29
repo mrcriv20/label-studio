@@ -46,6 +46,7 @@ export interface DesignElementBase {
   w: number
   h: number
   opacity?: number // 0–1, absent = 1
+  rotation?: number // Clockwise degrees around the object's center; absent = 0.
   locked?: boolean
   visibleIf?: VisibleIf // absent = always
 }
@@ -176,7 +177,9 @@ export interface ResolvedImage {
   opacity: number
 }
 
-export type ResolvedPrimitive = ResolvedRect | ResolvedText | ResolvedBarcode | ResolvedImage
+export type ResolvedPrimitive = (ResolvedRect | ResolvedText | ResolvedBarcode | ResolvedImage) & {
+  rotation?: { degrees: number; cx: number; cy: number }
+}
 
 export interface ResolvedDesign {
   width: number

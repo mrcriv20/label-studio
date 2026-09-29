@@ -885,6 +885,57 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
+/* Keep the inspector usable independently of the canvas's intrinsic width. */
+.designer-workspace {
+  min-height: 0;
+}
+
+.designer-workspace > [role="presentation"],
+.designer-workspace > div {
+  min-width: 0;
+}
+
+.designer-inspector-pane,
+.designer-layers-pane {
+  flex-shrink: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.designer-inspector-pane::-webkit-scrollbar,
+.designer-layers-pane::-webkit-scrollbar {
+  display: none;
+}
+
+.designer-inspector-pane :is(input, select, textarea),
+.designer-inspector-pane .card,
+.designer-inspector-pane .editor-disclosure-body > * {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.designer-inspector-pane button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.designer-rotation-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.designer-rotation-actions > button {
+  min-width: 0;
+  padding-inline: 6px;
+}
+
+.designer-rotation-actions > button:last-child {
+  grid-column: 1 / -1;
+}
+
 [role="option"]:focus-visible,
 [role="button"]:focus-visible,
 .sheet-preview-pane button:focus-visible {

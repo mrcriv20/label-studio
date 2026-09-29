@@ -49,6 +49,7 @@ function validateElement(raw: unknown, index: number): DesignElement {
     w: Math.max(1, num(el.w, 10)),
     h: Math.max(1, num(el.h, 10)),
     ...(el.opacity !== undefined ? { opacity: clamp(num(el.opacity, 1), 0, 1) } : {}),
+    ...(el.rotation !== undefined ? { rotation: ((num(el.rotation, 0) % 360) + 360) % 360 } : {}),
     ...(el.locked ? { locked: true } : {}),
     ...(VISIBLE_IF.includes(el.visibleIf as VisibleIf) && el.visibleIf !== 'always'
       ? { visibleIf: el.visibleIf as VisibleIf }

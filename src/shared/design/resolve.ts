@@ -35,6 +35,7 @@ export function resolveLayout(
   for (const element of design.elements) {
     if (!isVisible(element, product)) continue
     const opacity = clamp(element.opacity ?? 1, 0, 1)
+    const firstPrimitive = primitives.length
     switch (element.type) {
       case 'box':
         primitives.push({
@@ -63,6 +64,11 @@ export function resolveLayout(
       case 'image':
         primitives.push(resolveImage(element, product, opacity))
         break
+    }
+    if (element.rotation) {
+      for (let i = firstPrimitive; i < primitives.length; i++) {
+        primitives[i].rotation = { degrees: element.rotation, cx: element.x + element.w / 2, cy: element.y + element.h / 2 }
+      }
     }
   }
   return {

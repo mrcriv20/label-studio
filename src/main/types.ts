@@ -88,6 +88,7 @@ export interface TillieConfig {
   // the register's HTTP API — works from any computer with internet access.
   mongoUri: string
   mongoDb: string
+  mongoDnsServers?: string // Optional per-machine DNS IPs, comma-separated.
   // Stored as {id, name} pairs; names are re-resolved by id on each sync so
   // category renames in Tillie don't break the subscription.
   subscribedCategories: Array<{ id: string; name: string }>

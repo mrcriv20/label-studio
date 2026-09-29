@@ -1,4 +1,4 @@
-import { q as getDefaultExportFromCjs, v as reactExports, t as jsxRuntimeExports, _ as __vitePreload, p as fontFamilyFor } from "./index-BxS2c6tc.js";
+import { q as getDefaultExportFromCjs, v as reactExports, t as jsxRuntimeExports, _ as __vitePreload, p as fontFamilyFor } from "./index-BwX6qHRB.js";
 const DESIGN_ID_PREFIX = "design-";
 const DEFAULT_DESIGN_FONT_ID = "bundled:lora";
 const BINDABLE_FIELDS = [
@@ -36472,6 +36472,7 @@ function resolveLayout(design, product, measurer) {
   for (const element of design.elements) {
     if (!isVisible(element, product)) continue;
     const opacity = clamp(element.opacity ?? 1, 0, 1);
+    const firstPrimitive = primitives.length;
     switch (element.type) {
       case "box":
         primitives.push({
@@ -36500,6 +36501,11 @@ function resolveLayout(design, product, measurer) {
       case "image":
         primitives.push(resolveImage(element, product, opacity));
         break;
+    }
+    if (element.rotation) {
+      for (let i = firstPrimitive; i < primitives.length; i++) {
+        primitives[i].rotation = { degrees: element.rotation, cx: element.x + element.w / 2, cy: element.y + element.h / 2 };
+      }
     }
   }
   return {
@@ -36662,6 +36668,8 @@ function paintSVG(resolved, ctx) {
     `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml(resolved.background || "#ffffff")}"/>`
   );
   for (const primitive of resolved.primitives) {
+    const rotation = primitive.rotation;
+    if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`);
     switch (primitive.kind) {
       case "rect": {
         if (!primitive.fill && !primitive.stroke) break;
@@ -36704,6 +36712,7 @@ function paintSVG(resolved, ctx) {
         break;
       }
     }
+    if (rotation) parts.push("</g>");
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
 }

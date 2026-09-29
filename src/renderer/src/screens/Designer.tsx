@@ -611,16 +611,20 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
         patchElement(gesture.elementId, { x: round2(x), y: round2(y) })
       } else {
         const handle = gesture.handle as ResizeHandle
+        const angle = (original.rotation ?? 0) * Math.PI / 180
+        const cos = Math.cos(angle), sin = Math.sin(angle)
+        const localDx = cos * dx + sin * dy
+        const localDy = -sin * dx + cos * dy
         let { x, y, w, h } = original
-        if (handle.includes('e')) w = original.w + dx
-        if (handle.includes('s')) h = original.h + dy
+        if (handle.includes('e')) w = original.w + localDx
+        if (handle.includes('s')) h = original.h + localDy
         if (handle.includes('w')) {
-          w = original.w - dx
-          x = original.x + dx
+          w = original.w - localDx
+          x = original.x + localDx
         }
         if (handle.includes('n')) {
-          h = original.h - dy
-          y = original.y + dy
+          h = original.h - localDy
+          y = original.y + localDy
         }
         if (w < MIN_ELEMENT_SIZE) {
           if (handle.includes('w')) x -= MIN_ELEMENT_SIZE - w
@@ -630,6 +634,10 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
           if (handle.includes('n')) y -= MIN_ELEMENT_SIZE - h
           h = MIN_ELEMENT_SIZE
         }
+        const shiftX = x + w / 2 - (original.x + original.w / 2)
+        const shiftY = y + h / 2 - (original.y + original.h / 2)
+        x = original.x + original.w / 2 + cos * shiftX - sin * shiftY - w / 2
+        y = original.y + original.h / 2 + sin * shiftX + cos * shiftY - h / 2
         patchElement(gesture.elementId, { x: round2(x), y: round2(y), w: round2(w), h: round2(h) })
       }
     }
@@ -964,6 +972,8 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                     top: element.y * zoom,
                     width: element.w * zoom,
                     height: element.h * zoom,
+                    transform: `rotate(${element.rotation ?? 0}deg)`,
+                    transformOrigin: 'center',
                     cursor: element.locked ? 'default' : 'move',
                     outline: isSelected
                       ? '1.5px solid #4f46e5'
@@ -1134,9 +1144,15 @@ function ElementInspector({
       </div>
 
       {/* Geometry */}
+      <NumberField label="Rotation (° clockwise)" value={round2(element.rotation ?? 0)} onChange={(rotation) => { if (!element.locked) onChange({ rotation: ((rotation % 360) + 360) % 360 }) }} />
+      <div className="designer-rotation-actions">
+        <button className="btn-outline btn-sm" disabled={element.locked} onClick={() => onChange({ rotation: ((element.rotation ?? 0) + 270) % 360 })}>Rotate left 90°</button>
+        <button className="btn-outline btn-sm" disabled={element.locked} onClick={() => onChange({ rotation: ((element.rotation ?? 0) + 90) % 360 })}>Rotate right 90°</button>
+        <button className="btn-ghost btn-sm" disabled={element.locked} onClick={() => onChange({ rotation: 0 })}>Reset</button>
+      </div>
       <details className="editor-disclosure">
         <summary>Advanced geometry</summary>
-        <div className="editor-disclosure-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div className="editor-disclosure-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
         <NumberField label="X (pt)" value={round2(element.x)} onChange={(x) => onChange({ x })} />
         <NumberField label="Y (pt)" value={round2(element.y)} onChange={(y) => onChange({ y })} />
         <NumberField label="W (pt)" value={round2(element.w)} min={MIN_ELEMENT_SIZE} onChange={(w) => onChange({ w })} />
@@ -1148,7 +1164,7 @@ function ElementInspector({
         <>
           <ColorField label="Fill" value={element.fill} allowNone onChange={(fill) => onChange({ fill })} />
           <ColorField label="Stroke" value={element.stroke} allowNone onChange={(stroke) => onChange({ stroke })} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             <NumberField label="Stroke width" value={element.strokeWidth} min={0} step={0.5} onChange={(strokeWidth) => onChange({ strokeWidth })} />
             <NumberField label="Corner radius" value={element.cornerRadius} min={0} onChange={(cornerRadius) => onChange({ cornerRadius })} />
           </div>
@@ -1194,7 +1210,7 @@ function ElementInspector({
               ))}
             </select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             <NumberField label={element.autoFit ? 'Max size (pt)' : 'Size (pt)'} value={element.size} min={4} onChange={(size) => onChange({ size })} />
             <NumberField label="Line height" value={element.lineHeight} min={0.5} max={3} step={0.05} onChange={(lineHeight) => onChange({ lineHeight })} />
           </div>
@@ -1203,7 +1219,7 @@ function ElementInspector({
             checked={element.autoFit}
             onChange={(autoFit) => onChange({ autoFit })}
           />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             <div>
               <label className="label-text" htmlFor={`element-align-${element.id}`}>Align</label>
               <select id={`element-align-${element.id}`} className="input" value={element.align} onChange={(e) => onChange({ align: e.target.value as TextElement['align'] })}>

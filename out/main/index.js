@@ -11,6 +11,7 @@ const fontkit = require("@pdf-lib/fontkit");
 const os = require("os");
 const bwipjs = require("bwip-js");
 const mongodb = require("mongodb");
+const dns = require("node:dns");
 function _interopNamespaceDefault(e) {
   const n2 = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -625,6 +626,12 @@ const DEFAULT_DESIGN_FONT_ID = "bundled:lora";
 function isDesignTemplateId(templateId) {
   return Boolean(templateId && templateId.startsWith(DESIGN_ID_PREFIX));
 }
+function designSheetPlacement(width, height, slotWidth, slotHeight) {
+  const scale = Math.min(1, slotWidth / width, slotHeight / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  return { width: drawWidth, height: drawHeight, x: (slotWidth - drawWidth) / 2, y: (slotHeight - drawHeight) / 2 };
+}
 const TEXT_CASES = ["none", "upper", "lower", "title", "sentence"];
 const VISIBLE_IF = ["always", "showPrice", "showBarcode", "showCookingInstructions", "showProductName"];
 function validateDesignTemplate(raw) {
@@ -658,6 +665,7 @@ function validateElement(raw, index) {
     w: Math.max(1, num(el.w, 10)),
     h: Math.max(1, num(el.h, 10)),
     ...el.opacity !== void 0 ? { opacity: clamp$1(num(el.opacity, 1), 0, 1) } : {},
+    ...el.rotation !== void 0 ? { rotation: (num(el.rotation, 0) % 360 + 360) % 360 } : {},
     ...el.locked ? { locked: true } : {},
     ...VISIBLE_IF.includes(el.visibleIf) && el.visibleIf !== "always" ? { visibleIf: el.visibleIf } : {}
   };
@@ -922,6 +930,7 @@ function resolveLayout(design, product, measurer) {
   for (const element of design.elements) {
     if (!isVisible(element, product)) continue;
     const opacity = clamp(element.opacity ?? 1, 0, 1);
+    const firstPrimitive = primitives.length;
     switch (element.type) {
       case "box":
         primitives.push({
@@ -950,6 +959,11 @@ function resolveLayout(design, product, measurer) {
       case "image":
         primitives.push(resolveImage(element, product, opacity));
         break;
+    }
+    if (element.rotation) {
+      for (let i = firstPrimitive; i < primitives.length; i++) {
+        primitives[i].rotation = { degrees: element.rotation, cx: element.x + element.w / 2, cy: element.y + element.h / 2 };
+      }
     }
   }
   return {
@@ -1142,6 +1156,8 @@ function paintSVG(resolved, ctx) {
     `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml$1(resolved.background || "#ffffff")}"/>`
   );
   for (const primitive of resolved.primitives) {
+    const rotation = primitive.rotation;
+    if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`);
     switch (primitive.kind) {
       case "rect": {
         if (!primitive.fill && !primitive.stroke) break;
@@ -1184,6 +1200,7 @@ function paintSVG(resolved, ctx) {
         break;
       }
     }
+    if (rotation) parts.push("</g>");
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
 }
@@ -1254,6 +1271,12 @@ async function drawDesignLabel(doc, page, design, product) {
     borderWidth: 0
   });
   for (const primitive of resolved.primitives) {
+    if (primitive.rotation) {
+      const { degrees, cx, cy } = primitive.rotation;
+      const angle = -degrees * Math.PI / 180;
+      const cos = Math.cos(angle), sin = Math.sin(angle), py = H - cy;
+      page.pushOperators(pdfLib.pushGraphicsState(), pdfLib.concatTransformationMatrix(cos, sin, -sin, cos, cx - cos * cx + sin * py, py - sin * cx - cos * py));
+    }
     switch (primitive.kind) {
       case "rect": {
         if (!primitive.fill && !primitive.stroke) break;
@@ -1334,6 +1357,7 @@ async function drawDesignLabel(doc, page, design, product) {
         break;
       }
     }
+    if (primitive.rotation) page.pushOperators(pdfLib.popGraphicsState());
   }
 }
 async function embedImage(doc, sourcePath) {
@@ -2072,7 +2096,15 @@ async function buildSheetPDF(slots) {
       barcodeCache.get(product.id) ?? null
     );
     const [embeddedLabel] = await sheetDoc.embedPdf(labelBytes);
-    if (embeddedLabel.width >= embeddedLabel.height) {
+    if (isDesignTemplateId(product.templateId)) {
+      const placement = designSheetPlacement(embeddedLabel.width, embeddedLabel.height, sheetLayout.slotW, sheetLayout.slotH);
+      sheetPage.drawPage(embeddedLabel, {
+        x: slotX + placement.x,
+        y: slotY + placement.y,
+        width: placement.width,
+        height: placement.height
+      });
+    } else if (embeddedLabel.width >= embeddedLabel.height) {
       sheetPage.drawPage(embeddedLabel, {
         x: slotX,
         y: slotY,
@@ -2320,12 +2352,27 @@ function formatOutputEligibilityIssues(issues, action) {
   const remainder = issues.length > shown.length ? ` and ${issues.length - shown.length} more` : "";
   return `${action} is blocked because printable content will be clipped (${shown.join("; ")}${remainder}). Shorten the flagged content or choose another label template.`;
 }
+const defaultServers = dns.getServers();
+function configureDatabaseDns(value) {
+  if (!value?.trim()) {
+    dns.setServers(defaultServers);
+    return;
+  }
+  const servers = value.split(",").map((server) => server.trim()).filter(Boolean);
+  if (!servers.length) throw new Error("Database DNS must contain DNS server IP addresses.");
+  try {
+    dns.setServers(servers);
+  } catch {
+    throw new Error("Database DNS must contain comma-separated DNS server IP addresses.");
+  }
+}
 const TOKEN_TTL_MS = 11.5 * 60 * 60 * 1e3;
 const FETCH_TIMEOUT_MS = 6e3;
 const DEFAULTS = {
   baseUrl: "http://127.0.0.1:3000",
   mongoUri: "",
   mongoDb: "pos",
+  mongoDnsServers: "",
   subscribedCategories: [],
   includedProductIds: [],
   excludedProductIds: [],
@@ -2368,6 +2415,7 @@ function setTillieConfig(patch) {
     "baseUrl",
     "mongoUri",
     "mongoDb",
+    "mongoDnsServers",
     "subscribedCategories",
     "includedProductIds",
     "excludedProductIds",
@@ -2435,19 +2483,27 @@ function usesDb() {
 }
 async function tillieDb() {
   const cfg = loadConfig();
-  const key = `${cfg.mongoUri}|${cfg.mongoDb}`;
+  const dnsServers = process.env.TILLIE_DNS_SERVERS || cfg.mongoDnsServers;
+  const key = JSON.stringify([cfg.mongoUri, cfg.mongoDb, dnsServers]);
   if (_mongo && _mongoKey !== key) {
     await _mongo.close().catch(() => {
     });
     _mongo = null;
   }
   if (!_mongo) {
+    configureDatabaseDns(dnsServers);
+    let client = null;
     try {
-      const client = new mongodb.MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8e3 });
+      client = new mongodb.MongoClient(cfg.mongoUri, { serverSelectionTimeoutMS: 8e3 });
       await client.connect();
       _mongo = client;
       _mongoKey = key;
-    } catch {
+    } catch (error) {
+      await client?.close().catch(() => {
+      });
+      if (error instanceof Error && /querySrv|queryTxt/.test(error.message)) {
+        throw new Error("Couldn't resolve Tillie's database address. Check this computer's DNS settings or configure mongoDnsServers in Tillie Print's tillie.json.");
+      }
       throw new Error(
         "Couldn't connect to Tillie's database. Check the connection string, this computer's internet connection, and that its IP is allowed under Network Access in MongoDB Atlas."
       );
