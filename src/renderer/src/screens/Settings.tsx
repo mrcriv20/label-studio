@@ -164,7 +164,7 @@ export default function Settings({ onDirtyChange, onOpenCalibration }: Props): J
           <div className="card" style={{ padding: '20px 20px 24px' }}>
             <h2 style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-workbench-navy)', margin: '0 0 6px' }}>Label Fonts</h2>
             <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '0 0 16px', lineHeight: 1.5 }}>
-              Font selections preview immediately and are restored if you discard Settings changes. Imported font files are installed immediately and remain available even if you leave without saving.
+              System fonts are available automatically. Imported and Google fonts are installed immediately and remain available in Settings and the label designer.
             </p>
             <div className="settings-font-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <FontSelect label="Product title" value={settings.titleFontId} fonts={fonts} onChange={(v) => update('titleFontId', v)} />

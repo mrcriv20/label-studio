@@ -1,7 +1,7 @@
-import { o as createLucideIcon, v as reactExports, t as jsxRuntimeExports, P as Plus, E as Ellipsis, U as Upload, k as Trash2, b as CircleCheck, X, a as ArrowUp, A as ArrowDown, c as Copy } from "./index-BwX6qHRB.js";
-import { c as useTextMeasurer, b as useDesignImages, u as useBarcodeRenderer, p as paintDesignSVG, D as DESIGN_ID_PREFIX, B as BINDABLE_FIELDS, T as TEXT_CASE_OPTIONS } from "./DesignLabelSvg-DBLls6hC.js";
-import { D as Download } from "./download-BF4mTKe1.js";
-import { S as Save } from "./save-Y6LhUU2b.js";
+import { o as createLucideIcon, v as reactExports, s as installFonts, t as jsxRuntimeExports, P as Plus, E as Ellipsis, U as Upload, k as Trash2, b as CircleCheck, X, a as ArrowUp, A as ArrowDown, c as Copy } from "./index-CuujZF7E.js";
+import { e as useTextMeasurer, d as useDesignImages, u as useBarcodeRenderer, p as paintDesignSVG, L as LABEL_SHAPE_OPTIONS, D as DESIGN_ID_PREFIX, B as BINDABLE_FIELDS, b as TEXT_WEIGHT_OPTIONS, T as TEXT_CASE_OPTIONS, i as invalidateDesignFonts } from "./DesignLabelSvg-Cd_O3ig_.js";
+import { D as Download, F as FolderOpen } from "./folder-open-Dsopm5Aq.js";
+import { S as Save } from "./save-Qr3Mll5A.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -134,6 +134,14 @@ const CANVAS_PRESETS = [
   { label: "5 × 3 in — jar / sauce label", w: 360, h: 216 },
   { label: "PLS780-compatible slot (2.51 × 4.01 in)", w: 181, h: 289 }
 ];
+CANVAS_PRESETS.splice(
+  4,
+  0,
+  { label: "2.5 in circle", w: 180, h: 180, shape: "circle" },
+  { label: "3 in circle", w: 216, h: 216, shape: "circle" },
+  { label: "3 x 2 in oval", w: 216, h: 144, shape: "oval" },
+  { label: "4 x 2.5 in oval", w: 288, h: 180, shape: "oval" }
+);
 const SAMPLE_PRODUCT = {
   name: "Hot Honey Marinara",
   price: "$13.99",
@@ -190,6 +198,7 @@ function newText(canvas) {
     ...centered(canvas, Math.min(200, canvas.width - 16), 32),
     content: "{name}",
     fontId: "bundled:lora",
+    fontWeight: 400,
     size: 18,
     autoFit: true,
     color: "#1b2733",
@@ -229,10 +238,18 @@ function newDesign() {
     updatedAt: now
   };
 }
+function selectionBounds(elements) {
+  const left = Math.min(...elements.map((element) => element.x));
+  const top = Math.min(...elements.map((element) => element.y));
+  const right = Math.max(...elements.map((element) => element.x + element.w));
+  const bottom = Math.max(...elements.map((element) => element.y + element.h));
+  return { x: round2(left), y: round2(top), w: round2(right - left), h: round2(bottom - top) };
+}
 function Designer({ initialDesignId, onDirtyChange }) {
   const [designs, setDesigns] = reactExports.useState([]);
   const [design, setDesign] = reactExports.useState(null);
   const [selectedId, setSelectedId] = reactExports.useState(null);
+  const [selectedIds, setSelectedIds] = reactExports.useState(() => /* @__PURE__ */ new Set());
   const [layersOpen, setLayersOpen] = reactExports.useState(false);
   const [inspectorOpen, setInspectorOpen] = reactExports.useState(false);
   const [dirty, setDirty] = reactExports.useState(false);
@@ -242,6 +259,8 @@ function Designer({ initialDesignId, onDirtyChange }) {
   const [fonts, setFonts] = reactExports.useState([]);
   const [products, setProducts] = reactExports.useState([]);
   const [sampleProductId, setSampleProductId] = reactExports.useState("");
+  const [googleFamily, setGoogleFamily] = reactExports.useState("");
+  const [addingFont, setAddingFont] = reactExports.useState(false);
   const [error, setError] = reactExports.useState("");
   const [dragLayerId, setDragLayerId] = reactExports.useState(null);
   const [dropIndex, setDropIndex] = reactExports.useState(null);
@@ -353,6 +372,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
     futureRef.current = [];
     setDesign(doc);
     setSelectedId(null);
+    setSelectedIds(/* @__PURE__ */ new Set());
     setDirty(false);
     setError("");
   }, []);
@@ -367,12 +387,33 @@ function Designer({ initialDesignId, onDirtyChange }) {
   );
   reactExports.useEffect(() => {
     window.api.font.list().then((result) => {
-      if (result.ok) setFonts(result.data.map(({ id, family }) => ({ id, family })));
+      if (result.ok) {
+        setFonts(result.data);
+        installFonts(result.data);
+        invalidateDesignFonts();
+      }
     });
     window.api.product.list().then((result) => {
       if (result.ok) setProducts(result.data);
     });
   }, []);
+  const addDesignerFont = reactExports.useCallback(async (kind) => {
+    setAddingFont(true);
+    setError("");
+    const result = kind === "google" ? await window.api.font.addGoogle(googleFamily) : await window.api.font.importLocal();
+    setAddingFont(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (!result.data) return;
+    const refreshed = await window.api.font.list();
+    const next = refreshed.ok ? refreshed.data : [...fonts, result.data];
+    setFonts(next);
+    installFonts(next);
+    invalidateDesignFonts();
+    if (kind === "google") setGoogleFamily("");
+  }, [fonts, googleFamily]);
   reactExports.useEffect(() => {
     let alive = true;
     refreshDesignList().then((list) => {
@@ -411,6 +452,20 @@ function Designer({ initialDesignId, onDirtyChange }) {
     });
     setDirty(true);
   }, []);
+  const patchElements = reactExports.useCallback((patches) => {
+    const byId = new Map(patches.map(({ id, patch }) => [id, patch]));
+    setDesign((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        elements: prev.elements.map((el) => {
+          const patch = byId.get(el.id);
+          return patch ? { ...el, ...patch } : el;
+        })
+      };
+    });
+    setDirty(true);
+  }, []);
   const commitElement = reactExports.useCallback(
     (id, patch) => {
       commit((d) => ({
@@ -441,17 +496,41 @@ function Designer({ initialDesignId, onDirtyChange }) {
     });
   }, []);
   const selected = design?.elements.find((el) => el.id === selectedId) ?? null;
+  const selectedElements = reactExports.useMemo(() => design?.elements.filter((element) => selectedIds.has(element.id)) ?? [], [design, selectedIds]);
+  const selectOnly = reactExports.useCallback((id) => {
+    setSelectedId(id);
+    setSelectedIds(id ? /* @__PURE__ */ new Set([id]) : /* @__PURE__ */ new Set());
+  }, []);
+  const selectElement = reactExports.useCallback((id, additive) => {
+    if (!additive) {
+      selectOnly(id);
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      if (!next.size) setSelectedId(null);
+      else setSelectedId(next.has(id) ? id : [...next][next.size - 1]);
+      return next;
+    });
+  }, [selectOnly]);
   const addElement = reactExports.useCallback(
     (element) => {
       commit((d) => ({ ...d, elements: [...d.elements, element] }));
-      setSelectedId(element.id);
+      selectOnly(element.id);
     },
-    [commit]
+    [commit, selectOnly]
   );
   const deleteElement = reactExports.useCallback(
     (id) => {
       commit((d) => ({ ...d, elements: d.elements.filter((el) => el.id !== id) }));
       setSelectedId((current) => current === id ? null : current);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     },
     [commit]
   );
@@ -464,11 +543,11 @@ function Designer({ initialDesignId, onDirtyChange }) {
         recordSnapshot(prev);
         setDirty(true);
         const copy = { ...source, id: nextElementId(), x: source.x + 8, y: source.y + 8 };
-        setSelectedId(copy.id);
+        selectOnly(copy.id);
         return { ...prev, elements: [...prev.elements, copy] };
       });
     },
-    [recordSnapshot]
+    [recordSnapshot, selectOnly]
   );
   const moveLayer = reactExports.useCallback(
     (id, direction) => {
@@ -484,6 +563,24 @@ function Designer({ initialDesignId, onDirtyChange }) {
     },
     [commit]
   );
+  const alignSelection = reactExports.useCallback((mode) => {
+    if (selectedElements.length < 2) return;
+    const unlockedIds = new Set(selectedElements.filter((element) => !element.locked).map((element) => element.id));
+    if (!unlockedIds.size) return;
+    const bounds = selectionBounds(selectedElements);
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((element) => {
+        if (!unlockedIds.has(element.id)) return element;
+        if (mode === "left") return { ...element, x: bounds.x };
+        if (mode === "hcenter") return { ...element, x: bounds.x + bounds.w / 2 - element.w / 2 };
+        if (mode === "right") return { ...element, x: bounds.x + bounds.w - element.w };
+        if (mode === "top") return { ...element, y: bounds.y };
+        if (mode === "vcenter") return { ...element, y: bounds.y + bounds.h / 2 - element.h / 2 };
+        return { ...element, y: bounds.y + bounds.h - element.h };
+      })
+    }));
+  }, [commit, selectedElements]);
   const reorderLayer = reactExports.useCallback(
     (id, displayInsertIndex) => {
       setDesign((prev) => {
@@ -547,18 +644,24 @@ function Designer({ initialDesignId, onDirtyChange }) {
     const xs = [0, design.canvas.width / 2, design.canvas.width];
     const ys = [0, design.canvas.height / 2, design.canvas.height];
     for (const el of design.elements) {
-      if (el.id === selectedId) continue;
+      if (selectedIds.has(el.id)) continue;
       xs.push(el.x, el.x + el.w / 2, el.x + el.w);
       ys.push(el.y, el.y + el.h / 2, el.y + el.h);
     }
     return { xs, ys };
-  }, [design, selectedId]);
+  }, [design, selectedIds]);
   const beginGesture = reactExports.useCallback(
     (event, element, mode, handle) => {
       event.preventDefault();
       event.stopPropagation();
-      setSelectedId(element.id);
+      const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+      if (additive) {
+        selectElement(element.id, true);
+        return;
+      }
+      if (!selectedIds.has(element.id)) selectOnly(element.id);
       if (element.locked) return;
+      const movingElements = mode === "move" && selectedIds.has(element.id) ? design?.elements.filter((candidate) => selectedIds.has(candidate.id) && !candidate.locked) ?? [element] : [element];
       gestureRef.current = {
         mode,
         handle,
@@ -566,10 +669,11 @@ function Designer({ initialDesignId, onDirtyChange }) {
         startClientX: event.clientX,
         startClientY: event.clientY,
         original: element,
+        originals: new Map(movingElements.map((candidate) => [candidate.id, candidate])),
         moved: false
       };
     },
-    []
+    [design, selectElement, selectOnly, selectedIds]
   );
   reactExports.useEffect(() => {
     const onMove = (event) => {
@@ -584,6 +688,14 @@ function Designer({ initialDesignId, onDirtyChange }) {
       }
       const original = gesture.original;
       if (gesture.mode === "move") {
+        if (gesture.originals.size > 1) {
+          patchElements([...gesture.originals.entries()].map(([id, candidate]) => ({
+            id,
+            patch: { x: round2(candidate.x + dx), y: round2(candidate.y + dy) }
+          })));
+          setGuides({ vx: null, vy: null });
+          return;
+        }
         let x = original.x + dx;
         let y = original.y + dy;
         let vx = null;
@@ -654,7 +766,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [design, zoom, snapTargets, patchElement, recordSnapshot]);
+  }, [design, zoom, snapTargets, patchElement, patchElements, recordSnapshot]);
   reactExports.useEffect(() => {
     const onKeyDown = (event) => {
       const target = event.target;
@@ -677,23 +789,28 @@ function Designer({ initialDesignId, onDirtyChange }) {
         duplicateElement(selectedId);
         return;
       }
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedId) {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.size) {
         event.preventDefault();
-        deleteElement(selectedId);
+        const ids = new Set(selectedIds);
+        commit((d) => ({ ...d, elements: d.elements.filter((element) => !ids.has(element.id)) }));
+        selectOnly(null);
         return;
       }
-      if (selectedId && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      if (selectedIds.size && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         event.preventDefault();
         const step = event.shiftKey ? 10 : 1;
         const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
-        const element = design?.elements.find((el) => el.id === selectedId);
-        if (element && !element.locked) commitElement(selectedId, { x: element.x + dx, y: element.y + dy });
+        const ids = new Set(selectedIds);
+        commit((d) => ({
+          ...d,
+          elements: d.elements.map((element) => ids.has(element.id) && !element.locked ? { ...element, x: element.x + dx, y: element.y + dy } : element)
+        }));
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [design, selectedId, undo, redo, saveDesign, duplicateElement, deleteElement, commitElement]);
+  }, [selectedId, selectedIds, undo, redo, saveDesign, duplicateElement, commit, selectOnly]);
   const svg = reactExports.useMemo(() => {
     if (!design || !measurer || !barcodeReady) return "";
     return paintDesignSVG(design, sampleProduct, measurer, images);
@@ -912,12 +1029,12 @@ function Designer({ initialDesignId, onDirtyChange }) {
               "div",
               {
                 role: "option",
-                "aria-selected": element.id === selectedId,
+                "aria-selected": selectedIds.has(element.id),
                 "aria-label": `${layerName(element)} layer${element.locked ? ", locked" : ""}`,
                 tabIndex: 0,
                 draggable: true,
-                onClick: () => {
-                  setSelectedId(element.id);
+                onClick: (event) => {
+                  selectElement(element.id, event.shiftKey || event.metaKey || event.ctrlKey);
                   setInspectorOpen(true);
                   if (compactLayout) setLayersOpen(false);
                 },
@@ -929,7 +1046,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
                   }
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setSelectedId(element.id);
+                    selectOnly(element.id);
                     setInspectorOpen(true);
                     if (compactLayout) setLayersOpen(false);
                   }
@@ -937,7 +1054,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
                 onDragStart: (e) => {
                   e.dataTransfer.effectAllowed = "move";
                   setDragLayerId(element.id);
-                  setSelectedId(element.id);
+                  selectOnly(element.id);
                 },
                 onDragOver: (e) => {
                   if (!dragLayerId) return;
@@ -958,7 +1075,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
                   borderRadius: 8,
                   cursor: "pointer",
                   fontSize: 12,
-                  background: element.id === selectedId ? "#eef2ff" : "transparent",
+                  background: selectedIds.has(element.id) ? "#eef2ff" : "transparent",
                   color: "var(--color-text-strong-secondary)",
                   opacity: dragLayerId === element.id ? 0.4 : 1,
                   boxShadow: dropIndex === index ? "inset 0 2px 0 #4f46e5" : dropIndex === index + 1 && index === displayed.length - 1 ? "inset 0 -2px 0 #4f46e5" : "none"
@@ -993,7 +1110,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
           ref: canvasViewportRef,
           style: { flex: 1, overflow: "auto", background: "#eceff3", display: "flex", padding: 40 },
           onPointerDown: () => {
-            setSelectedId(null);
+            selectOnly(null);
             if (compactLayout) {
               setLayersOpen(false);
               setInspectorOpen(false);
@@ -1004,12 +1121,19 @@ function Designer({ initialDesignId, onDirtyChange }) {
               "div",
               {
                 className: "design-label-svg",
-                style: { position: "absolute", inset: 0, boxShadow: "0 4px 24px rgba(0,0,0,0.18)", background: design.canvas.background },
+                style: {
+                  position: "absolute",
+                  inset: 0,
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
+                  background: "transparent",
+                  borderRadius: design.canvas.shape && design.canvas.shape !== "rectangle" ? "50%" : 0,
+                  overflow: "hidden"
+                },
                 dangerouslySetInnerHTML: { __html: svg }
               }
             ),
             design.elements.map((element) => {
-              const isSelected = element.id === selectedId;
+              const isSelected = selectedIds.has(element.id);
               return /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "div",
                 {
@@ -1019,7 +1143,7 @@ function Designer({ initialDesignId, onDirtyChange }) {
                   tabIndex: 0,
                   onPointerDown: (e) => beginGesture(e, element, "move", null),
                   onFocus: () => {
-                    setSelectedId(element.id);
+                    if (!selectedIds.has(element.id)) selectOnly(element.id);
                     if (!compactLayout) setInspectorOpen(true);
                   },
                   style: {
@@ -1082,10 +1206,10 @@ function Designer({ initialDesignId, onDirtyChange }) {
               {
                 id: "designer-canvas-preset",
                 className: "input",
-                value: CANVAS_PRESETS.findIndex((p) => p.w === design.canvas.width && p.h === design.canvas.height),
+                value: CANVAS_PRESETS.findIndex((p) => p.w === design.canvas.width && p.h === design.canvas.height && (p.shape ?? "rectangle") === (design.canvas.shape ?? "rectangle")),
                 onChange: (e) => {
                   const preset = CANVAS_PRESETS[Number(e.target.value)];
-                  if (preset) commit((d) => ({ ...d, canvas: { ...d.canvas, width: preset.w, height: preset.h } }));
+                  if (preset) commit((d) => ({ ...d, canvas: { ...d.canvas, width: preset.w, height: preset.h, shape: preset.shape } }));
                 },
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: -1, children: "Custom size…" }),
@@ -1093,6 +1217,32 @@ function Designer({ initialDesignId, onDirtyChange }) {
                 ]
               }
             ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 8 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: "designer-canvas-shape", children: "Shape" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "select",
+                {
+                  id: "designer-canvas-shape",
+                  className: "input",
+                  value: design.canvas.shape ?? "rectangle",
+                  onChange: (event) => {
+                    const shape = event.target.value;
+                    commit((d) => {
+                      const side = shape === "circle" ? d.canvas.width : d.canvas.height;
+                      return {
+                        ...d,
+                        canvas: {
+                          ...d.canvas,
+                          height: side,
+                          shape: shape === "rectangle" ? void 0 : shape
+                        }
+                      };
+                    });
+                  },
+                  children: LABEL_SHAPE_OPTIONS.map(({ value, label }) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value, children: label }, value))
+                }
+              )
+            ] }) }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 NumberField,
@@ -1101,7 +1251,10 @@ function Designer({ initialDesignId, onDirtyChange }) {
                   value: round3(design.canvas.width / PT_PER_IN),
                   step: 0.05,
                   min: 0.5,
-                  onChange: (value) => commit((d) => ({ ...d, canvas: { ...d.canvas, width: Math.round(value * PT_PER_IN) } }))
+                  onChange: (value) => commit((d) => {
+                    const width = Math.round(value * PT_PER_IN);
+                    return { ...d, canvas: { ...d.canvas, width, height: d.canvas.shape === "circle" ? width : d.canvas.height } };
+                  })
                 }
               ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -1111,7 +1264,10 @@ function Designer({ initialDesignId, onDirtyChange }) {
                   value: round3(design.canvas.height / PT_PER_IN),
                   step: 0.05,
                   min: 0.5,
-                  onChange: (value) => commit((d) => ({ ...d, canvas: { ...d.canvas, height: Math.round(value * PT_PER_IN) } }))
+                  onChange: (value) => commit((d) => {
+                    const height = Math.round(value * PT_PER_IN);
+                    return { ...d, canvas: { ...d.canvas, width: d.canvas.shape === "circle" ? height : d.canvas.width, height } };
+                  })
                 }
               )
             ] }),
@@ -1131,12 +1287,31 @@ function Designer({ initialDesignId, onDirtyChange }) {
               products.map((product) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: product.id, children: product.name || "(unnamed product)" }, product.id))
             ] })
           ] }),
+          selectedElements.length > 1 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: 12, display: "flex", flexDirection: "column", gap: 8 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "section-label", style: { marginBottom: 0 }, children: [
+              "Align ",
+              selectedElements.length,
+              " layers"
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("left"), children: "Left" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("hcenter"), children: "Center" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("right"), children: "Right" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("top"), children: "Top" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("vcenter"), children: "Middle" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => alignSelection("bottom"), children: "Bottom" })
+            ] })
+          ] }),
           selected ? /* @__PURE__ */ jsxRuntimeExports.jsx(
             ElementInspector,
             {
               element: selected,
               fonts,
+              googleFamily,
+              addingFont,
               onChange: (patch) => commitElement(selected.id, patch),
+              onGoogleFamilyChange: setGoogleFamily,
+              onAddFont: addDesignerFont,
               onDelete: () => deleteElement(selected.id),
               onDuplicate: () => duplicateElement(selected.id),
               onLayer: (direction) => moveLayer(selected.id, direction)
@@ -1155,7 +1330,11 @@ function Designer({ initialDesignId, onDirtyChange }) {
 function ElementInspector({
   element,
   fonts,
+  googleFamily,
+  addingFont,
   onChange,
+  onGoogleFamilyChange,
+  onAddFont,
   onDelete,
   onDuplicate,
   onLayer
@@ -1232,10 +1411,47 @@ function ElementInspector({
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: `element-font-${element.id}`, children: "Font" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("select", { id: `element-font-${element.id}`, className: "input", value: element.fontId, onChange: (e) => onChange({ fontId: e.target.value }), children: fonts.map((font) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: font.id, children: font.family }, font.id)) })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("select", { id: `element-font-${element.id}`, className: "input", value: element.fontId, onChange: (e) => onChange({ fontId: e.target.value }), children: fonts.map((font) => /* @__PURE__ */ jsxRuntimeExports.jsxs("option", { value: font.id, children: [
+          font.family,
+          " - ",
+          font.source
+        ] }, font.id)) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 6, marginTop: 6 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", className: "btn-outline btn-sm", onClick: () => onAddFont("system"), disabled: addingFont, style: { flexShrink: 0 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(FolderOpen, { size: 12 }),
+            " System"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              "aria-label": "Google Fonts family",
+              className: "input",
+              value: googleFamily,
+              onChange: (event) => onGoogleFamilyChange(event.target.value),
+              placeholder: "Google font"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "btn-outline btn-sm", onClick: () => onAddFont("google"), disabled: addingFont || !googleFamily.trim(), style: { flexShrink: 0 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(Download, { size: 12 }) })
+        ] })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: element.autoFit ? "Max size (pt)" : "Size (pt)", value: element.size, min: 4, onChange: (size) => onChange({ size }) }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "label-text", htmlFor: `element-weight-${element.id}`, children: "Weight" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "select",
+            {
+              id: `element-weight-${element.id}`,
+              className: "input",
+              value: element.fontWeight ?? 400,
+              onChange: (event) => {
+                const fontWeight = Number(event.target.value);
+                onChange({ fontWeight: fontWeight === 400 ? void 0 : fontWeight });
+              },
+              children: TEXT_WEIGHT_OPTIONS.map(({ value, label }) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value, children: label }, value))
+            }
+          )
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(NumberField, { label: "Line height", value: element.lineHeight, min: 0.5, max: 3, step: 0.05, onChange: (lineHeight) => onChange({ lineHeight }) })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(

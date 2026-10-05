@@ -5,7 +5,8 @@ export function installFonts(fonts: FontAsset[]): void {
   for (const font of fonts) {
     const style = document.createElement('style')
     style.dataset.labelFont = font.id
-    style.textContent = `@font-face{font-family:"LabelFont-${css(font.id)}";src:url("${font.dataUri}");font-style:normal;font-weight:100 900;font-display:swap}`
+    const src = font.dataUri ? `url("${font.dataUri}")` : `local("${font.family.replace(/"/g, '\\"')}")`
+    style.textContent = `@font-face{font-family:"LabelFont-${css(font.id)}";src:${src};font-style:normal;font-weight:100 900;font-display:swap}`
     document.head.appendChild(style)
   }
 }

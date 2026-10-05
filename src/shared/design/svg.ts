@@ -20,11 +20,11 @@ export interface SvgPaintContext {
 export function paintSVG(resolved: ResolvedDesign, ctx: SvgPaintContext): string {
   const parts: string[] = []
   let clipCounter = 0
+  const labelClipId = resolved.shape === 'rectangle' ? '' : 'design-label-shape'
 
-  parts.push(
-    `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml(resolved.background || '#ffffff')}"/>`
-  )
+  parts.push(labelShapeElement(resolved.width, resolved.height, resolved.shape, resolved.background || '#ffffff'))
 
+  if (labelClipId) parts.push(`<g clip-path="url(#${labelClipId})">`)
   for (const primitive of resolved.primitives) {
     const rotation = primitive.rotation
     if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`)
@@ -45,7 +45,7 @@ export function paintSVG(resolved: ResolvedDesign, ctx: SvgPaintContext): string
         const family = ctx.fontFamily(primitive.fontId)
         for (const line of primitive.lines) {
           parts.push(
-            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml(family)}" font-size="${n(primitive.size)}" fill="${xml(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml(line.text)}</text>`
+            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml(family)}" font-size="${n(primitive.size)}" font-weight="${primitive.fontWeight}" fill="${xml(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml(line.text)}</text>`
           )
         }
         break
@@ -78,13 +78,27 @@ export function paintSVG(resolved: ResolvedDesign, ctx: SvgPaintContext): string
     }
     if (rotation) parts.push('</g>')
   }
+  if (labelClipId) parts.push('</g>')
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` +
+    (labelClipId ? `<defs><clipPath id="${labelClipId}">${labelShapeElement(resolved.width, resolved.height, resolved.shape, '')}</clipPath></defs>` : '') +
     (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : '') +
     parts.join('') +
     '</svg>'
   )
+}
+
+function labelShapeElement(width: number, height: number, shape: ResolvedDesign['shape'], fill: string): string {
+  const fillAttr = fill ? ` fill="${xml(fill)}"` : ''
+  if (shape === 'circle') {
+    const r = Math.min(width, height) / 2
+    return `<circle cx="${n(width / 2)}" cy="${n(height / 2)}" r="${n(r)}"${fillAttr}/>`
+  }
+  if (shape === 'oval') {
+    return `<ellipse cx="${n(width / 2)}" cy="${n(height / 2)}" rx="${n(width / 2)}" ry="${n(height / 2)}"${fillAttr}/>`
+  }
+  return `<rect x="0" y="0" width="${n(width)}" height="${n(height)}"${fillAttr}/>`
 }
 
 function opacityAttr(opacity: number): string {

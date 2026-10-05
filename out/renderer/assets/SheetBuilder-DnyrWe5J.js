@@ -1,6 +1,6 @@
-import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, t as jsxRuntimeExports, f as Printer, F as FileText, C as CircleAlert, b as CircleCheck, X, u as outputEligibilityError, n as confirmUsingSavedTillieData, r as getLabelTemplate } from "./index-BwX6qHRB.js";
-import { A as ArrowLeft, L as LabelPreview } from "./LabelPreview-B3r3ZxCP.js";
-import { i as isDesignTemplateId } from "./DesignLabelSvg-DBLls6hC.js";
+import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, t as jsxRuntimeExports, f as Printer, i as Sticker, F as FileText, g as RollPrintDialog, C as CircleAlert, b as CircleCheck, X, u as outputEligibilityError, n as confirmUsingSavedTillieData, r as getLabelTemplate } from "./index-CuujZF7E.js";
+import { A as ArrowLeft, L as LabelPreview } from "./LabelPreview-UiYyfwI2.js";
+import { c as isDesignTemplateId } from "./DesignLabelSvg-Cd_O3ig_.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -61,7 +61,7 @@ function isSheetDraft(value) {
   const draft = value;
   return draft.version === 1 && (draft.mode === "fill" || draft.mode === "manual") && Array.isArray(draft.slotIds) && draft.slotIds.length === PLS_780.labelsPerSheet && draft.slotIds.every((id) => id === null || typeof id === "string") && (draft.fillProductId === null || typeof draft.fillProductId === "string") && Number.isFinite(draft.startSlot) && Number.isFinite(draft.fillCount) && (draft.reviewAction === "print" || draft.reviewAction === "export") && typeof draft.updatedAt === "string";
 }
-function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
+function SheetBuilder({ initialProducts, onBack, backLabel = "Products", onRepairIssue }) {
   const [slots, setSlots] = reactExports.useState(
     Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
   );
@@ -89,6 +89,7 @@ function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
   const [reviewAction, setReviewAction] = reactExports.useState("print");
   const [printers, setPrinters] = reactExports.useState([]);
   const [sheetPrinterName, setSheetPrinterName] = reactExports.useState("");
+  const [rollProduct, setRollProduct] = reactExports.useState(null);
   const sheetPrinterInitRef = reactExports.useRef(false);
   const reviewRef = reactExports.useRef(null);
   const printTriggerRef = reactExports.useRef(null);
@@ -595,6 +596,7 @@ function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
     setOutcome(`Copied slot ${activeSlot + 1} to slot ${targetIndex + 1}.`);
     setPrintError("");
   }
+  const rollPrintProduct = displaySlots.find((product) => Boolean(product)) ?? null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "workspace-toolbar sheet-toolbar", style: {
       display: "flex",
@@ -608,7 +610,8 @@ function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
     }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: onBack, className: "btn-ghost btn-sm", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 13 }),
-        " Products"
+        " ",
+        backLabel
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "var(--color-border-strong)", fontSize: 13 }, children: "/" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { style: { fontSize: 16, fontWeight: 650, color: "var(--color-workbench-navy)", margin: 0 }, children: "Print Sheet Builder" }),
@@ -627,6 +630,10 @@ function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
           /* @__PURE__ */ jsxRuntimeExports.jsx(Printer, { size: 13 }),
           " Review & Print"
         ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => rollPrintProduct && setRollProduct(rollPrintProduct), disabled: !rollPrintProduct, className: "btn-outline btn-sm", title: rollPrintProduct ? `Print ${rollPrintProduct.name || "this label"} to a roll printer` : "Assign a product before printing a roll label", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Sticker, { size: 13 }),
+          " Print Roll"
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { ref: exportTriggerRef, onClick: () => {
           activeReviewTriggerRef.current = exportTriggerRef.current;
           setReviewAction("export");
@@ -637,6 +644,7 @@ function SheetBuilder({ initialProducts, onBack, onRepairIssue }) {
         ] })
       ] })
     ] }),
+    rollProduct && /* @__PURE__ */ jsxRuntimeExports.jsx(RollPrintDialog, { product: rollProduct, onClose: () => setRollProduct(null) }),
     outcome && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { role: "status", "aria-live": "polite", className: "status-message", style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", background: "var(--color-success-surface)", color: "var(--color-success-text)", fontSize: 12 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { flex: 1 }, children: outcome }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-ghost btn-sm", onClick: () => setOutcome(""), children: "Dismiss" })

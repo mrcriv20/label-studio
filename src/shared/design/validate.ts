@@ -7,13 +7,17 @@ import type {
   DesignElement,
   DesignTemplate,
   ImageElement,
+  LabelShape,
   TextCase,
   TextElement,
+  TextWeight,
   VisibleIf,
 } from './types'
 import { DESIGN_ID_PREFIX } from './types'
 
 const TEXT_CASES: TextCase[] = ['none', 'upper', 'lower', 'title', 'sentence']
+const TEXT_WEIGHTS: TextWeight[] = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+const LABEL_SHAPES: LabelShape[] = ['rectangle', 'circle', 'oval']
 
 const VISIBLE_IF: VisibleIf[] = ['always', 'showPrice', 'showBarcode', 'showCookingInstructions', 'showProductName']
 
@@ -32,7 +36,14 @@ export function validateDesignTemplate(raw: unknown): DesignTemplate {
     schemaVersion: 1,
     id,
     name: str(doc.name) || 'Untitled Design',
-    canvas: { width, height, background: str(canvas.background) || '#ffffff' },
+    canvas: {
+      width,
+      height,
+      background: str(canvas.background) || '#ffffff',
+      ...(LABEL_SHAPES.includes(canvas.shape as LabelShape) && canvas.shape !== 'rectangle'
+        ? { shape: canvas.shape as LabelShape }
+        : {}),
+    },
     elements,
     createdAt: str(doc.createdAt) || new Date(0).toISOString(),
     updatedAt: str(doc.updatedAt) || new Date(0).toISOString(),
@@ -71,6 +82,9 @@ function validateElement(raw: unknown, index: number): DesignElement {
         type: 'text',
         content: str(el.content),
         fontId: str(el.fontId),
+        ...(TEXT_WEIGHTS.includes(el.fontWeight as TextWeight) && el.fontWeight !== 400
+          ? { fontWeight: el.fontWeight as TextWeight }
+          : {}),
         size: clamp(num(el.size, 12), 1, 400),
         autoFit: Boolean(el.autoFit),
         color: str(el.color) || '#1b2733',

@@ -1,7 +1,7 @@
-import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, r as getLabelTemplate, t as jsxRuntimeExports, b as CircleCheck, C as CircleAlert, e as Layers, E as Ellipsis, F as FileText, i as Sticker, g as RollPrintDialog, U as Upload, X, R as RefreshCw, u as outputEligibilityError, n as confirmUsingSavedTillieData } from "./index-BwX6qHRB.js";
-import { J as JsBarcode, A as ArrowLeft, L as LabelPreview } from "./LabelPreview-B3r3ZxCP.js";
-import { S as Save } from "./save-Y6LhUU2b.js";
-import "./DesignLabelSvg-DBLls6hC.js";
+import { o as createLucideIcon, v as reactExports, m as assessProductContentFit, r as getLabelTemplate, t as jsxRuntimeExports, b as CircleCheck, C as CircleAlert, e as Layers, i as Sticker, E as Ellipsis, F as FileText, g as RollPrintDialog, U as Upload, X, R as RefreshCw, u as outputEligibilityError, n as confirmUsingSavedTillieData } from "./index-CuujZF7E.js";
+import { J as JsBarcode, A as ArrowLeft, L as LabelPreview } from "./LabelPreview-UiYyfwI2.js";
+import { S as Save } from "./save-Qr3Mll5A.js";
+import "./DesignLabelSvg-Cd_O3ig_.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -561,6 +561,10 @@ function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyCh
           /* @__PURE__ */ jsxRuntimeExports.jsx(Layers, { size: 12 }),
           " Print Sheet"
         ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleRollPrint, className: "btn-outline btn-sm", title: "Print this label to a roll printer", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(Sticker, { size: 12 }),
+          " Print Roll"
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "row-actions-menu", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("summary", { className: "btn btn-icon", "aria-label": "More label output actions", title: "More output actions", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Ellipsis, { size: 14 }) }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "row-actions-popover", children: [
@@ -571,10 +575,6 @@ function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesigner, onDirtyCh
             /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleExportSVG, disabled: exporting, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(FileCode2, { size: 13 }),
               " Export label SVG"
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: handleRollPrint, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(Sticker, { size: 13 }),
-              " Print roll label"
             ] })
           ] })
         ] })

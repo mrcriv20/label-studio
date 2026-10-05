@@ -10,6 +10,7 @@ import {
   concatTransformationMatrix,
   moveTo,
   lineTo,
+  appendBezierCurve,
   closePath,
   clip,
   endPath,
@@ -102,14 +103,8 @@ export async function drawDesignLabel(
     return font
   }
 
-  page.drawRectangle({
-    x: 0,
-    y: 0,
-    width: resolved.width,
-    height: H,
-    color: hexToRgb(resolved.background || '#ffffff'),
-    borderWidth: 0,
-  })
+  const clippedToLabelShape = pushLabelShapeClip(page, resolved)
+  drawLabelBackground(page, resolved)
 
   for (const primitive of resolved.primitives) {
     if (primitive.rotation) {
@@ -203,6 +198,49 @@ export async function drawDesignLabel(
     }
     if (primitive.rotation) page.pushOperators(popGraphicsState())
   }
+  if (clippedToLabelShape) page.pushOperators(popGraphicsState())
+}
+
+function drawLabelBackground(page: PDFPage, resolved: ResolvedDesign): void {
+  const color = hexToRgb(resolved.background || '#ffffff')
+  if (resolved.shape === 'circle') {
+    const radius = Math.min(resolved.width, resolved.height) / 2
+    page.drawEllipse({ x: resolved.width / 2, y: resolved.height / 2, xScale: radius, yScale: radius, color, borderWidth: 0 })
+    return
+  }
+  if (resolved.shape === 'oval') {
+    page.drawEllipse({ x: resolved.width / 2, y: resolved.height / 2, xScale: resolved.width / 2, yScale: resolved.height / 2, color, borderWidth: 0 })
+    return
+  }
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: resolved.width,
+    height: resolved.height,
+    color,
+    borderWidth: 0,
+  })
+}
+
+function pushLabelShapeClip(page: PDFPage, resolved: ResolvedDesign): boolean {
+  if (resolved.shape === 'rectangle') return false
+  const rx = resolved.shape === 'circle' ? Math.min(resolved.width, resolved.height) / 2 : resolved.width / 2
+  const ry = resolved.shape === 'circle' ? rx : resolved.height / 2
+  const cx = resolved.width / 2
+  const cy = resolved.height / 2
+  const k = 0.5522847498307936
+  page.pushOperators(
+    pushGraphicsState(),
+    moveTo(cx + rx, cy),
+    appendBezierCurve(cx + rx, cy + ry * k, cx + rx * k, cy + ry, cx, cy + ry),
+    appendBezierCurve(cx - rx * k, cy + ry, cx - rx, cy + ry * k, cx - rx, cy),
+    appendBezierCurve(cx - rx, cy - ry * k, cx - rx * k, cy - ry, cx, cy - ry),
+    appendBezierCurve(cx + rx * k, cy - ry, cx + rx, cy - ry * k, cx + rx, cy),
+    closePath(),
+    clip(),
+    endPath(),
+  )
+  return true
 }
 
 async function embedImage(doc: PDFDocument, sourcePath: string): Promise<EmbeddedImage | null> {
@@ -240,7 +278,7 @@ export async function designToSVG(design: DesignTemplate, product: Product): Pro
   const fontCss = [...usedFontIds]
     .map((id) => {
       const uri = fontDataUri(id)
-      return uri ? `@font-face{font-family:"${svgFontFamily(id)}";src:url("${uri}");}` : ''
+      return uri ? `@font-face{font-family:"${svgFontFamily(id)}";src:url("${uri}");font-style:normal;font-weight:100 900;}` : ''
     })
     .join('')
 

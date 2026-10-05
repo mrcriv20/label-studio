@@ -5,6 +5,7 @@ import {
   Barcode,
   Copy,
   Download,
+  FolderOpen,
   GripVertical,
   Image as ImageIcon,
   Lock,
@@ -23,23 +24,27 @@ import {
   CheckCircle2,
   X,
 } from 'lucide-react'
-import type { DesignTemplate, Product } from '../types'
+import type { DesignTemplate, FontAsset, Product } from '../types'
 import type {
   BarcodeElement,
   BoxElement,
   DesignElement,
   ImageElement,
+  LabelShape,
   TextCase,
   TextElement,
+  TextWeight,
   VisibleIf,
 } from '../../../shared/design/types'
-import { BINDABLE_FIELDS, DESIGN_ID_PREFIX, TEXT_CASE_OPTIONS } from '../../../shared/design/types'
+import { BINDABLE_FIELDS, DESIGN_ID_PREFIX, LABEL_SHAPE_OPTIONS, TEXT_CASE_OPTIONS, TEXT_WEIGHT_OPTIONS } from '../../../shared/design/types'
 import {
   paintDesignSVG,
   useBarcodeRenderer,
   useDesignImages,
   useTextMeasurer,
+  invalidateDesignFonts,
 } from '../components/design/DesignLabelSvg'
+import { installFonts } from '../lib/fonts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -48,13 +53,22 @@ const MIN_ELEMENT_SIZE = 6
 const SNAP_THRESHOLD = 3 // pt
 const HISTORY_LIMIT = 100
 
-const CANVAS_PRESETS: Array<{ label: string; w: number; h: number }> = [
+const CANVAS_PRESETS: Array<{ label: string; w: number; h: number; shape?: LabelShape }> = [
   { label: '3.5 × 2 in — shelf tag', w: 252, h: 144 },
   { label: '2.5 × 4 in — roll portrait', w: 180, h: 288 },
   { label: '4 × 2.5 in — roll landscape', w: 288, h: 180 },
   { label: '5 × 3 in — jar / sauce label', w: 360, h: 216 },
   { label: 'PLS780-compatible slot (2.51 × 4.01 in)', w: 181, h: 289 },
 ]
+
+CANVAS_PRESETS.splice(
+  4,
+  0,
+  { label: '2.5 in circle', w: 180, h: 180, shape: 'circle' },
+  { label: '3 in circle', w: 216, h: 216, shape: 'circle' },
+  { label: '3 x 2 in oval', w: 216, h: 144, shape: 'oval' },
+  { label: '4 x 2.5 in oval', w: 288, h: 180, shape: 'oval' },
+)
 
 const SAMPLE_PRODUCT: Partial<Product> = {
   name: 'Hot Honey Marinara',
@@ -121,6 +135,7 @@ function newText(canvas: { width: number; height: number }): TextElement {
     ...centered(canvas, Math.min(200, canvas.width - 16), 32),
     content: '{name}',
     fontId: 'bundled:lora',
+    fontWeight: 400,
     size: 18,
     autoFit: true,
     color: '#1b2733',
@@ -166,6 +181,14 @@ function newDesign(): DesignTemplate {
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
+function selectionBounds(elements: DesignElement[]): { x: number; y: number; w: number; h: number } {
+  const left = Math.min(...elements.map((element) => element.x))
+  const top = Math.min(...elements.map((element) => element.y))
+  const right = Math.max(...elements.map((element) => element.x + element.w))
+  const bottom = Math.max(...elements.map((element) => element.y + element.h))
+  return { x: round2(left), y: round2(top), w: round2(right - left), h: round2(bottom - top) }
+}
+
 interface Props {
   initialDesignId?: string | null
   onDirtyChange: (dirty: boolean) => void
@@ -175,15 +198,18 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
   const [designs, setDesigns] = useState<Array<{ id: string; name: string }>>([])
   const [design, setDesign] = useState<DesignTemplate | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [layersOpen, setLayersOpen] = useState(false)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [guides, setGuides] = useState<{ vx: number | null; vy: number | null }>({ vx: null, vy: null })
-  const [fonts, setFonts] = useState<Array<{ id: string; family: string }>>([])
+  const [fonts, setFonts] = useState<FontAsset[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [sampleProductId, setSampleProductId] = useState('')
+  const [googleFamily, setGoogleFamily] = useState('')
+  const [addingFont, setAddingFont] = useState(false)
   const [error, setError] = useState('')
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -203,6 +229,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
     startClientX: number
     startClientY: number
     original: DesignElement
+    originals: Map<string, DesignElement>
     moved: boolean
   } | null>(null)
 
@@ -316,6 +343,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
     futureRef.current = []
     setDesign(doc)
     setSelectedId(null)
+    setSelectedIds(new Set())
     setDirty(false)
     setError('')
   }, [])
@@ -332,12 +360,33 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
 
   useEffect(() => {
     window.api.font.list().then((result) => {
-      if (result.ok) setFonts(result.data.map(({ id, family }) => ({ id, family })))
+      if (result.ok) {
+        setFonts(result.data)
+        installFonts(result.data)
+        invalidateDesignFonts()
+      }
     })
     window.api.product.list().then((result) => {
       if (result.ok) setProducts(result.data)
     })
   }, [])
+
+  const addDesignerFont = useCallback(async (kind: 'system' | 'google'): Promise<void> => {
+    setAddingFont(true)
+    setError('')
+    const result = kind === 'google'
+      ? await window.api.font.addGoogle(googleFamily)
+      : await window.api.font.importLocal()
+    setAddingFont(false)
+    if (!result.ok) { setError(result.error); return }
+    if (!result.data) return
+    const refreshed = await window.api.font.list()
+    const next = refreshed.ok ? refreshed.data : [...fonts, result.data]
+    setFonts(next)
+    installFonts(next)
+    invalidateDesignFonts()
+    if (kind === 'google') setGoogleFamily('')
+  }, [fonts, googleFamily])
 
   useEffect(() => {
     let alive = true
@@ -387,6 +436,21 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
     setDirty(true)
   }, [])
 
+  const patchElements = useCallback((patches: Array<{ id: string; patch: Partial<DesignElement> }>): void => {
+    const byId = new Map(patches.map(({ id, patch }) => [id, patch]))
+    setDesign((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        elements: prev.elements.map((el) => {
+          const patch = byId.get(el.id)
+          return patch ? ({ ...el, ...patch } as DesignElement) : el
+        }),
+      }
+    })
+    setDirty(true)
+  }, [])
+
   const commitElement = useCallback(
     (id: string, patch: Partial<DesignElement>): void => {
       commit((d) => ({
@@ -420,19 +484,47 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
   }, [])
 
   const selected = design?.elements.find((el) => el.id === selectedId) ?? null
+  const selectedElements = useMemo(() => (
+    design?.elements.filter((element) => selectedIds.has(element.id)) ?? []
+  ), [design, selectedIds])
+
+  const selectOnly = useCallback((id: string | null): void => {
+    setSelectedId(id)
+    setSelectedIds(id ? new Set([id]) : new Set())
+  }, [])
+
+  const selectElement = useCallback((id: string, additive: boolean): void => {
+    if (!additive) {
+      selectOnly(id)
+      return
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      if (!next.size) setSelectedId(null)
+      else setSelectedId(next.has(id) ? id : [...next][next.size - 1])
+      return next
+    })
+  }, [selectOnly])
 
   const addElement = useCallback(
     (element: DesignElement): void => {
       commit((d) => ({ ...d, elements: [...d.elements, element] }))
-      setSelectedId(element.id)
+      selectOnly(element.id)
     },
-    [commit],
+    [commit, selectOnly],
   )
 
   const deleteElement = useCallback(
     (id: string): void => {
       commit((d) => ({ ...d, elements: d.elements.filter((el) => el.id !== id) }))
       setSelectedId((current) => (current === id ? null : current))
+      setSelectedIds((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
     },
     [commit],
   )
@@ -446,11 +538,11 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
         recordSnapshot(prev)
         setDirty(true)
         const copy = { ...source, id: nextElementId(), x: source.x + 8, y: source.y + 8 }
-        setSelectedId(copy.id)
+        selectOnly(copy.id)
         return { ...prev, elements: [...prev.elements, copy] }
       })
     },
-    [recordSnapshot],
+    [recordSnapshot, selectOnly],
   )
 
   const moveLayer = useCallback(
@@ -467,6 +559,25 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
     },
     [commit],
   )
+
+  const alignSelection = useCallback((mode: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'): void => {
+    if (selectedElements.length < 2) return
+    const unlockedIds = new Set(selectedElements.filter((element) => !element.locked).map((element) => element.id))
+    if (!unlockedIds.size) return
+    const bounds = selectionBounds(selectedElements)
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((element) => {
+        if (!unlockedIds.has(element.id)) return element
+        if (mode === 'left') return { ...element, x: bounds.x }
+        if (mode === 'hcenter') return { ...element, x: bounds.x + bounds.w / 2 - element.w / 2 }
+        if (mode === 'right') return { ...element, x: bounds.x + bounds.w - element.w }
+        if (mode === 'top') return { ...element, y: bounds.y }
+        if (mode === 'vcenter') return { ...element, y: bounds.y + bounds.h / 2 - element.h / 2 }
+        return { ...element, y: bounds.y + bounds.h - element.h }
+      }),
+    }))
+  }, [commit, selectedElements])
 
   /** Move a layer to a new position in the layers panel (display order = topmost first). */
   const reorderLayer = useCallback(
@@ -541,19 +652,27 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
     const xs = [0, design.canvas.width / 2, design.canvas.width]
     const ys = [0, design.canvas.height / 2, design.canvas.height]
     for (const el of design.elements) {
-      if (el.id === selectedId) continue
+      if (selectedIds.has(el.id)) continue
       xs.push(el.x, el.x + el.w / 2, el.x + el.w)
       ys.push(el.y, el.y + el.h / 2, el.y + el.h)
     }
     return { xs, ys }
-  }, [design, selectedId])
+  }, [design, selectedIds])
 
   const beginGesture = useCallback(
     (event: React.PointerEvent, element: DesignElement, mode: 'move' | 'resize', handle: ResizeHandle | null): void => {
       event.preventDefault()
       event.stopPropagation()
-      setSelectedId(element.id)
+      const additive = event.shiftKey || event.metaKey || event.ctrlKey
+      if (additive) {
+        selectElement(element.id, true)
+        return
+      }
+      if (!selectedIds.has(element.id)) selectOnly(element.id)
       if (element.locked) return
+      const movingElements = mode === 'move' && selectedIds.has(element.id)
+        ? (design?.elements.filter((candidate) => selectedIds.has(candidate.id) && !candidate.locked) ?? [element])
+        : [element]
       gestureRef.current = {
         mode,
         handle,
@@ -561,10 +680,11 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
         startClientX: event.clientX,
         startClientY: event.clientY,
         original: element,
+        originals: new Map(movingElements.map((candidate) => [candidate.id, candidate])),
         moved: false,
       }
     },
-    [],
+    [design, selectElement, selectOnly, selectedIds],
   )
 
   useEffect(() => {
@@ -581,6 +701,14 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
       const original = gesture.original
 
       if (gesture.mode === 'move') {
+        if (gesture.originals.size > 1) {
+          patchElements([...gesture.originals.entries()].map(([id, candidate]) => ({
+            id,
+            patch: { x: round2(candidate.x + dx), y: round2(candidate.y + dy) },
+          })))
+          setGuides({ vx: null, vy: null })
+          return
+        }
         let x = original.x + dx
         let y = original.y + dy
         let vx: number | null = null
@@ -651,7 +779,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
     }
-  }, [design, zoom, snapTargets, patchElement, recordSnapshot])
+  }, [design, zoom, snapTargets, patchElement, patchElements, recordSnapshot])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 
@@ -679,23 +807,30 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
         duplicateElement(selectedId)
         return
       }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedIds.size) {
         event.preventDefault()
-        deleteElement(selectedId)
+        const ids = new Set(selectedIds)
+        commit((d) => ({ ...d, elements: d.elements.filter((element) => !ids.has(element.id)) }))
+        selectOnly(null)
         return
       }
-      if (selectedId && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      if (selectedIds.size && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault()
         const step = event.shiftKey ? 10 : 1
         const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
         const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
-        const element = design?.elements.find((el) => el.id === selectedId)
-        if (element && !element.locked) commitElement(selectedId, { x: element.x + dx, y: element.y + dy })
+        const ids = new Set(selectedIds)
+        commit((d) => ({
+          ...d,
+          elements: d.elements.map((element) => ids.has(element.id) && !element.locked
+            ? { ...element, x: element.x + dx, y: element.y + dy }
+            : element),
+        }))
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [design, selectedId, undo, redo, saveDesign, duplicateElement, deleteElement, commitElement])
+  }, [selectedId, selectedIds, undo, redo, saveDesign, duplicateElement, commit, selectOnly])
 
   // ── Painted canvas ─────────────────────────────────────────────────────────
 
@@ -865,11 +1000,11 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
               <div
                 key={element.id}
                 role="option"
-                aria-selected={element.id === selectedId}
+                aria-selected={selectedIds.has(element.id)}
                 aria-label={`${layerName(element)} layer${element.locked ? ', locked' : ''}`}
                 tabIndex={0}
                 draggable
-                onClick={() => { setSelectedId(element.id); setInspectorOpen(true); if (compactLayout) setLayersOpen(false) }}
+                onClick={(event) => { selectElement(element.id, event.shiftKey || event.metaKey || event.ctrlKey); setInspectorOpen(true); if (compactLayout) setLayersOpen(false) }}
                 onKeyDown={(event) => {
                   if ((event.metaKey || event.ctrlKey) && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
                     event.preventDefault()
@@ -878,7 +1013,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                   }
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    setSelectedId(element.id)
+                    selectOnly(element.id)
                     setInspectorOpen(true)
                     if (compactLayout) setLayersOpen(false)
                   }
@@ -886,7 +1021,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = 'move'
                   setDragLayerId(element.id)
-                  setSelectedId(element.id)
+                  selectOnly(element.id)
                 }}
                 onDragOver={(e) => {
                   if (!dragLayerId) return
@@ -907,7 +1042,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                   borderRadius: 8,
                   cursor: 'pointer',
                   fontSize: 12,
-                  background: element.id === selectedId ? '#eef2ff' : 'transparent',
+                  background: selectedIds.has(element.id) ? '#eef2ff' : 'transparent',
                   color: 'var(--color-text-strong-secondary)',
                   opacity: dragLayerId === element.id ? 0.4 : 1,
                   boxShadow:
@@ -945,18 +1080,25 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
         <div
           ref={canvasViewportRef}
           style={{ flex: 1, overflow: 'auto', background: '#eceff3', display: 'flex', padding: 40 }}
-          onPointerDown={() => { setSelectedId(null); if (compactLayout) { setLayersOpen(false); setInspectorOpen(false) } }}
+          onPointerDown={() => { selectOnly(null); if (compactLayout) { setLayersOpen(false); setInspectorOpen(false) } }}
         >
           <div style={{ margin: 'auto', position: 'relative', width: canvasW, height: canvasH, flexShrink: 0 }}>
             <div
               className="design-label-svg"
-              style={{ position: 'absolute', inset: 0, boxShadow: '0 4px 24px rgba(0,0,0,0.18)', background: design.canvas.background }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+                background: 'transparent',
+                borderRadius: design.canvas.shape && design.canvas.shape !== 'rectangle' ? '50%' : 0,
+                overflow: 'hidden',
+              }}
               dangerouslySetInnerHTML={{ __html: svg }}
             />
 
             {/* element hit targets / selection */}
             {design.elements.map((element) => {
-              const isSelected = element.id === selectedId
+              const isSelected = selectedIds.has(element.id)
               return (
                 <div
                   key={element.id}
@@ -965,7 +1107,7 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                   aria-pressed={isSelected}
                   tabIndex={0}
                   onPointerDown={(e) => beginGesture(e, element, 'move', null)}
-                  onFocus={() => { setSelectedId(element.id); if (!compactLayout) setInspectorOpen(true) }}
+                  onFocus={() => { if (!selectedIds.has(element.id)) selectOnly(element.id); if (!compactLayout) setInspectorOpen(true) }}
                   style={{
                     position: 'absolute',
                     left: element.x * zoom,
@@ -1032,10 +1174,10 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
               <select
                 id="designer-canvas-preset"
                 className="input"
-                value={CANVAS_PRESETS.findIndex((p) => p.w === design.canvas.width && p.h === design.canvas.height)}
+                value={CANVAS_PRESETS.findIndex((p) => p.w === design.canvas.width && p.h === design.canvas.height && (p.shape ?? 'rectangle') === (design.canvas.shape ?? 'rectangle'))}
                 onChange={(e) => {
                   const preset = CANVAS_PRESETS[Number(e.target.value)]
-                  if (preset) commit((d) => ({ ...d, canvas: { ...d.canvas, width: preset.w, height: preset.h } }))
+                  if (preset) commit((d) => ({ ...d, canvas: { ...d.canvas, width: preset.w, height: preset.h, shape: preset.shape } }))
                 }}
               >
                 <option value={-1}>Custom size…</option>
@@ -1046,19 +1188,53 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
                 ))}
               </select>
               <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="label-text" htmlFor="designer-canvas-shape">Shape</label>
+                  <select
+                    id="designer-canvas-shape"
+                    className="input"
+                    value={design.canvas.shape ?? 'rectangle'}
+                    onChange={(event) => {
+                      const shape = event.target.value as LabelShape
+                      commit((d) => {
+                        const side = shape === 'circle' ? d.canvas.width : d.canvas.height
+                        return {
+                          ...d,
+                          canvas: {
+                            ...d.canvas,
+                            height: side,
+                            shape: shape === 'rectangle' ? undefined : shape,
+                          },
+                        }
+                      })
+                    }}
+                  >
+                    {LABEL_SHAPE_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
                 <NumberField
                   label="Width (in)"
                   value={round3(design.canvas.width / PT_PER_IN)}
                   step={0.05}
                   min={0.5}
-                  onChange={(value) => commit((d) => ({ ...d, canvas: { ...d.canvas, width: Math.round(value * PT_PER_IN) } }))}
+                  onChange={(value) => commit((d) => {
+                    const width = Math.round(value * PT_PER_IN)
+                    return { ...d, canvas: { ...d.canvas, width, height: d.canvas.shape === 'circle' ? width : d.canvas.height } }
+                  })}
                 />
                 <NumberField
                   label="Height (in)"
                   value={round3(design.canvas.height / PT_PER_IN)}
                   step={0.05}
                   min={0.5}
-                  onChange={(value) => commit((d) => ({ ...d, canvas: { ...d.canvas, height: Math.round(value * PT_PER_IN) } }))}
+                  onChange={(value) => commit((d) => {
+                    const height = Math.round(value * PT_PER_IN)
+                    return { ...d, canvas: { ...d.canvas, width: d.canvas.shape === 'circle' ? height : d.canvas.width, height } }
+                  })}
                 />
               </div>
               <ColorField
@@ -1081,13 +1257,31 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
               </select>
             </div>
 
+            {selectedElements.length > 1 && (
+              <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="section-label" style={{ marginBottom: 0 }}>Align {selectedElements.length} layers</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('left')}>Left</button>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('hcenter')}>Center</button>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('right')}>Right</button>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('top')}>Top</button>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('vcenter')}>Middle</button>
+                  <button type="button" className="btn-outline btn-sm" onClick={() => alignSelection('bottom')}>Bottom</button>
+                </div>
+              </div>
+            )}
+
             {/* Element inspector */}
             {selected ? (
               <ElementInspector
                 key={selected.id}
                 element={selected}
                 fonts={fonts}
+                googleFamily={googleFamily}
+                addingFont={addingFont}
                 onChange={(patch) => commitElement(selected.id, patch)}
+                onGoogleFamilyChange={setGoogleFamily}
+                onAddFont={addDesignerFont}
                 onDelete={() => deleteElement(selected.id)}
                 onDuplicate={() => duplicateElement(selected.id)}
                 onLayer={(direction) => moveLayer(selected.id, direction)}
@@ -1111,14 +1305,22 @@ export default function Designer({ initialDesignId, onDirtyChange }: Props): JSX
 function ElementInspector({
   element,
   fonts,
+  googleFamily,
+  addingFont,
   onChange,
+  onGoogleFamilyChange,
+  onAddFont,
   onDelete,
   onDuplicate,
   onLayer,
 }: {
   element: DesignElement
-  fonts: Array<{ id: string; family: string }>
+  fonts: FontAsset[]
+  googleFamily: string
+  addingFont: boolean
   onChange: (patch: Partial<DesignElement>) => void
+  onGoogleFamilyChange: (value: string) => void
+  onAddFont: (kind: 'system' | 'google') => void
   onDelete: () => void
   onDuplicate: () => void
   onLayer: (direction: 1 | -1) => void
@@ -1205,13 +1407,44 @@ function ElementInspector({
             <select id={`element-font-${element.id}`} className="input" value={element.fontId} onChange={(e) => onChange({ fontId: e.target.value })}>
               {fonts.map((font) => (
                 <option key={font.id} value={font.id}>
-                  {font.family}
+                  {font.family} - {font.source}
                 </option>
               ))}
             </select>
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <button type="button" className="btn-outline btn-sm" onClick={() => onAddFont('system')} disabled={addingFont} style={{ flexShrink: 0 }}>
+                <FolderOpen size={12} /> System
+              </button>
+              <input
+                aria-label="Google Fonts family"
+                className="input"
+                value={googleFamily}
+                onChange={(event) => onGoogleFamilyChange(event.target.value)}
+                placeholder="Google font"
+              />
+              <button type="button" className="btn-outline btn-sm" onClick={() => onAddFont('google')} disabled={addingFont || !googleFamily.trim()} style={{ flexShrink: 0 }}>
+                <Download size={12} />
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
             <NumberField label={element.autoFit ? 'Max size (pt)' : 'Size (pt)'} value={element.size} min={4} onChange={(size) => onChange({ size })} />
+            <div>
+              <label className="label-text" htmlFor={`element-weight-${element.id}`}>Weight</label>
+              <select
+                id={`element-weight-${element.id}`}
+                className="input"
+                value={element.fontWeight ?? 400}
+                onChange={(event) => {
+                  const fontWeight = Number(event.target.value) as TextWeight
+                  onChange({ fontWeight: fontWeight === 400 ? undefined : fontWeight })
+                }}
+              >
+                {TEXT_WEIGHT_OPTIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
             <NumberField label="Line height" value={element.lineHeight} min={0.5} max={3} step={0.05} onChange={(lineHeight) => onChange({ lineHeight })} />
           </div>
           <CheckboxField

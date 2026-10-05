@@ -262,7 +262,14 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('font:list', () => {
-    try { return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) }))) }
+    try {
+      return ok(listFonts().map(({ id, family, source }) => ({
+        id,
+        family,
+        source,
+        dataUri: source === 'system' ? '' : fontDataUri(id),
+      })))
+    }
     catch (e) { return fail(String(e)) }
   })
 
@@ -270,7 +277,13 @@ export function registerIpcHandlers(): void {
     try {
       const result = await dialog.showOpenDialog({
         title: source === 'local' ? 'Choose a Font Installed on This Computer' : 'Upload a Font File',
-        defaultPath: source === 'local' && process.platform === 'darwin' ? join(app.getPath('home'), 'Library', 'Fonts') : undefined,
+        defaultPath: source === 'local'
+          ? process.platform === 'darwin'
+            ? join(app.getPath('home'), 'Library', 'Fonts')
+            : process.platform === 'win32' && process.env.WINDIR
+              ? join(process.env.WINDIR, 'Fonts')
+              : undefined
+          : undefined,
         filters: [{ name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
         properties: ['openFile'],
       })
@@ -607,6 +620,9 @@ export function registerIpcHandlers(): void {
         if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail('Label size must be positive numbers.')
         const eligibilityError = await renderedEligibilityError([{ product }], 'Roll printing')
         if (eligibilityError) return fail(eligibilityError)
+        if (process.platform === 'win32') {
+          return ok(await printRollLabelWindows(product, opts))
+        }
         const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn)
         writeFileSync(tempPath, pdfBytes)
         const printed = await printPdfToRoll(tempPath, opts)
@@ -665,14 +681,16 @@ export function generateBarcode(): string {
   return String(num)
 }
 
-// Sends a PDF straight to CUPS via `lp`, which prints PDFs natively at 100%
-// scale. Rendering the PDF in a BrowserWindow and calling webContents.print()
-// captures Chromium's PDF-viewer page (toolbar, fit-to-window zoom) instead of
-// the document itself, producing blank or mis-scaled sheets.
+// Sends a PDF to the host OS print pipeline without rendering it through
+// Chromium's PDF viewer, which can add viewer UI or fit-to-window scaling.
 async function printPdfNative(
   pdfPath: string,
   opts: { printerName?: string; copies?: number; media: string }
 ): Promise<boolean> {
+  if (process.platform === 'win32') {
+    throw new Error('Windows direct PDF printing is not available for this print type yet. Use roll label printing or export the PDF and print it manually.')
+  }
+
   const args: string[] = []
   if (opts.printerName) args.push('-d', opts.printerName)
   const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1)
@@ -693,6 +711,123 @@ async function printPdfNative(
     })
   })
   return true
+}
+
+async function printRollLabelWindows(
+  product: Product,
+  opts: { printerName: string; widthIn: number; heightIn: number; copies: number }
+): Promise<boolean> {
+  const svg = await exportSingleLabelSVG(product)
+  const { widthPt: labelW, heightPt: labelH } = svgSizePoints(svg)
+  const pageW = opts.widthIn * 72
+  const pageH = opts.heightIn * 72
+  const rotate = labelW >= labelH !== pageW >= pageH
+  const effW = rotate ? labelH : labelW
+  const effH = rotate ? labelW : labelH
+  const scale = Math.min(pageW / effW, pageH / effH)
+  const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1)
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${opts.widthIn}in ${opts.heightIn}in; margin: 0; }
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: white;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .page {
+      position: relative;
+      width: ${opts.widthIn}in;
+      height: ${opts.heightIn}in;
+      overflow: hidden;
+      break-after: avoid;
+      break-before: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      page-break-before: avoid;
+      page-break-inside: avoid;
+    }
+    .label {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: ${labelW}pt;
+      height: ${labelH}pt;
+      transform-origin: center center;
+      transform: translate(-50%, -50%) ${rotate ? 'rotate(90deg) ' : ''}scale(${scale});
+    }
+    .label > svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="page"><div class="label">${svg}</div></div>
+</body>
+</html>`
+
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    await win.webContents.executeJavaScript('document.fonts ? document.fonts.ready.then(() => true) : true')
+    await new Promise<void>((resolve) => setTimeout(resolve, 250))
+    await new Promise<void>((resolve, reject) => {
+      win.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName: opts.printerName || undefined,
+          copies,
+          margins: { marginType: 'none' },
+          pageRanges: [{ from: 0, to: 0 }],
+          pageSize: {
+            width: Math.round(opts.widthIn * 25400),
+            height: Math.round(opts.heightIn * 25400),
+          },
+        },
+        (success, failureReason) => {
+          if (success) resolve()
+          else reject(new Error(failureReason || 'The print job was not accepted by Windows.'))
+        },
+      )
+    })
+  } finally {
+    if (!win.isDestroyed()) win.close()
+  }
+
+  return true
+}
+
+function svgSizePoints(svg: string): { widthPt: number; heightPt: number } {
+  const viewBox = svg.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i)
+  if (viewBox) return { widthPt: Number(viewBox[1]), heightPt: Number(viewBox[2]) }
+
+  const width = svg.match(/\bwidth=["']([\d.]+)pt["']/i)
+  const height = svg.match(/\bheight=["']([\d.]+)pt["']/i)
+  if (width && height) return { widthPt: Number(width[1]), heightPt: Number(height[1]) }
+
+  throw new Error('Could not determine label size for roll printing.')
 }
 
 async function printPdfToRoll(

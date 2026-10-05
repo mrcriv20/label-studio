@@ -75,6 +75,7 @@ export function resolveLayout(
     width: design.canvas.width,
     height: design.canvas.height,
     background: design.canvas.background,
+    shape: design.canvas.shape ?? 'rectangle',
     primitives,
   }
 }
@@ -183,6 +184,7 @@ function resolveText(
     kind: 'text',
     lines: resolvedLines,
     fontId,
+    fontWeight: element.fontWeight ?? 400,
     size,
     color: element.color,
     opacity,

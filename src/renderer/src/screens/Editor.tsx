@@ -609,12 +609,14 @@ export default function Editor({ initialProduct, onBack, onOpenSheet, onOpenDesi
           {!onReturnToSheet && <button onClick={handlePrint} className="btn-green btn-sm" title="Save and open print setup (⌘P)">
             <Layers size={12} /> Print Sheet
           </button>}
+          <button onClick={handleRollPrint} className="btn-outline btn-sm" title="Print this label to a roll printer">
+            <Sticker size={12} /> Print Roll
+          </button>
           <details className="row-actions-menu">
             <summary className="btn btn-icon" aria-label="More label output actions" title="More output actions"><MoreHorizontal size={14} /></summary>
             <div className="row-actions-popover">
               <button onClick={handleExportPDF} disabled={exporting}><FileText size={13} /> Export label PDF</button>
               <button onClick={handleExportSVG} disabled={exporting}><FileCode2 size={13} /> Export label SVG</button>
-              <button onClick={handleRollPrint}><Sticker size={13} /> Print roll label</button>
             </div>
           </details>
         </div>

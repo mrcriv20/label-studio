@@ -16,6 +16,8 @@ export default function App(): JSX.Element {
   const [screen, setScreen] = useState<Screen>('library')
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [sheetProducts, setSheetProducts] = useState<Product[]>([])
+  const [sheetReturnProduct, setSheetReturnProduct] = useState<Product | null>(null)
+  const [libraryCategory, setLibraryCategory] = useState('__all__')
   const [designerTarget, setDesignerTarget] = useState<string | null>(null)
   const [hasUnsavedWork, setHasUnsavedWork] = useState(false)
   const [sheetRepair, setSheetRepair] = useState<{ field: keyof Product } | null>(null)
@@ -67,6 +69,7 @@ export default function App(): JSX.Element {
     if (next === 'editor') {
       setEditingProduct(null)
     }
+    if (next !== 'sheet') setSheetReturnProduct(null)
     setScreen(next)
   }
 
@@ -74,13 +77,15 @@ export default function App(): JSX.Element {
     if (screen !== 'library' && !canLeaveWorkspace()) return
     setHasUnsavedWork(false)
     setEditingProduct(product ?? null)
+    setSheetReturnProduct(null)
     setScreen('editor')
   }
 
-  function openSheet(products: Product[]): void {
+  function openSheet(products: Product[], returnProduct?: Product | null): void {
     setSheetRepair(null)
     setHasUnsavedWork(false)
     setSheetProducts(products)
+    setSheetReturnProduct(returnProduct ?? null)
     setScreen('sheet')
   }
 
@@ -115,6 +120,20 @@ export default function App(): JSX.Element {
     if (!canLeaveWorkspace()) return
     setHasUnsavedWork(false)
     setEditingProduct(null)
+    setSheetReturnProduct(null)
+    setScreen('library')
+  }
+
+  function backFromSheet(): void {
+    if (!canLeaveWorkspace()) return
+    setHasUnsavedWork(false)
+    if (sheetReturnProduct) {
+      setEditingProduct(sheetReturnProduct)
+      setSheetProducts([])
+      setSheetReturnProduct(null)
+      setScreen('editor')
+      return
+    }
     setScreen('library')
   }
 
@@ -129,13 +148,18 @@ export default function App(): JSX.Element {
       <main className="content-area" id="main-content">
         <Suspense fallback={<div role="status" className="screen app-loading">Loading workspace…</div>}>
           {screen === 'library' && (
-            <Library onEdit={openEditor} onOpenSheet={openSheet} />
+            <Library
+              onEdit={openEditor}
+              onOpenSheet={openSheet}
+              activeCategory={libraryCategory}
+              onActiveCategoryChange={setLibraryCategory}
+            />
           )}
           {screen === 'editor' && (
             <Editor
               initialProduct={editingProduct}
               onBack={sheetRepair ? backToDraftSheet : backToLibrary}
-              onOpenSheet={(p) => openSheet([p])}
+              onOpenSheet={(p) => openSheet([p], p)}
               onOpenDesigner={openDesigner}
               onDirtyChange={setHasUnsavedWork}
               repairField={sheetRepair?.field ?? null}
@@ -146,11 +170,12 @@ export default function App(): JSX.Element {
           {screen === 'sheet' && (
             <SheetBuilder
               initialProducts={sheetProducts}
-              onBack={() => setScreen('library')}
+              onBack={backFromSheet}
+              backLabel={sheetReturnProduct ? 'Label' : 'Products'}
               onRepairIssue={openSheetRepair}
             />
           )}
-          {screen === 'settings' && <Settings onDirtyChange={setHasUnsavedWork} onOpenCalibration={() => { if (!canLeaveWorkspace()) return; setSheetProducts([]); setHasUnsavedWork(false); setScreen('sheet') }} />}
+          {screen === 'settings' && <Settings onDirtyChange={setHasUnsavedWork} onOpenCalibration={() => { if (!canLeaveWorkspace()) return; setSheetProducts([]); setSheetReturnProduct(null); setHasUnsavedWork(false); setScreen('sheet') }} />}
           {screen === 'how-to' && <HowTo onNavigate={setScreen} />}
         </Suspense>
       </main>

@@ -10,6 +10,7 @@ const pdfLib = require("pdf-lib");
 const fontkit = require("@pdf-lib/fontkit");
 const os = require("os");
 const bwipjs = require("bwip-js");
+const crypto = require("crypto");
 const mongodb = require("mongodb");
 const dns = require("node:dns");
 function _interopNamespaceDefault(e) {
@@ -538,7 +539,17 @@ function initFonts() {
   fs.mkdirSync(fontDir(), { recursive: true });
 }
 function listFonts() {
-  return [...bundledFonts(), ...customFonts()].filter((font) => fs.existsSync(font.path));
+  const fonts = [...bundledFonts(), ...systemFonts(), ...customFonts()].filter((font) => fs.existsSync(font.path)).sort((a, b) => {
+    const sourceOrder = sourceRank(a.source) - sourceRank(b.source);
+    return sourceOrder || a.family.localeCompare(b.family);
+  });
+  const seen = /* @__PURE__ */ new Set();
+  return fonts.filter((font) => {
+    const key = `${font.source}:${font.family.toLowerCase()}:${font.path.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 function getFont(id) {
   return listFonts().find((font) => font.id === id) ?? null;
@@ -580,6 +591,98 @@ async function addGoogleFont(family) {
   const asset = { id, family: cleanFamily, source: "google", path: path$1 };
   writeCatalog([...customFonts(), asset]);
   return asset;
+}
+function systemFonts() {
+  const candidates = /* @__PURE__ */ new Map();
+  for (const dir of systemFontDirs()) {
+    for (const fontPath of listFontFiles$1(dir)) {
+      const family = familyFromFilename(fontPath);
+      if (!family) continue;
+      const key = family.toLowerCase();
+      const current = candidates.get(key);
+      const asset = {
+        id: `system:${stableId(fontPath)}`,
+        family,
+        source: "system",
+        path: fontPath
+      };
+      if (!current || scoreSystemFont(fontPath) > scoreSystemFont(current.path)) candidates.set(key, asset);
+    }
+  }
+  return [...candidates.values()];
+}
+function systemFontDirs() {
+  const dirs = /* @__PURE__ */ new Set();
+  const home2 = electron.app.getPath("home");
+  if (process.platform === "win32") {
+    if (process.env.WINDIR) dirs.add(path.join(process.env.WINDIR, "Fonts"));
+    if (process.env.LOCALAPPDATA) dirs.add(path.join(process.env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts"));
+  } else if (process.platform === "darwin") {
+    dirs.add("/Library/Fonts");
+    dirs.add("/System/Library/Fonts");
+    dirs.add(path.join(home2, "Library", "Fonts"));
+  } else {
+    dirs.add("/usr/local/share/fonts");
+    dirs.add("/usr/share/fonts");
+    dirs.add(path.join(home2, ".local", "share", "fonts"));
+  }
+  return [...dirs].filter((dir) => fs.existsSync(dir));
+}
+function listFontFiles$1(dir, depth = 0) {
+  if (depth > 2) return [];
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path$1 = path.join(dir, entry.name);
+      if (entry.isDirectory()) return listFontFiles$1(path$1, depth + 1);
+      const extension = path.extname(entry.name).toLowerCase();
+      return [".ttf", ".otf", ".woff", ".woff2"].includes(extension) ? [path$1] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+function familyFromFilename(fontPath) {
+  const registered = process.platform === "win32" ? windowsFontNameMap().get(path.basename(fontPath).toLowerCase()) : "";
+  if (registered) return registered;
+  return path.basename(fontPath, path.extname(fontPath)).replace(/[-_]+/g, " ").replace(/\b(variable|vf|regular|roman|normal|book|text|display|bold|black|heavy|light|thin|medium|semibold|demibold|extrabold|italic|oblique|condensed|narrow)\b/gi, " ").replace(/\s+/g, " ").trim();
+}
+let cachedWindowsFontNameMap = null;
+function windowsFontNameMap() {
+  if (cachedWindowsFontNameMap) return cachedWindowsFontNameMap;
+  const map = /* @__PURE__ */ new Map();
+  for (const hive of ["HKLM", "HKCU"]) {
+    try {
+      const output = child_process.execFileSync("reg", ["query", `${hive}\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts`], {
+        encoding: "utf8",
+        windowsHide: true
+      });
+      for (const line of output.split(/\r?\n/)) {
+        const match = line.match(/^\s*(.+?)\s+REG_\w+\s+(.+?)\s*$/);
+        if (!match) continue;
+        const fileName = path.basename(match[2].trim()).toLowerCase();
+        const family = match[1].replace(/\s*\([^)]*\)\s*$/g, "").replace(/\b(regular|roman|normal|book|text|display|bold|black|heavy|light|thin|medium|semibold|demibold|extrabold|italic|oblique|condensed|narrow)\b/gi, " ").replace(/\s+/g, " ").trim();
+        if (fileName && family && !map.has(fileName)) map.set(fileName, family);
+      }
+    } catch {
+    }
+  }
+  cachedWindowsFontNameMap = map;
+  return map;
+}
+function scoreSystemFont(fontPath) {
+  const name = path.basename(fontPath).toLowerCase();
+  let score = 0;
+  if (/\bregular\b|(^|[-_\s])r(\.|[-_\s]|$)/i.test(name)) score += 20;
+  if (!/(bold|black|heavy|light|thin|medium|semi|demi|extra|italic|oblique|condensed|narrow)/i.test(name)) score += 10;
+  if (path.extname(name) === ".ttf") score += 4;
+  if (path.extname(name) === ".otf") score += 3;
+  return score;
+}
+function stableId(value) {
+  return crypto.createHash("sha1").update(value).digest("hex").slice(0, 12);
+}
+function sourceRank(source) {
+  return source === "bundled" ? 0 : source === "system" ? 1 : source === "google" ? 2 : source === "local" ? 3 : 4;
 }
 function writeCatalog(fonts) {
   fs.writeFileSync(catalogPath(), JSON.stringify(fonts, null, 2), "utf8");
@@ -633,6 +736,8 @@ function designSheetPlacement(width, height, slotWidth, slotHeight) {
   return { width: drawWidth, height: drawHeight, x: (slotWidth - drawWidth) / 2, y: (slotHeight - drawHeight) / 2 };
 }
 const TEXT_CASES = ["none", "upper", "lower", "title", "sentence"];
+const TEXT_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+const LABEL_SHAPES = ["rectangle", "circle", "oval"];
 const VISIBLE_IF = ["always", "showPrice", "showBarcode", "showCookingInstructions", "showProductName"];
 function validateDesignTemplate(raw) {
   if (!raw || typeof raw !== "object") throw new Error("Design file is not an object.");
@@ -649,7 +754,12 @@ function validateDesignTemplate(raw) {
     schemaVersion: 1,
     id,
     name: str(doc.name) || "Untitled Design",
-    canvas: { width, height, background: str(canvas.background) || "#ffffff" },
+    canvas: {
+      width,
+      height,
+      background: str(canvas.background) || "#ffffff",
+      ...LABEL_SHAPES.includes(canvas.shape) && canvas.shape !== "rectangle" ? { shape: canvas.shape } : {}
+    },
     elements,
     createdAt: str(doc.createdAt) || (/* @__PURE__ */ new Date(0)).toISOString(),
     updatedAt: str(doc.updatedAt) || (/* @__PURE__ */ new Date(0)).toISOString()
@@ -685,6 +795,7 @@ function validateElement(raw, index) {
         type: "text",
         content: str(el.content),
         fontId: str(el.fontId),
+        ...TEXT_WEIGHTS.includes(el.fontWeight) && el.fontWeight !== 400 ? { fontWeight: el.fontWeight } : {},
         size: clamp$1(num(el.size, 12), 1, 400),
         autoFit: Boolean(el.autoFit),
         color: str(el.color) || "#1b2733",
@@ -970,6 +1081,7 @@ function resolveLayout(design, product, measurer) {
     width: design.canvas.width,
     height: design.canvas.height,
     background: design.canvas.background,
+    shape: design.canvas.shape ?? "rectangle",
     primitives
   };
 }
@@ -1053,6 +1165,7 @@ function resolveText(element, product, measurer, opacity) {
     kind: "text",
     lines: resolvedLines,
     fontId,
+    fontWeight: element.fontWeight ?? 400,
     size,
     color: element.color,
     opacity
@@ -1152,9 +1265,9 @@ function designBarcodeOptions(value, showText, colorHex) {
 function paintSVG(resolved, ctx) {
   const parts = [];
   let clipCounter = 0;
-  parts.push(
-    `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml$1(resolved.background || "#ffffff")}"/>`
-  );
+  const labelClipId = resolved.shape === "rectangle" ? "" : "design-label-shape";
+  parts.push(labelShapeElement(resolved.width, resolved.height, resolved.shape, resolved.background || "#ffffff"));
+  if (labelClipId) parts.push(`<g clip-path="url(#${labelClipId})">`);
   for (const primitive of resolved.primitives) {
     const rotation = primitive.rotation;
     if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`);
@@ -1171,7 +1284,7 @@ function paintSVG(resolved, ctx) {
         const family = ctx.fontFamily(primitive.fontId);
         for (const line of primitive.lines) {
           parts.push(
-            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml$1(family)}" font-size="${n(primitive.size)}" fill="${xml$1(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml$1(line.text)}</text>`
+            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml$1(family)}" font-size="${n(primitive.size)}" font-weight="${primitive.fontWeight}" fill="${xml$1(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml$1(line.text)}</text>`
           );
         }
         break;
@@ -1202,7 +1315,19 @@ function paintSVG(resolved, ctx) {
     }
     if (rotation) parts.push("</g>");
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
+  if (labelClipId) parts.push("</g>");
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (labelClipId ? `<defs><clipPath id="${labelClipId}">${labelShapeElement(resolved.width, resolved.height, resolved.shape, "")}</clipPath></defs>` : "") + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
+}
+function labelShapeElement(width, height, shape, fill) {
+  const fillAttr = fill ? ` fill="${xml$1(fill)}"` : "";
+  if (shape === "circle") {
+    const r = Math.min(width, height) / 2;
+    return `<circle cx="${n(width / 2)}" cy="${n(height / 2)}" r="${n(r)}"${fillAttr}/>`;
+  }
+  if (shape === "oval") {
+    return `<ellipse cx="${n(width / 2)}" cy="${n(height / 2)}" rx="${n(width / 2)}" ry="${n(height / 2)}"${fillAttr}/>`;
+  }
+  return `<rect x="0" y="0" width="${n(width)}" height="${n(height)}"${fillAttr}/>`;
 }
 function opacityAttr(opacity) {
   return opacity < 1 ? ` opacity="${n(opacity)}"` : "";
@@ -1262,14 +1387,8 @@ async function drawDesignLabel(doc, page, design, product) {
     fontCache.set(fontId, font);
     return font;
   };
-  page.drawRectangle({
-    x: 0,
-    y: 0,
-    width: resolved.width,
-    height: H,
-    color: hexToRgb$1(resolved.background || "#ffffff"),
-    borderWidth: 0
-  });
+  const clippedToLabelShape = pushLabelShapeClip(page, resolved);
+  drawLabelBackground(page, resolved);
   for (const primitive of resolved.primitives) {
     if (primitive.rotation) {
       const { degrees, cx, cy } = primitive.rotation;
@@ -1359,6 +1478,47 @@ async function drawDesignLabel(doc, page, design, product) {
     }
     if (primitive.rotation) page.pushOperators(pdfLib.popGraphicsState());
   }
+  if (clippedToLabelShape) page.pushOperators(pdfLib.popGraphicsState());
+}
+function drawLabelBackground(page, resolved) {
+  const color = hexToRgb$1(resolved.background || "#ffffff");
+  if (resolved.shape === "circle") {
+    const radius = Math.min(resolved.width, resolved.height) / 2;
+    page.drawEllipse({ x: resolved.width / 2, y: resolved.height / 2, xScale: radius, yScale: radius, color, borderWidth: 0 });
+    return;
+  }
+  if (resolved.shape === "oval") {
+    page.drawEllipse({ x: resolved.width / 2, y: resolved.height / 2, xScale: resolved.width / 2, yScale: resolved.height / 2, color, borderWidth: 0 });
+    return;
+  }
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: resolved.width,
+    height: resolved.height,
+    color,
+    borderWidth: 0
+  });
+}
+function pushLabelShapeClip(page, resolved) {
+  if (resolved.shape === "rectangle") return false;
+  const rx = resolved.shape === "circle" ? Math.min(resolved.width, resolved.height) / 2 : resolved.width / 2;
+  const ry = resolved.shape === "circle" ? rx : resolved.height / 2;
+  const cx = resolved.width / 2;
+  const cy = resolved.height / 2;
+  const k = 0.5522847498307936;
+  page.pushOperators(
+    pdfLib.pushGraphicsState(),
+    pdfLib.moveTo(cx + rx, cy),
+    pdfLib.appendBezierCurve(cx + rx, cy + ry * k, cx + rx * k, cy + ry, cx, cy + ry),
+    pdfLib.appendBezierCurve(cx - rx * k, cy + ry, cx - rx, cy + ry * k, cx - rx, cy),
+    pdfLib.appendBezierCurve(cx - rx, cy - ry * k, cx - rx * k, cy - ry, cx, cy - ry),
+    pdfLib.appendBezierCurve(cx + rx * k, cy - ry, cx + rx, cy - ry * k, cx + rx, cy),
+    pdfLib.closePath(),
+    pdfLib.clip(),
+    pdfLib.endPath()
+  );
+  return true;
 }
 async function embedImage(doc, sourcePath) {
   const bytes = fs.readFileSync(sourcePath);
@@ -1390,7 +1550,7 @@ async function designToSVG(design, product) {
   }
   const fontCss = [...usedFontIds].map((id) => {
     const uri = fontDataUri(id);
-    return uri ? `@font-face{font-family:"${svgFontFamily(id)}";src:url("${uri}");}` : "";
+    return uri ? `@font-face{font-family:"${svgFontFamily(id)}";src:url("${uri}");font-style:normal;font-weight:100 900;}` : "";
   }).join("");
   return paintSVG(resolved, {
     fontFamily: (id) => svgFontFamily(id),
@@ -3005,7 +3165,12 @@ function registerIpcHandlers() {
   });
   electron.ipcMain.handle("font:list", () => {
     try {
-      return ok(listFonts().map(({ id, family, source }) => ({ id, family, source, dataUri: fontDataUri(id) })));
+      return ok(listFonts().map(({ id, family, source }) => ({
+        id,
+        family,
+        source,
+        dataUri: source === "system" ? "" : fontDataUri(id)
+      })));
     } catch (e) {
       return fail(String(e));
     }
@@ -3014,7 +3179,7 @@ function registerIpcHandlers() {
     try {
       const result = await electron.dialog.showOpenDialog({
         title: source === "local" ? "Choose a Font Installed on This Computer" : "Upload a Font File",
-        defaultPath: source === "local" && process.platform === "darwin" ? path.join(electron.app.getPath("home"), "Library", "Fonts") : void 0,
+        defaultPath: source === "local" ? process.platform === "darwin" ? path.join(electron.app.getPath("home"), "Library", "Fonts") : process.platform === "win32" && process.env.WINDIR ? path.join(process.env.WINDIR, "Fonts") : void 0 : void 0,
         filters: [{ name: "Fonts", extensions: ["ttf", "otf", "woff", "woff2"] }],
         properties: ["openFile"]
       });
@@ -3374,6 +3539,9 @@ function registerIpcHandlers() {
         if (!(opts.widthIn > 0) || !(opts.heightIn > 0)) return fail("Label size must be positive numbers.");
         const eligibilityError = await renderedEligibilityError([{ product }], "Roll printing");
         if (eligibilityError) return fail(eligibilityError);
+        if (process.platform === "win32") {
+          return ok(await printRollLabelWindows(product, opts));
+        }
         const pdfBytes = await buildRollLabelPDF(product, opts.widthIn, opts.heightIn);
         fs.writeFileSync(tempPath, pdfBytes);
         const printed = await printPdfToRoll(tempPath, opts);
@@ -3440,6 +3608,9 @@ function generateBarcode() {
   return String(num2);
 }
 async function printPdfNative(pdfPath, opts) {
+  if (process.platform === "win32") {
+    throw new Error("Windows direct PDF printing is not available for this print type yet. Use roll label printing or export the PDF and print it manually.");
+  }
   const args = [];
   if (opts.printerName) args.push("-d", opts.printerName);
   const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1);
@@ -3458,6 +3629,112 @@ async function printPdfNative(pdfPath, opts) {
     });
   });
   return true;
+}
+async function printRollLabelWindows(product, opts) {
+  const svg = await exportSingleLabelSVG(product);
+  const { widthPt: labelW, heightPt: labelH } = svgSizePoints(svg);
+  const pageW = opts.widthIn * 72;
+  const pageH = opts.heightIn * 72;
+  const rotate = labelW >= labelH !== pageW >= pageH;
+  const effW = rotate ? labelH : labelW;
+  const effH = rotate ? labelW : labelH;
+  const scale = Math.min(pageW / effW, pageH / effH);
+  const copies = Math.max(1, Math.floor(opts.copies ?? 1) || 1);
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: ${opts.widthIn}in ${opts.heightIn}in; margin: 0; }
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: white;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .page {
+      position: relative;
+      width: ${opts.widthIn}in;
+      height: ${opts.heightIn}in;
+      overflow: hidden;
+      break-after: avoid;
+      break-before: avoid;
+      break-inside: avoid;
+      page-break-after: avoid;
+      page-break-before: avoid;
+      page-break-inside: avoid;
+    }
+    .label {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: ${labelW}pt;
+      height: ${labelH}pt;
+      transform-origin: center center;
+      transform: translate(-50%, -50%) ${rotate ? "rotate(90deg) " : ""}scale(${scale});
+    }
+    .label > svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="page"><div class="label">${svg}</div></div>
+</body>
+</html>`;
+  const win = new electron.BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    await win.webContents.executeJavaScript("document.fonts ? document.fonts.ready.then(() => true) : true");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve, reject) => {
+      win.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName: opts.printerName || void 0,
+          copies,
+          margins: { marginType: "none" },
+          pageRanges: [{ from: 0, to: 0 }],
+          pageSize: {
+            width: Math.round(opts.widthIn * 25400),
+            height: Math.round(opts.heightIn * 25400)
+          }
+        },
+        (success, failureReason) => {
+          if (success) resolve();
+          else reject(new Error(failureReason || "The print job was not accepted by Windows."));
+        }
+      );
+    });
+  } finally {
+    if (!win.isDestroyed()) win.close();
+  }
+  return true;
+}
+function svgSizePoints(svg) {
+  const viewBox = svg.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
+  if (viewBox) return { widthPt: Number(viewBox[1]), heightPt: Number(viewBox[2]) };
+  const width = svg.match(/\bwidth=["']([\d.]+)pt["']/i);
+  const height = svg.match(/\bheight=["']([\d.]+)pt["']/i);
+  if (width && height) return { widthPt: Number(width[1]), heightPt: Number(height[1]) };
+  throw new Error("Could not determine label size for roll printing.");
 }
 async function printPdfToRoll(pdfPath, opts) {
   return printPdfNative(pdfPath, {
@@ -3492,7 +3769,7 @@ function createWindow() {
     minHeight: 560,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: "hiddenInset",
+    ...process.platform === "darwin" ? { titleBarStyle: "hiddenInset" } : {},
     backgroundColor: "#f8f6f1",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),

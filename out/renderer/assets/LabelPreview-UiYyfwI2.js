@@ -1,5 +1,5 @@
-import { o as createLucideIcon, q as getDefaultExportFromCjs, v as reactExports, r as getLabelTemplate, t as jsxRuntimeExports, I as INFO_LABEL_ZONES, y as toPercentHeight, B as toPercentWidth, D as toPercentX, z as toPercentTop, V as VERTICAL_INFO_LABEL_ZONES, d as LOGO_ONLY_LABEL_ZONES, L as LABEL_ZONES } from "./index-BwX6qHRB.js";
-import { i as isDesignTemplateId, a as DesignLabelSvg } from "./DesignLabelSvg-DBLls6hC.js";
+import { o as createLucideIcon, q as getDefaultExportFromCjs, v as reactExports, r as getLabelTemplate, t as jsxRuntimeExports, I as INFO_LABEL_ZONES, y as toPercentHeight, B as toPercentWidth, D as toPercentX, z as toPercentTop, V as VERTICAL_INFO_LABEL_ZONES, d as LOGO_ONLY_LABEL_ZONES, L as LABEL_ZONES } from "./index-CuujZF7E.js";
+import { c as isDesignTemplateId, a as DesignLabelSvg } from "./DesignLabelSvg-Cd_O3ig_.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *

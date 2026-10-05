@@ -1,6 +1,11 @@
-import { q as getDefaultExportFromCjs, v as reactExports, t as jsxRuntimeExports, _ as __vitePreload, p as fontFamilyFor } from "./index-BwX6qHRB.js";
+import { q as getDefaultExportFromCjs, v as reactExports, t as jsxRuntimeExports, _ as __vitePreload, p as fontFamilyFor } from "./index-CuujZF7E.js";
 const DESIGN_ID_PREFIX = "design-";
 const DEFAULT_DESIGN_FONT_ID = "bundled:lora";
+const LABEL_SHAPE_OPTIONS = [
+  { value: "rectangle", label: "Rectangle" },
+  { value: "circle", label: "Circle" },
+  { value: "oval", label: "Oval" }
+];
 const BINDABLE_FIELDS = [
   { field: "name", label: "Product name" },
   { field: "price", label: "Price" },
@@ -12,6 +17,17 @@ const BINDABLE_FIELDS = [
   { field: "cookingInstructions", label: "Cooking instructions" },
   { field: "customerName", label: "Customer name" },
   { field: "barcodeValue", label: "Barcode number" }
+];
+const TEXT_WEIGHT_OPTIONS = [
+  { value: 100, label: "Thin" },
+  { value: 200, label: "Extra light" },
+  { value: 300, label: "Light" },
+  { value: 400, label: "Regular" },
+  { value: 500, label: "Medium" },
+  { value: 600, label: "Semibold" },
+  { value: 700, label: "Bold" },
+  { value: 800, label: "Extra bold" },
+  { value: 900, label: "Black" }
 ];
 const TEXT_CASE_OPTIONS = [
   { value: "none", label: "As typed" },
@@ -36512,6 +36528,7 @@ function resolveLayout(design, product, measurer) {
     width: design.canvas.width,
     height: design.canvas.height,
     background: design.canvas.background,
+    shape: design.canvas.shape ?? "rectangle",
     primitives
   };
 }
@@ -36565,6 +36582,7 @@ function resolveText(element, product, measurer, opacity) {
     kind: "text",
     lines: resolvedLines,
     fontId,
+    fontWeight: element.fontWeight ?? 400,
     size,
     color: element.color,
     opacity
@@ -36664,9 +36682,9 @@ function designBarcodeOptions(value, showText, colorHex) {
 function paintSVG(resolved, ctx) {
   const parts = [];
   let clipCounter = 0;
-  parts.push(
-    `<rect x="0" y="0" width="${resolved.width}" height="${resolved.height}" fill="${xml(resolved.background || "#ffffff")}"/>`
-  );
+  const labelClipId = resolved.shape === "rectangle" ? "" : "design-label-shape";
+  parts.push(labelShapeElement(resolved.width, resolved.height, resolved.shape, resolved.background || "#ffffff"));
+  if (labelClipId) parts.push(`<g clip-path="url(#${labelClipId})">`);
   for (const primitive of resolved.primitives) {
     const rotation = primitive.rotation;
     if (rotation) parts.push(`<g transform="rotate(${n(rotation.degrees)} ${n(rotation.cx)} ${n(rotation.cy)})">`);
@@ -36683,7 +36701,7 @@ function paintSVG(resolved, ctx) {
         const family = ctx.fontFamily(primitive.fontId);
         for (const line of primitive.lines) {
           parts.push(
-            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml(family)}" font-size="${n(primitive.size)}" fill="${xml(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml(line.text)}</text>`
+            `<text x="${n(line.x)}" y="${n(line.baseline)}" font-family="${xml(family)}" font-size="${n(primitive.size)}" font-weight="${primitive.fontWeight}" fill="${xml(primitive.color)}"${opacityAttr(primitive.opacity)} xml:space="preserve">${xml(line.text)}</text>`
           );
         }
         break;
@@ -36714,7 +36732,19 @@ function paintSVG(resolved, ctx) {
     }
     if (rotation) parts.push("</g>");
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
+  if (labelClipId) parts.push("</g>");
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${resolved.width} ${resolved.height}" width="${resolved.width}pt" height="${resolved.height}pt">` + (labelClipId ? `<defs><clipPath id="${labelClipId}">${labelShapeElement(resolved.width, resolved.height, resolved.shape, "")}</clipPath></defs>` : "") + (ctx.fontCss ? `<style>${ctx.fontCss}</style>` : "") + parts.join("") + "</svg>";
+}
+function labelShapeElement(width, height, shape, fill) {
+  const fillAttr = fill ? ` fill="${xml(fill)}"` : "";
+  if (shape === "circle") {
+    const r = Math.min(width, height) / 2;
+    return `<circle cx="${n(width / 2)}" cy="${n(height / 2)}" r="${n(r)}"${fillAttr}/>`;
+  }
+  if (shape === "oval") {
+    return `<ellipse cx="${n(width / 2)}" cy="${n(height / 2)}" rx="${n(width / 2)}" ry="${n(height / 2)}"${fillAttr}/>`;
+  }
+  return `<rect x="0" y="0" width="${n(width)}" height="${n(height)}"${fillAttr}/>`;
 }
 function opacityAttr(opacity) {
   return opacity < 1 ? ` opacity="${n(opacity)}"` : "";
@@ -36742,6 +36772,9 @@ async function loadMeasurer() {
     })();
   }
   return measurerPromise;
+}
+function invalidateDesignFonts() {
+  measurerPromise = null;
 }
 function dataUriToBytes(dataUri) {
   const base64 = dataUri.split(",")[1];
@@ -36904,9 +36937,9 @@ function DesignLabelSvg({
         width: "100%",
         aspectRatio: `${design.canvas.width} / ${design.canvas.height}`,
         overflow: "hidden",
-        borderRadius: framed ? 12 : 0,
+        borderRadius: design.canvas.shape && design.canvas.shape !== "rectangle" ? "50%" : framed ? 12 : 0,
         boxShadow: framed ? "0 4px 24px rgba(0,0,0,0.16)" : "none",
-        background: design.canvas.background || "#ffffff",
+        background: "transparent",
         transform: `scale(${scale})`,
         transformOrigin: "top center",
         flexShrink: 0
@@ -36919,11 +36952,14 @@ function DesignLabelSvg({
 export {
   BINDABLE_FIELDS as B,
   DESIGN_ID_PREFIX as D,
+  LABEL_SHAPE_OPTIONS as L,
   TEXT_CASE_OPTIONS as T,
   DesignLabelSvg as a,
-  useDesignImages as b,
-  useTextMeasurer as c,
-  isDesignTemplateId as i,
+  TEXT_WEIGHT_OPTIONS as b,
+  isDesignTemplateId as c,
+  useDesignImages as d,
+  useTextMeasurer as e,
+  invalidateDesignFonts as i,
   paintDesignSVG as p,
   useBarcodeRenderer as u
 };

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { ArrowLeft, FileText, Printer, RotateCcw, CheckCircle2, AlertCircle, X } from 'lucide-react'
+import { ArrowLeft, FileText, Printer, RotateCcw, CheckCircle2, AlertCircle, X, Sticker } from 'lucide-react'
 import LabelPreview from '../components/LabelPreview'
+import RollPrintDialog from '../components/RollPrintDialog'
 import type { AppSettings, PrinterInfo, Product } from '../types'
 import { getLabelTemplate } from '../../../shared/labelTemplates'
 import { isDesignTemplateId } from '../../../shared/design/types'
@@ -58,10 +59,11 @@ function isSheetDraft(value: unknown): value is SheetDraft {
 interface Props {
   initialProducts: Product[]
   onBack: () => void
+  backLabel?: string
   onRepairIssue: (product: Product, field: keyof Product) => void
 }
 
-export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }: Props): JSX.Element {
+export default function SheetBuilder({ initialProducts, onBack, backLabel = 'Products', onRepairIssue }: Props): JSX.Element {
   const [slots, setSlots] = useState<SlotAssignment[]>(
     Array.from({ length: PLS_780.labelsPerSheet }, () => ({ product: null }))
   )
@@ -89,6 +91,7 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
   const [reviewAction, setReviewAction] = useState<'print' | 'export'>('print')
   const [printers, setPrinters] = useState<PrinterInfo[]>([])
   const [sheetPrinterName, setSheetPrinterName] = useState('')
+  const [rollProduct, setRollProduct] = useState<Product | null>(null)
   const sheetPrinterInitRef = useRef(false)
   const reviewRef = useRef<HTMLElement | null>(null)
   const printTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -564,6 +567,8 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
     setPrintError('')
   }
 
+  const rollPrintProduct = displaySlots.find((product): product is Product => Boolean(product)) ?? null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
 
@@ -575,7 +580,7 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
         flexShrink: 0,
       }}>
         <button onClick={onBack} className="btn-ghost btn-sm">
-          <ArrowLeft size={13} /> Products
+          <ArrowLeft size={13} /> {backLabel}
         </button>
         <span style={{ color: 'var(--color-border-strong)', fontSize: 13 }}>/</span>
         <h1 style={{ fontSize: 16, fontWeight: 650, color: 'var(--color-workbench-navy)', margin: 0 }}>Print Sheet Builder</h1>
@@ -593,11 +598,16 @@ export default function SheetBuilder({ initialProducts, onBack, onRepairIssue }:
           <button ref={printTriggerRef} onClick={() => { activeReviewTriggerRef.current = printTriggerRef.current; setReviewAction('print'); setReviewOpen(true) }} disabled={printing || !readyToPrint || preflightStatus !== 'checked' || !calibrationKnown} className="btn-green btn-sm" title={!readyToPrint ? 'Assign at least one product before printing' : !calibrationKnown ? 'Load calibration settings before output' : preflightStatus === 'checking' ? 'Checking rendered output' : preflightStatus === 'unavailable' ? 'Retry output verification first' : 'Review physical print setup'}>
             <Printer size={13} /> Review & Print
           </button>
+          <button onClick={() => rollPrintProduct && setRollProduct(rollPrintProduct)} disabled={!rollPrintProduct} className="btn-outline btn-sm" title={rollPrintProduct ? `Print ${rollPrintProduct.name || 'this label'} to a roll printer` : 'Assign a product before printing a roll label'}>
+            <Sticker size={13} /> Print Roll
+          </button>
           <button ref={exportTriggerRef} onClick={() => { activeReviewTriggerRef.current = exportTriggerRef.current; setReviewAction('export'); setReviewOpen(true) }} disabled={exporting || !readyToPrint || preflightStatus !== 'checked' || !calibrationKnown} className="btn-outline btn-sm" title={!readyToPrint ? 'Assign at least one product before exporting' : !calibrationKnown ? 'Load calibration settings before output' : preflightStatus === 'checking' ? 'Checking rendered output' : preflightStatus === 'unavailable' ? 'Retry output verification first' : 'Review setup before exporting'}>
             <FileText size={13} /> Export PDF
           </button>
         </div>
       </div>
+
+      {rollProduct && <RollPrintDialog product={rollProduct} onClose={() => setRollProduct(null)} />}
 
       {outcome && (
         <div role="status" aria-live="polite" className="status-message" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'var(--color-success-surface)', color: 'var(--color-success-text)', fontSize: 12 }}>

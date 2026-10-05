@@ -7,6 +7,14 @@ export const DESIGN_ID_PREFIX = 'design-'
 /** Font used when a text element has no explicit fontId. */
 export const DEFAULT_DESIGN_FONT_ID = 'bundled:lora'
 
+export type LabelShape = 'rectangle' | 'circle' | 'oval'
+
+export const LABEL_SHAPE_OPTIONS: Array<{ value: LabelShape; label: string }> = [
+  { value: 'rectangle', label: 'Rectangle' },
+  { value: 'circle', label: 'Circle' },
+  { value: 'oval', label: 'Oval' },
+]
+
 export type VisibleIf =
   | 'always'
   | 'showPrice'
@@ -63,6 +71,20 @@ export type TextAlign = 'left' | 'center' | 'right'
 
 export type TextCase = 'none' | 'upper' | 'lower' | 'title' | 'sentence'
 
+export type TextWeight = 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
+
+export const TEXT_WEIGHT_OPTIONS: Array<{ value: TextWeight; label: string }> = [
+  { value: 100, label: 'Thin' },
+  { value: 200, label: 'Extra light' },
+  { value: 300, label: 'Light' },
+  { value: 400, label: 'Regular' },
+  { value: 500, label: 'Medium' },
+  { value: 600, label: 'Semibold' },
+  { value: 700, label: 'Bold' },
+  { value: 800, label: 'Extra bold' },
+  { value: 900, label: 'Black' },
+]
+
 export const TEXT_CASE_OPTIONS: Array<{ value: TextCase; label: string }> = [
   { value: 'none', label: 'As typed' },
   { value: 'upper', label: 'UPPERCASE' },
@@ -76,6 +98,7 @@ export interface TextElement extends DesignElementBase {
   /** Static text with optional {field} tokens, e.g. "Only {price}!" */
   content: string
   fontId: string // id from the app font registry ('' = default body font)
+  fontWeight?: TextWeight // absent = 400
   size: number // pt; when autoFit is on this is the maximum size
   autoFit: boolean
   color: string
@@ -114,6 +137,7 @@ export interface DesignTemplate {
     width: number // pt (1 in = 72 pt)
     height: number // pt
     background: string
+    shape?: LabelShape // absent = rectangle
   }
   elements: DesignElement[] // z-order = array order (first = back)
   createdAt: string
@@ -145,6 +169,7 @@ export interface ResolvedText {
   kind: 'text'
   lines: ResolvedTextLine[]
   fontId: string
+  fontWeight: TextWeight
   size: number
   color: string
   opacity: number
@@ -185,6 +210,7 @@ export interface ResolvedDesign {
   width: number
   height: number
   background: string
+  shape: LabelShape
   primitives: ResolvedPrimitive[]
 }
 

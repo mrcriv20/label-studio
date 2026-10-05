@@ -96,7 +96,7 @@ export interface PrinterInfo {
 export interface FontAsset {
   id: string
   family: string
-  source: 'bundled' | 'local' | 'upload' | 'google'
+  source: 'bundled' | 'system' | 'local' | 'upload' | 'google'
   dataUri: string
 }
 

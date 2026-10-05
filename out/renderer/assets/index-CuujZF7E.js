@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./Editor-7QiBrHVb.js","./LabelPreview-B3r3ZxCP.js","./DesignLabelSvg-DBLls6hC.js","./save-Y6LhUU2b.js","./SheetBuilder-D6dsj-0W.js","./Settings-x92tLGKK.js","./download-BF4mTKe1.js","./Designer-BAPFkIM6.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./Editor-DKhNDmyI.js","./LabelPreview-UiYyfwI2.js","./DesignLabelSvg-Cd_O3ig_.js","./save-Qr3Mll5A.js","./SheetBuilder-DnyrWe5J.js","./Settings-BMX3QfMa.js","./folder-open-Dsopm5Aq.js","./Designer-DNH-fsE9.js"])))=>i.map(i=>d[i]);
 function getDefaultExportFromCjs(x2) {
   return x2 && x2.__esModule && Object.prototype.hasOwnProperty.call(x2, "default") ? x2["default"] : x2;
 }
@@ -7919,7 +7919,7 @@ Continue using the saved names, prices, and barcodes?`);
   }
   return true;
 }
-function Library({ onEdit, onOpenSheet }) {
+function Library({ onEdit, onOpenSheet, activeCategory, onActiveCategoryChange }) {
   const [products, setProducts] = reactExports.useState([]);
   const [query, setQuery] = reactExports.useState("");
   const [loading, setLoading] = reactExports.useState(true);
@@ -7927,7 +7927,6 @@ function Library({ onEdit, onOpenSheet }) {
   const [deleting, setDeleting] = reactExports.useState(null);
   const [exporting, setExporting] = reactExports.useState(null);
   const [importing, setImporting] = reactExports.useState(false);
-  const [activeCategory, setActiveCategory] = reactExports.useState("__all__");
   const [sortKey, setSortKey] = reactExports.useState("name");
   const [sortDirection, setSortDirection] = reactExports.useState("asc");
   const [tillieNotice, setTillieNotice] = reactExports.useState("");
@@ -8198,7 +8197,7 @@ ${skipped.slice(0, 10).join("\n")}${skipped.length > 10 ? `
       [{ id: "__all__", label: "All" }, ...categories.map((c) => ({ id: c, label: c }))].map(({ id: id2, label }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
-          onClick: () => setActiveCategory(id2),
+          onClick: () => onActiveCategoryChange(id2),
           style: {
             padding: "3px 12px",
             minHeight: 28,
@@ -8373,7 +8372,8 @@ function installFonts(fonts) {
   for (const font of fonts) {
     const style = document.createElement("style");
     style.dataset.labelFont = font.id;
-    style.textContent = `@font-face{font-family:"LabelFont-${css(font.id)}";src:url("${font.dataUri}");font-style:normal;font-weight:100 900;font-display:swap}`;
+    const src = font.dataUri ? `url("${font.dataUri}")` : `local("${font.family.replace(/"/g, '\\"')}")`;
+    style.textContent = `@font-face{font-family:"LabelFont-${css(font.id)}";src:${src};font-style:normal;font-weight:100 900;font-display:swap}`;
     document.head.appendChild(style);
   }
 }
@@ -8388,15 +8388,17 @@ function fontFamilyFor(id2) {
 function css(value) {
   return value.replace(/[^a-z0-9_-]/gi, "-");
 }
-const Editor = reactExports.lazy(() => __vitePreload(() => import("./Editor-7QiBrHVb.js"), true ? __vite__mapDeps([0,1,2,3]) : void 0, import.meta.url));
-const SheetBuilder = reactExports.lazy(() => __vitePreload(() => import("./SheetBuilder-D6dsj-0W.js"), true ? __vite__mapDeps([4,1,2]) : void 0, import.meta.url));
-const Settings = reactExports.lazy(() => __vitePreload(() => import("./Settings-x92tLGKK.js"), true ? __vite__mapDeps([5,6,3]) : void 0, import.meta.url));
-const HowTo = reactExports.lazy(() => __vitePreload(() => import("./HowTo-rvuBfuCR.js"), true ? [] : void 0, import.meta.url));
-const Designer = reactExports.lazy(() => __vitePreload(() => import("./Designer-BAPFkIM6.js"), true ? __vite__mapDeps([7,2,6,3]) : void 0, import.meta.url));
+const Editor = reactExports.lazy(() => __vitePreload(() => import("./Editor-DKhNDmyI.js"), true ? __vite__mapDeps([0,1,2,3]) : void 0, import.meta.url));
+const SheetBuilder = reactExports.lazy(() => __vitePreload(() => import("./SheetBuilder-DnyrWe5J.js"), true ? __vite__mapDeps([4,1,2]) : void 0, import.meta.url));
+const Settings = reactExports.lazy(() => __vitePreload(() => import("./Settings-BMX3QfMa.js"), true ? __vite__mapDeps([5,6,3]) : void 0, import.meta.url));
+const HowTo = reactExports.lazy(() => __vitePreload(() => import("./HowTo-CH_kG6eS.js"), true ? [] : void 0, import.meta.url));
+const Designer = reactExports.lazy(() => __vitePreload(() => import("./Designer-DNH-fsE9.js"), true ? __vite__mapDeps([7,2,6,3]) : void 0, import.meta.url));
 function App() {
   const [screen, setScreen] = reactExports.useState("library");
   const [editingProduct, setEditingProduct] = reactExports.useState(null);
   const [sheetProducts, setSheetProducts] = reactExports.useState([]);
+  const [sheetReturnProduct, setSheetReturnProduct] = reactExports.useState(null);
+  const [libraryCategory, setLibraryCategory] = reactExports.useState("__all__");
   const [designerTarget, setDesignerTarget] = reactExports.useState(null);
   const [hasUnsavedWork, setHasUnsavedWork] = reactExports.useState(false);
   const [sheetRepair, setSheetRepair] = reactExports.useState(null);
@@ -8443,18 +8445,21 @@ function App() {
     if (next === "editor") {
       setEditingProduct(null);
     }
+    if (next !== "sheet") setSheetReturnProduct(null);
     setScreen(next);
   }
   function openEditor(product) {
     if (screen !== "library" && !canLeaveWorkspace()) return;
     setHasUnsavedWork(false);
     setEditingProduct(product ?? null);
+    setSheetReturnProduct(null);
     setScreen("editor");
   }
-  function openSheet(products) {
+  function openSheet(products, returnProduct) {
     setSheetRepair(null);
     setHasUnsavedWork(false);
     setSheetProducts(products);
+    setSheetReturnProduct(returnProduct ?? null);
     setScreen("sheet");
   }
   function openSheetRepair(product, field) {
@@ -8484,6 +8489,19 @@ function App() {
     if (!canLeaveWorkspace()) return;
     setHasUnsavedWork(false);
     setEditingProduct(null);
+    setSheetReturnProduct(null);
+    setScreen("library");
+  }
+  function backFromSheet() {
+    if (!canLeaveWorkspace()) return;
+    setHasUnsavedWork(false);
+    if (sheetReturnProduct) {
+      setEditingProduct(sheetReturnProduct);
+      setSheetProducts([]);
+      setSheetReturnProduct(null);
+      setScreen("editor");
+      return;
+    }
     setScreen("library");
   }
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "app-layout", children: [
@@ -8497,13 +8515,21 @@ function App() {
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx("main", { className: "content-area", id: "main-content", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(reactExports.Suspense, { fallback: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { role: "status", className: "screen app-loading", children: "Loading workspace…" }), children: [
-      screen === "library" && /* @__PURE__ */ jsxRuntimeExports.jsx(Library, { onEdit: openEditor, onOpenSheet: openSheet }),
+      screen === "library" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+        Library,
+        {
+          onEdit: openEditor,
+          onOpenSheet: openSheet,
+          activeCategory: libraryCategory,
+          onActiveCategoryChange: setLibraryCategory
+        }
+      ),
       screen === "editor" && /* @__PURE__ */ jsxRuntimeExports.jsx(
         Editor,
         {
           initialProduct: editingProduct,
           onBack: sheetRepair ? backToDraftSheet : backToLibrary,
-          onOpenSheet: (p2) => openSheet([p2]),
+          onOpenSheet: (p2) => openSheet([p2], p2),
           onOpenDesigner: openDesigner,
           onDirtyChange: setHasUnsavedWork,
           repairField: sheetRepair?.field ?? null,
@@ -8515,13 +8541,15 @@ function App() {
         SheetBuilder,
         {
           initialProducts: sheetProducts,
-          onBack: () => setScreen("library"),
+          onBack: backFromSheet,
+          backLabel: sheetReturnProduct ? "Label" : "Products",
           onRepairIssue: openSheetRepair
         }
       ),
       screen === "settings" && /* @__PURE__ */ jsxRuntimeExports.jsx(Settings, { onDirtyChange: setHasUnsavedWork, onOpenCalibration: () => {
         if (!canLeaveWorkspace()) return;
         setSheetProducts([]);
+        setSheetReturnProduct(null);
         setHasUnsavedWork(false);
         setScreen("sheet");
       } }),

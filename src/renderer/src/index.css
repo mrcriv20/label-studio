@@ -235,6 +235,15 @@
 }
 select.input { cursor: pointer; }
 
+button,
+input,
+select,
+textarea,
+label,
+[role="button"] {
+  -webkit-app-region: no-drag;
+}
+
 input[type="checkbox"] {
   min-width: 18px;
   width: 18px;

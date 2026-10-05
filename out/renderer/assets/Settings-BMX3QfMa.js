@@ -1,6 +1,6 @@
-import { o as createLucideIcon, v as reactExports, t as jsxRuntimeExports, j as Store, S as Search, R as RefreshCw, w as recordTillieSyncFailure, x as recordTillieSyncSuccess, l as applyFontSettings, s as installFonts, U as Upload } from "./index-BwX6qHRB.js";
-import { D as Download } from "./download-BF4mTKe1.js";
-import { S as Save } from "./save-Y6LhUU2b.js";
+import { o as createLucideIcon, v as reactExports, t as jsxRuntimeExports, j as Store, S as Search, R as RefreshCw, w as recordTillieSyncFailure, x as recordTillieSyncSuccess, l as applyFontSettings, s as installFonts, U as Upload } from "./index-CuujZF7E.js";
+import { F as FolderOpen, D as Download } from "./folder-open-Dsopm5Aq.js";
+import { S as Save } from "./save-Qr3Mll5A.js";
 /**
  * @license lucide-react v0.390.0 - ISC
  *
@@ -29,21 +29,6 @@ const FileCheck = createLucideIcon("FileCheck", [
   ["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", key: "1rqfz7" }],
   ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4", key: "tnqrlb" }],
   ["path", { d: "m9 15 2 2 4-4", key: "1grp1n" }]
-]);
-/**
- * @license lucide-react v0.390.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const FolderOpen = createLucideIcon("FolderOpen", [
-  [
-    "path",
-    {
-      d: "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2",
-      key: "usdka0"
-    }
-  ]
 ]);
 /**
  * @license lucide-react v0.390.0 - ISC
@@ -709,7 +694,7 @@ function Settings({ onDirtyChange, onOpenCalibration }) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { padding: "20px 20px 24px" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: { fontSize: 13, fontWeight: 600, color: "var(--color-workbench-navy)", margin: "0 0 6px" }, children: "Label Fonts" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "var(--color-text-secondary)", margin: "0 0 16px", lineHeight: 1.5 }, children: "Font selections preview immediately and are restored if you discard Settings changes. Imported font files are installed immediately and remain available even if you leave without saving." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "var(--color-text-secondary)", margin: "0 0 16px", lineHeight: 1.5 }, children: "System fonts are available automatically. Imported and Google fonts are installed immediately and remain available in Settings and the label designer." }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "settings-font-grid", style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(FontSelect, { label: "Product title", value: settings.titleFontId, fonts, onChange: (v) => update("titleFontId", v) }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(FontSelect, { label: "Price", value: settings.priceFontId, fonts, onChange: (v) => update("priceFontId", v) }),

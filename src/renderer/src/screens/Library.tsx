@@ -8,9 +8,11 @@ import { confirmUsingSavedTillieData, readTillieFreshness, recordTillieSyncFailu
 interface Props {
   onEdit: (product?: Product) => void
   onOpenSheet: (products: Product[]) => void
+  activeCategory: string
+  onActiveCategoryChange: (category: string) => void
 }
 
-export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
+export default function Library({ onEdit, onOpenSheet, activeCategory, onActiveCategoryChange }: Props): JSX.Element {
   type SortKey = 'name' | 'category' | 'price' | 'barcodeValue' | 'updatedAt'
 
   const [products, setProducts] = useState<Product[]>([])
@@ -20,7 +22,6 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  const [activeCategory, setActiveCategory] = useState<string>('__all__')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [tillieNotice, setTillieNotice] = useState('')
@@ -295,7 +296,7 @@ export default function Library({ onEdit, onOpenSheet }: Props): JSX.Element {
           {[{ id: '__all__', label: 'All' }, ...categories.map((c) => ({ id: c, label: c }))].map(({ id, label }) => (
             <button
               key={id}
-              onClick={() => setActiveCategory(id)}
+              onClick={() => onActiveCategoryChange(id)}
               style={{
                 padding: '3px 12px',
                 minHeight: 28,
